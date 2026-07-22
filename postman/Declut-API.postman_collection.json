@@ -1,0 +1,1860 @@
+{
+  "info": {
+    "_postman_id": "a2f1b6e0-declut-api-collection-0001",
+    "name": "Declut API",
+    "description": "Declut — trust-first escrow marketplace API for buying/selling pre-owned household items. NestJS + MongoDB. Payment is held in escrow until a buyer-held confirmation code is entered by the seller at the meetup.\n\nAUTH PATTERN: every protected route expects `Authorization: Bearer {{accessToken}}`. Run Auth → Register or Auth → Login first — both auto-save `accessToken`/`refreshToken` into collection variables via a test script, so every other request in this collection picks them up automatically. When the access token expires (15m default), run Auth → Refresh Token.\n\nADMIN: admin-only requests (the Admin folder) use a separate `{{adminAccessToken}}` variable so you can stay logged in as a regular user and an admin at the same time. Bootstrap the first admin with `npm run seed:admin -- <email> <password> [name]` (see CLAUDE.md), log in with Auth → Login using those credentials, and copy the returned accessToken into the `adminAccessToken` collection variable.\n\nSet the `baseUrl` collection variable to wherever the API is running (defaults to http://localhost:3000).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "description": "",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Basic liveness + Mongo connectivity check. No auth required."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "description": "Google sign-in (google-auth-library, no Firebase) + email/password, both converging on backend-issued JWT access/refresh tokens.",
+      "item": [
+        {
+          "name": "Register (email/password)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "description": "Creates an email/password account. Always role: user — admin accounts are never created through this endpoint (see scripts/seed-admin.ts). Rate-limited. Auto-saves accessToken/refreshToken to collection variables.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"buyer@example.com\",\n  \"name\": \"Jane Buyer\",\n  \"password\": \"Passw0rd!23\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.data && data.data.accessToken) {",
+                  "    pm.collectionVariables.set(\"accessToken\", data.data.accessToken);",
+                  "    pm.collectionVariables.set(\"refreshToken\", data.data.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login (email/password)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Generic \"invalid credentials\" on either a missing user or wrong password. Rate-limited. Auto-saves accessToken/refreshToken.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"buyer@example.com\",\n  \"password\": \"Passw0rd!23\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.data && data.data.accessToken) {",
+                  "    pm.collectionVariables.set(\"accessToken\", data.data.accessToken);",
+                  "    pm.collectionVariables.set(\"refreshToken\", data.data.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Google sign-in",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/google",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "google"
+              ]
+            },
+            "description": "idToken is verified server-side against Google's public keys via google-auth-library (GOOGLE_CLIENT_ID as audience) — Firebase is never involved. Rejects (403) if the resolved email belongs to an admin account; admins must use email/password. Rate-limited. Auto-saves accessToken/refreshToken.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idToken\": \"<google-issued-id-token-from-mobile-app>\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.data && data.data.accessToken) {",
+                  "    pm.collectionVariables.set(\"accessToken\", data.data.accessToken);",
+                  "    pm.collectionVariables.set(\"refreshToken\", data.data.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "Rotates both tokens — the presented refresh token is revoked and a new pair issued. A revoked/expired/reused token is rejected. Rate-limited. Auto-saves the new accessToken/refreshToken.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.data && data.data.accessToken) {",
+                  "    pm.collectionVariables.set(\"accessToken\", data.data.accessToken);",
+                  "    pm.collectionVariables.set(\"refreshToken\", data.data.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Revokes the presented refresh token's session row. Does not affect other logged-in devices.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "description": "Profile, KYC status, cached trust score and rating stats.",
+      "item": [
+        {
+          "name": "Get my profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me"
+              ]
+            },
+            "description": "Full private profile — email, kycStatus, trustScore, bank details, etc. Only ever returned to the user themselves."
+          },
+          "response": []
+        },
+        {
+          "name": "Update my profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me"
+              ]
+            },
+            "description": "All fields optional. Bank details are required before a seller can accept a checkout (used to create a Paystack subaccount).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Jane B. Buyer\",\n  \"bankCode\": \"058\",\n  \"bankName\": \"GTBank\",\n  \"accountNumber\": \"0123456789\",\n  \"accountName\": \"Jane Buyer\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get public profile by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{userId}}"
+              ]
+            },
+            "description": "Public-safe subset only: name, verified (boolean, from kycStatus), trustScore, avgRating, reviewCount. No email, no bank details."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Listings",
+      "description": "Create/edit/archive/delete, radius + keyword search. All routes require login (no guest browsing in v1).",
+      "item": [
+        {
+          "name": "Get Cloudinary upload signature",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/listings/upload-signature",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "listings",
+                "upload-signature"
+              ]
+            },
+            "description": "Backend never touches image bytes — returns a short-lived signed payload the mobile app uses to upload directly to Cloudinary, then sends the resulting URLs back in Create Listing's images field."
+          },
+          "response": []
+        },
+        {
+          "name": "Search / browse listings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/listings?keyword=sofa&category=furniture&condition=good&minPrice=5000&maxPrice=50000&lat=6.5244&lng=3.3792&radiusKm=15&page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "listings"
+              ],
+              "query": [
+                {
+                  "key": "keyword",
+                  "value": "sofa",
+                  "disabled": false
+                },
+                {
+                  "key": "category",
+                  "value": "furniture",
+                  "disabled": false
+                },
+                {
+                  "key": "condition",
+                  "value": "good",
+                  "disabled": false
+                },
+                {
+                  "key": "minPrice",
+                  "value": "5000",
+                  "disabled": false
+                },
+                {
+                  "key": "maxPrice",
+                  "value": "50000",
+                  "disabled": false
+                },
+                {
+                  "key": "lat",
+                  "value": "6.5244",
+                  "disabled": false
+                },
+                {
+                  "key": "lng",
+                  "value": "3.3792",
+                  "disabled": false
+                },
+                {
+                  "key": "radiusKm",
+                  "value": "15",
+                  "disabled": false
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "All query params optional. Supplying lat/lng runs a $geoNear radius search (default radius DEFAULT_SEARCH_RADIUS_KM); keyword alone ranks by text relevance; neither param falls back to newest-first. Remove query params you don't need."
+          },
+          "response": []
+        },
+        {
+          "name": "Get listing by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/listings/{{listingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "listings",
+                "{{listingId}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Create listing",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/listings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "listings"
+              ]
+            },
+            "description": "category: furniture|electronics|appliances|kitchenware|clothing|decor|books|other. condition: new|like_new|good|fair|poor. location is {lat, lng}, not GeoJSON — the service converts it internally.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Comfortable 3-seater sofa\",\n  \"description\": \"Barely used, no stains, smoke-free home.\",\n  \"category\": \"furniture\",\n  \"condition\": \"good\",\n  \"price\": 45000,\n  \"images\": [\n    \"https://res.cloudinary.com/example/image/upload/v1/sofa.jpg\"\n  ],\n  \"location\": {\n    \"lat\": 6.5244,\n    \"lng\": 3.3792\n  },\n  \"locationLabel\": \"Lekki, Lagos\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update listing",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/listings/{{listingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "listings",
+                "{{listingId}}"
+              ]
+            },
+            "description": "Owner-only (403 otherwise). All fields from Create Listing are optional here.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 42000,\n  \"description\": \"Price reduced — barely used, no stains.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Archive listing",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/listings/{{listingId}}/archive",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "listings",
+                "{{listingId}}",
+                "archive"
+              ]
+            },
+            "description": "Owner-only. Removes it from search without deleting it."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete listing",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/listings/{{listingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "listings",
+                "{{listingId}}"
+              ]
+            },
+            "description": "Owner-only. Soft delete (status: deleted) — never a real Mongo delete, since a Transaction may reference this listing."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Favorites",
+      "description": "Buyer save/unsave listings, list saved listings.",
+      "item": [
+        {
+          "name": "List my favorites",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/favorites?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "favorites"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Add favorite",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/favorites/{{listingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "favorites",
+                "{{listingId}}"
+              ]
+            },
+            "description": "Idempotent upsert — favoriting an already-favorited listing is a no-op, not an error."
+          },
+          "response": []
+        },
+        {
+          "name": "Remove favorite",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/favorites/{{listingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "favorites",
+                "{{listingId}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "KYC",
+      "description": "NIN + facial liveness, gated at first listing (sellers) / first purchase (buyers) — not mandatory at signup. Admins are permanently exempt.",
+      "item": [
+        {
+          "name": "Verify identity",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kyc/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kyc",
+                "verify"
+              ]
+            },
+            "description": "NIN + facial liveness via QoreID (behind a KycProvider interface — swappable vendor). The selfie image is held in memory only long enough to forward to the provider; never persisted. Sets kycStatus to pending, then verified/rejected (or reverts to unverified on a provider/config error, not a false rejection). Rate-limited (5/min) given the payload size and cost per call.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nin\": \"12345678901\",\n  \"selfieImageBase64\": \"<base64-encoded-selfie-jpeg>\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "My verification history",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kyc/history",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kyc",
+                "history"
+              ]
+            },
+            "description": "Audit trail only — pass/fail + reference ID per attempt, never images."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Offers",
+      "description": "Buyer offers below asking price; seller accepts/rejects/counters. An accepted offer seeds a Transaction at its amount instead of list price.",
+      "item": [
+        {
+          "name": "List my offers",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/offers?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "offers"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Offers where you're the buyer or the seller."
+          },
+          "response": []
+        },
+        {
+          "name": "Get offer by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/offers/{{offerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "offers",
+                "{{offerId}}"
+              ]
+            },
+            "description": "Only visible to the buyer/seller on that offer."
+          },
+          "response": []
+        },
+        {
+          "name": "Make an offer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/offers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "offers"
+              ]
+            },
+            "description": "Can't offer on your own listing. One pending offer per (buyer, listing) at a time (409 on a second). Auto-expires after OFFER_EXPIRY_DAYS if untouched.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"listingId\": \"{{listingId}}\",\n  \"amount\": 38000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Accept offer",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/offers/{{offerId}}/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "offers",
+                "{{offerId}}",
+                "accept"
+              ]
+            },
+            "description": "Only the party who did NOT propose the current amount can accept/reject/counter — it must be \"their turn\". An accepted offer's amount is what Create Transaction uses instead of list price."
+          },
+          "response": []
+        },
+        {
+          "name": "Reject offer",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/offers/{{offerId}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "offers",
+                "{{offerId}}",
+                "reject"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Counter offer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/offers/{{offerId}}/counter",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "offers",
+                "{{offerId}}",
+                "counter"
+              ]
+            },
+            "description": "Terminal-status's the current offer (status: countered) and creates a new offer in the chain (parentOffer points back), with proposedBy flipped and a fresh expiry.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 40000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Withdraw offer",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/offers/{{offerId}}/withdraw",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "offers",
+                "{{offerId}}",
+                "withdraw"
+              ]
+            },
+            "description": "Only the current proposer can withdraw, and only while pending."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Transactions & Payments",
+      "description": "Paystack checkout → escrow → buyer-held confirmation code → seller-triggered release, 10% commission at release. See the webhook note before trying to call it manually.",
+      "item": [
+        {
+          "name": "Checkout (create transaction)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "Initializes a Paystack transaction (held via subaccount split, manual settlement) and returns paystackAuthorizationUrl for the mobile app to open. offerId is optional — omit it to buy outright at list price, or pass an accepted offer's ID to check out at the negotiated amount. One pending checkout per (buyer, listing) at a time. Rate-limited.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"listingId\": \"{{listingId}}\",\n  \"offerId\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List my transactions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transactions?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Transactions where you're the buyer or seller. confirmationCode is only ever included for the buyer, and only while status is escrow_active/awaiting_inspection."
+          },
+          "response": []
+        },
+        {
+          "name": "Get transaction by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transactions/{{transactionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions",
+                "{{transactionId}}"
+              ]
+            },
+            "description": "Only visible to the buyer/seller on that transaction."
+          },
+          "response": []
+        },
+        {
+          "name": "Confirm code (seller releases funds)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transactions/{{transactionId}}/confirm-code",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions",
+                "{{transactionId}}",
+                "confirm-code"
+              ]
+            },
+            "description": "Seller-only. Correct code triggers a Paystack payout to the seller minus commission and marks the transaction completed. Wrong code increments a counter; hitting MAX_CODE_ATTEMPTS auto-flags the transaction disputed for admin review.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"123456\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel transaction",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transactions/{{transactionId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions",
+                "{{transactionId}}",
+                "cancel"
+              ]
+            },
+            "description": "Buyer-only, and only while still pending_payment — once paid, resolution requires an admin action (release/refund), never a direct cancel."
+          },
+          "response": []
+        },
+        {
+          "name": "Paystack webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-paystack-signature",
+                "value": "<hmac-sha512-signature>"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transactions/webhook/paystack",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions",
+                "webhook",
+                "paystack"
+              ]
+            },
+            "description": "NOT for manual testing — Paystack calls this directly, authenticated by HMAC-SHA512 signature (not a bearer token) over the raw request body. Included here for completeness/documentation only. Idempotent: replaying a webhook for an already-processed transaction is a no-op.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event\": \"charge.success\",\n  \"data\": {\n    \"reference\": \"declut_xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx\",\n    \"amount\": 4500000,\n    \"status\": \"success\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Reviews",
+      "description": "Buyer and seller rate each other after a transaction completes. Feeds User.avgRating/reviewCount and the trust score formula.",
+      "item": [
+        {
+          "name": "Leave a review",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reviews",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reviews"
+              ]
+            },
+            "description": "Only once the transaction is completed, only by the buyer or seller on it, one review per reviewer per transaction (409 on a repeat). role/reviewee are derived server-side from the transaction, never trusted from the body.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transactionId\": \"{{transactionId}}\",\n  \"rating\": 5,\n  \"comment\": \"Great transaction, item as described!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List reviews for a user",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reviews/user/{{userId}}?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reviews",
+                "user",
+                "{{userId}}"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Reviews received by that user (as reviewee) — open to any logged-in user, since a public rating history is the point."
+          },
+          "response": []
+        },
+        {
+          "name": "List reviews for a transaction",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reviews/transaction/{{transactionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reviews",
+                "transaction",
+                "{{transactionId}}"
+              ]
+            },
+            "description": "Both reviews on a deal (if they exist) — only visible to the buyer/seller on that transaction."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "description": "FCM push only (no chat/websockets). Firebase touches nothing outside this module. A push failing never breaks the underlying operation (payment released, offer accepted, etc.).",
+      "item": [
+        {
+          "name": "Register device token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/register-token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "register-token"
+              ]
+            },
+            "description": "platform is optional (ios|android). Upserts by token — re-registering the same device (even under a different account) moves it to the current caller.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"<fcm-device-token-from-mobile-app>\",\n  \"platform\": \"android\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Unregister device token",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/token/{{deviceToken}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "token",
+                "{{deviceToken}}"
+              ]
+            },
+            "description": "Scoped to the caller's own tokens — deleting a token you don't own is a silent no-op, not an error."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "description": "Requires JwtAuthGuard + AdminGuard (being logged in is not being an admin). Use the \"Admin login\" request in Auth with a bootstrapped admin account (npm run seed:admin), then set the adminAccessToken collection variable manually or via a small test script.",
+      "item": [
+        {
+          "name": "List users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAccessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users?page=1&limit=20&role=user",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                },
+                {
+                  "key": "role",
+                  "value": "user",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Get user by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAccessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users/{{userId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "users",
+                "{{userId}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Promote user to admin",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAccessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users/{{userId}}/promote",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "users",
+                "{{userId}}",
+                "promote"
+              ]
+            },
+            "description": "Ongoing admin-creation path once at least one admin exists. The FIRST admin can't come from here (chicken-and-egg) — see scripts/seed-admin.ts. The promoted user's existing JWT still carries the old role claim until they log in again."
+          },
+          "response": []
+        },
+        {
+          "name": "Override KYC status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAccessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users/{{userId}}/kyc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "users",
+                "{{userId}}",
+                "kyc"
+              ]
+            },
+            "description": "status: unverified|pending|verified|rejected. Setting verified also triggers a trust score recalculation (the same +20 flat bonus KycService.verify() applies automatically on a real provider pass).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"verified\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List listings (any status)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAccessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/listings?page=1&limit=20&status=active",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "listings"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                },
+                {
+                  "key": "status",
+                  "value": "active",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Unlike the public search, includes archived and deleted listings."
+          },
+          "response": []
+        },
+        {
+          "name": "Get listing by ID (any status)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAccessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/listings/{{listingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "listings",
+                "{{listingId}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "List transactions (all)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAccessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/transactions?page=1&limit=20&status=disputed",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                },
+                {
+                  "key": "status",
+                  "value": "disputed",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "confirmationCode is always stripped, even for admins — \"only ever returned to the buyer\" holds with no exception."
+          },
+          "response": []
+        },
+        {
+          "name": "Get transaction by ID (admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAccessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/transactions/{{transactionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "transactions",
+                "{{transactionId}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Release stalled/disputed transaction",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAccessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/transactions/{{transactionId}}/release",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "transactions",
+                "{{transactionId}}",
+                "release"
+              ]
+            },
+            "description": "Only valid on stalled/disputed transactions (400 otherwise). Triggers the same Paystack payout path as a normal code confirmation, minus commission, then marks completed."
+          },
+          "response": []
+        },
+        {
+          "name": "Refund stalled/disputed transaction",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAccessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/transactions/{{transactionId}}/refund",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "transactions",
+                "{{transactionId}}",
+                "refund"
+              ]
+            },
+            "description": "Only valid on stalled/disputed transactions (400 otherwise). reason is optional, stored on the audit log entry.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Seller unresponsive after multiple buyer attempts to coordinate a meetup.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List offers (all)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAccessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/offers?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "offers"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Remove review (moderation)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAccessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/reviews/{{reviewId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "reviews",
+                "{{reviewId}}"
+              ]
+            },
+            "description": "Removes an abusive/violating review and recalculates the affected user's avgRating/reviewCount and trust score."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "adminAccessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "listingId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "offerId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "transactionId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "reviewId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "deviceToken",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}
