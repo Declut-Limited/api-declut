@@ -6,7 +6,6 @@ import {
   KycStatus,
   User,
   UserDocument,
-  UserRole,
 } from './schemas/user.schema';
 import { UpdateUserDto } from './dto/update-user.dto';
 import {
@@ -30,6 +29,25 @@ export class UsersService {
       .exec();
   }
 
+  findByPhone(phone: string): Promise<UserDocument | null> {
+    return this.userModel.findOne({ phone }).exec();
+  }
+
+  findByPhoneWithPassword(phone: string): Promise<UserDocument | null> {
+    return this.userModel.findOne({ phone }).select('+passwordHash').exec();
+  }
+
+  // Login accepts either an email or a phone number in the same field (per
+  // CLAUDE.md's Auth Architecture) — the '@' check is just format
+  // disambiguation, not validation (LoginDto already confirms the shape).
+  findByIdentifierWithPassword(
+    identifier: string,
+  ): Promise<UserDocument | null> {
+    return identifier.includes('@')
+      ? this.findByEmailWithPassword(identifier.toLowerCase())
+      : this.findByPhoneWithPassword(identifier);
+  }
+
   findByGoogleId(googleId: string): Promise<UserDocument | null> {
     return this.userModel.findOne({ googleId }).exec();
   }
@@ -38,17 +56,25 @@ export class UsersService {
     return this.userModel.findById(id).exec();
   }
 
+  // Explicitly re-selects passwordHash — used by change-password/reset-password,
+  // which both need to verify against (or fingerprint) the current hash.
+  findByIdWithPassword(id: string): Promise<UserDocument | null> {
+    return this.userModel.findById(id).select('+passwordHash').exec();
+  }
+
   createEmailUser(params: {
     email: string;
     name: string;
+    phone: string;
     passwordHash: string;
   }): Promise<UserDocument> {
     return this.userModel.create({
       email: params.email.toLowerCase(),
       name: params.name,
+      phone: params.phone,
       passwordHash: params.passwordHash,
       authProvider: AuthProvider.EMAIL,
-      role: UserRole.USER,
+      emailVerified: false,
     });
   }
 
@@ -62,7 +88,9 @@ export class UsersService {
       name: params.name,
       googleId: params.googleId,
       authProvider: AuthProvider.GOOGLE,
-      role: UserRole.USER,
+      // Google already verified this email before issuing the ID token we
+      // checked in GoogleOAuthService — no signup-OTP step needed here.
+      emailVerified: true,
     });
   }
 
@@ -108,6 +136,18 @@ export class UsersService {
     await this.userModel.updateOne({ _id: userId }, { kycStatus }).exec();
   }
 
+  // Used by both in-app change-password and the stateless forgot-password/
+  // reset-password flow (see AuthService + PasswordResetTokenService).
+  async setPasswordHash(userId: string, passwordHash: string): Promise<void> {
+    await this.userModel.updateOne({ _id: userId }, { passwordHash }).exec();
+  }
+
+  async setEmailVerified(userId: string): Promise<void> {
+    await this.userModel
+      .updateOne({ _id: userId }, { emailVerified: true })
+      .exec();
+  }
+
   async setPaystackSubaccountCode(userId: string, code: string): Promise<void> {
     await this.userModel
       .updateOne({ _id: userId }, { paystackSubaccountCode: code })
@@ -121,48 +161,45 @@ export class UsersService {
     avgRating: number,
     reviewCount: number,
   ): Promise<void> {
-    await this.userModel.updateOne({ _id: userId }, { avgRating, reviewCount }).exec();
+    await this.userModel
+      .updateOne({ _id: userId }, { avgRating, reviewCount })
+      .exec();
   }
 
   async adminListUsers(
     page: number,
     limit: number,
-    role?: UserRole,
-  ): Promise<{ results: PrivateUserProfile[]; total: number; page: number; limit: number }> {
-    const filter = role ? { role } : {};
+  ): Promise<{
+    results: PrivateUserProfile[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
     const [users, total] = await Promise.all([
       this.userModel
-        .find(filter)
+        .find({})
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
         .exec(),
-      this.userModel.countDocuments(filter),
+      this.userModel.countDocuments({}),
     ]);
-    return { results: users.map((u) => this.toPrivateProfile(u)), total, page, limit };
-  }
-
-  // Ongoing admin-creation path once at least one admin exists (the very
-  // first admin can't come from here — see scripts/seed-admin.ts for that
-  // bootstrap step, since promoting requires an admin to already be logged
-  // in to call this).
-  async promoteToAdmin(userId: string): Promise<PrivateUserProfile> {
-    const user = await this.userModel.findById(userId).exec();
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-    user.role = UserRole.ADMIN;
-    await user.save();
-    return this.toPrivateProfile(user);
+    return {
+      results: users.map((u) => this.toPrivateProfile(u)),
+      total,
+      page,
+      limit,
+    };
   }
 
   private toPrivateProfile(user: UserDocument): PrivateUserProfile {
     return {
       id: user._id.toString(),
       email: user.email,
+      phone: user.phone,
       name: user.name,
-      role: user.role,
       authProvider: user.authProvider,
+      emailVerified: user.emailVerified,
       kycStatus: user.kycStatus,
       trustScore: user.trustScore,
       avgRating: user.avgRating,

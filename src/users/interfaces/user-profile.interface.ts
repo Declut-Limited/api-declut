@@ -1,12 +1,13 @@
-import { AuthProvider, KycStatus, UserRole } from '../schemas/user.schema';
+import { AuthProvider, KycStatus } from '../schemas/user.schema';
 
 // Full profile — only ever returned to the user themselves.
 export interface PrivateUserProfile {
   id: string;
   email: string;
+  phone?: string;
   name: string;
-  role: UserRole;
   authProvider: AuthProvider;
+  emailVerified: boolean;
   kycStatus: KycStatus;
   trustScore: number;
   avgRating: number;

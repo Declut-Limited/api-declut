@@ -64,7 +64,10 @@ export class ListingsController {
   }
 
   @Delete(':id')
-  async remove(@CurrentUser() user: AccessTokenPayload, @Param('id') id: string) {
+  async remove(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param('id') id: string,
+  ) {
     await this.listingsService.remove(id, user.sub);
     return { deleted: true };
   }

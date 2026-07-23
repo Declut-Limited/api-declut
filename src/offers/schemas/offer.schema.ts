@@ -21,13 +21,28 @@ export enum OfferProposer {
 
 @Schema({ timestamps: true })
 export class Offer {
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Listing', required: true, index: true })
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'Listing',
+    required: true,
+    index: true,
+  })
   listing: Types.ObjectId;
 
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
   buyer: Types.ObjectId;
 
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
   seller: Types.ObjectId;
 
   @Prop({ required: true, min: 0 })

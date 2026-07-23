@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "a2f1b6e0-declut-api-collection-0001",
     "name": "Declut API",
-    "description": "Declut — trust-first escrow marketplace API for buying/selling pre-owned household items. NestJS + MongoDB. Payment is held in escrow until a buyer-held confirmation code is entered by the seller at the meetup.\n\nAUTH PATTERN: every protected route expects `Authorization: Bearer {{accessToken}}`. Run Auth → Register or Auth → Login first — both auto-save `accessToken`/`refreshToken` into collection variables via a test script, so every other request in this collection picks them up automatically. When the access token expires (15m default), run Auth → Refresh Token.\n\nADMIN: admin-only requests (the Admin folder) use a separate `{{adminAccessToken}}` variable so you can stay logged in as a regular user and an admin at the same time. Bootstrap the first admin with `npm run seed:admin -- <email> <password> [name]` (see CLAUDE.md), log in with Auth → Login using those credentials, and copy the returned accessToken into the `adminAccessToken` collection variable.\n\nSet the `baseUrl` collection variable to wherever the API is running (defaults to http://localhost:3000).",
+    "description": "Declut — trust-first escrow marketplace API for buying/selling pre-owned household items. NestJS + MongoDB. Payment is held in escrow until a buyer-held confirmation code is entered by the seller at the meetup.\n\nAUTH PATTERN (regular users): every protected route expects `Authorization: Bearer {{accessToken}}`. Run Auth → Register (email + password + phone) or Auth → Login (identifier = email OR phone, + password) first — both auto-save `accessToken`/`refreshToken` into collection variables via a test script, so every other request in this collection picks them up automatically. When the access token expires (15m default), run Auth → Refresh Token. Register also auto-saves an `otpToken` for Auth → Verify Email (signup OTP) — verifying flips `emailVerified` to true, which KYC → Verify Identity requires before it will run. Forgot-password/OTP/reset-password tokens are the same kind of stateless JWT the client carries between steps — never stored server-side — and also auto-save into `otpToken`/`resetToken` via the Auth folder's requests.\n\nADMIN: Admin is a WHOLLY SEPARATE collection/identity from User, with its own JWT secrets — a regular accessToken will never work on an admin route, and vice versa. Bootstrap the first admin with `npm run seed:admin -- <email> <password> [name]` (see CLAUDE.md), then use Admin Auth → Admin login, which auto-saves `adminAccessToken`/`adminRefreshToken`. The Admin folder (acting on the marketplace) and Admin Auth folder (managing admin accounts themselves) both use `{{adminAccessToken}}`.\n\nREALTIME: admin-only live notifications (new dispute, stalled transaction) are delivered over a WebSocket (Socket.IO) gateway, not plain HTTP — see the Realtime (Admin WebSocket) folder for connection details, since Postman's standard REST collection format can't execute a Socket.IO connection directly.\n\nSet the `baseUrl` collection variable to wherever the API is running (defaults to http://localhost:3000).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -32,7 +32,7 @@
     },
     {
       "name": "Auth",
-      "description": "Google sign-in (google-auth-library, no Firebase) + email/password, both converging on backend-issued JWT access/refresh tokens.",
+      "description": "Google sign-in (google-auth-library, no Firebase) + email/password (email + password + phone), both converging on backend-issued JWT access/refresh tokens. Login accepts either email or phone as the identifier. Email/password signup requires OTP email verification before KYC — see Verify Email below. Password reset/OTP and email-verification tokens are stateless JWTs — never stored in the DB — see CLAUDE.md's \"Password Reset & OTP Flow\" and \"Signup Flow\" sections.",
       "item": [
         {
           "name": "Register (email/password)",
@@ -55,10 +55,62 @@
                 "register"
               ]
             },
-            "description": "Creates an email/password account. Always role: user — admin accounts are never created through this endpoint (see scripts/seed-admin.ts). Rate-limited. Auto-saves accessToken/refreshToken to collection variables.",
+            "description": "Creates an email/password account. phone is a Nigerian number (07/08/09 + 9 digits local, or +234 international) — it doubles as the alternate login identifier and must be unique. Always a plain User — admin accounts are a wholly separate collection/flow (see the Admin Auth folder), never created here. Immediately sends a 6-digit email-verification OTP (see Verify Email below) and returns it as a stateless otpToken alongside the session tokens. Rate-limited. Auto-saves accessToken/refreshToken/otpToken to collection variables.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"buyer@example.com\",\n  \"name\": \"Jane Buyer\",\n  \"password\": \"Passw0rd!23\"\n}",
+              "raw": "{\n  \"email\": \"buyer@example.com\",\n  \"name\": \"Jane Buyer\",\n  \"password\": \"Passw0rd!23\",\n  \"phone\": \"08012345678\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.data && data.data.accessToken) {",
+                  "    pm.collectionVariables.set(\"accessToken\", data.data.accessToken);",
+                  "    pm.collectionVariables.set(\"refreshToken\", data.data.refreshToken);",
+                  "}",
+                  "if (data && data.data && data.data.otpToken) {",
+                  "    pm.collectionVariables.set(\"otpToken\", data.data.otpToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login (email or phone)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "identifier accepts either an email or a phone number (whichever the account was registered with) — set it to \"08012345678\" to log in by phone instead. Generic \"invalid credentials\" on either a missing user or wrong password. Rate-limited. Auto-saves accessToken/refreshToken.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"buyer@example.com\",\n  \"password\": \"Passw0rd!23\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -84,10 +136,15 @@
           ]
         },
         {
-          "name": "Login (email/password)",
+          "name": "Verify email (signup OTP)",
           "request": {
             "method": "POST",
             "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
               {
                 "key": "Content-Type",
                 "value": "application/json",
@@ -95,25 +152,50 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/auth/login",
+              "raw": "{{baseUrl}}/auth/verify-email",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "auth",
-                "login"
+                "verify-email"
               ]
             },
-            "description": "Generic \"invalid credentials\" on either a missing user or wrong password. Rate-limited. Auto-saves accessToken/refreshToken.",
+            "description": "Confirms the 6-digit code emailed at registration and flips emailVerified to true. Unlike the forgot-password OTP chain, this is JwtAuthGuard-protected (not stateless/anonymous) — the caller already has a session from Register, so there's no enumeration concern to defend against. The mobile app should move the user into KYC verification right after this succeeds. Rate-limited.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"buyer@example.com\",\n  \"password\": \"Passw0rd!23\"\n}",
+              "raw": "{\n  \"otpToken\": \"{{otpToken}}\",\n  \"otp\": \"123456\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             }
+          },
+          "response": []
+        },
+        {
+          "name": "Resend verification email",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/resend-verification-email",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "resend-verification-email"
+              ]
+            },
+            "description": "Issues a fresh OTP + otpToken if the caller's email isn't verified yet (short-circuits with \"Email is already verified\" and no send attempt if it already is). Auto-saves the new otpToken."
           },
           "response": [],
           "event": [
@@ -123,9 +205,8 @@
                 "type": "text/javascript",
                 "exec": [
                   "const data = pm.response.json();",
-                  "if (data && data.data && data.data.accessToken) {",
-                  "    pm.collectionVariables.set(\"accessToken\", data.data.accessToken);",
-                  "    pm.collectionVariables.set(\"refreshToken\", data.data.refreshToken);",
+                  "if (data && data.data && data.data.otpToken) {",
+                  "    pm.collectionVariables.set(\"otpToken\", data.data.otpToken);",
                   "}"
                 ]
               }
@@ -153,7 +234,7 @@
                 "google"
               ]
             },
-            "description": "idToken is verified server-side against Google's public keys via google-auth-library (GOOGLE_CLIENT_ID as audience) — Firebase is never involved. Rejects (403) if the resolved email belongs to an admin account; admins must use email/password. Rate-limited. Auto-saves accessToken/refreshToken.",
+            "description": "idToken is verified server-side against Google's public keys via google-auth-library (GOOGLE_CLIENT_ID as audience) — Firebase is never involved. Rate-limited. Auto-saves accessToken/refreshToken.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"idToken\": \"<google-issued-id-token-from-mobile-app>\"\n}",
@@ -255,6 +336,223 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Forgot password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/forgot-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "forgot-password"
+              ]
+            },
+            "description": "Sends a 6-digit OTP via email (Brevo) and returns a stateless otpToken — nothing is stored server-side; the token itself carries a bcrypt hash of the OTP, verified in Verify OTP below. Same generic response whether or not the email is registered (anti-enumeration). Rate-limited (5/min). Auto-saves otpToken.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"buyer@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.data && data.data.otpToken) {",
+                  "    pm.collectionVariables.set(\"otpToken\", data.data.otpToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Resend OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/resend-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "resend-otp"
+              ]
+            },
+            "description": "Issues a brand new OTP + otpToken for the same account the current otpToken was for. Rate-limited (5/min). Auto-saves the new otpToken.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"otpToken\": \"{{otpToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.data && data.data.otpToken) {",
+                  "    pm.collectionVariables.set(\"otpToken\", data.data.otpToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/verify-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "verify-otp"
+              ]
+            },
+            "description": "Verifies the 6-digit code against the hash embedded in otpToken. On success, returns a resetToken (also stateless — its single-use property comes from a fingerprint of the CURRENT password hash embedded in it, not a DB lookup). Rate-limited (5/min). Auto-saves resetToken.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"otpToken\": \"{{otpToken}}\",\n  \"otp\": \"123456\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.data && data.data.resetToken) {",
+                  "    pm.collectionVariables.set(\"resetToken\", data.data.resetToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reset password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/reset-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "reset-password"
+              ]
+            },
+            "description": "Consumes resetToken — verified against a fingerprint of the account's CURRENT password hash, so the token self-invalidates the instant the password changes (reusing it afterward correctly 401s). Revokes all of the account's existing refresh tokens (forces re-login everywhere). Rate-limited (5/min).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resetToken\": \"{{resetToken}}\",\n  \"newPassword\": \"NewPassw0rd!45\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Change password (in-app)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/change-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "change-password"
+              ]
+            },
+            "description": "Authenticated equivalent of reset-password — verifies currentPassword instead of an OTP flow. Also revokes all other sessions' refresh tokens.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"Passw0rd!23\",\n  \"newPassword\": \"NewPassw0rd!45\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -715,7 +1013,7 @@
     },
     {
       "name": "KYC",
-      "description": "NIN + facial liveness, gated at first listing (sellers) / first purchase (buyers) — not mandatory at signup. Admins are permanently exempt.",
+      "description": "NIN + facial liveness, gated at first listing (sellers) / first purchase (buyers) — not mandatory at signup.",
       "item": [
         {
           "name": "Verify identity",
@@ -743,7 +1041,7 @@
                 "verify"
               ]
             },
-            "description": "NIN + facial liveness via QoreID (behind a KycProvider interface — swappable vendor). The selfie image is held in memory only long enough to forward to the provider; never persisted. Sets kycStatus to pending, then verified/rejected (or reverts to unverified on a provider/config error, not a false rejection). Rate-limited (5/min) given the payload size and cost per call.",
+            "description": "Requires emailVerified: true (400 otherwise) — per the intended signup flow, verify email before KYC. NIN + facial liveness via QoreID (behind a KycProvider interface — swappable vendor). The selfie image is held in memory only long enough to forward to the provider; never persisted. Sets kycStatus to pending, then verified/rejected (or reverts to unverified on a provider/config error, not a false rejection). Rate-limited (5/min) given the payload size and cost per call.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"nin\": \"12345678901\",\n  \"selfieImageBase64\": \"<base64-encoded-selfie-jpeg>\"\n}",
@@ -1136,7 +1434,7 @@
                 "confirm-code"
               ]
             },
-            "description": "Seller-only. Correct code triggers a Paystack payout to the seller minus commission and marks the transaction completed. Wrong code increments a counter; hitting MAX_CODE_ATTEMPTS auto-flags the transaction disputed for admin review.",
+            "description": "Seller-only. Correct code triggers a Paystack payout to the seller minus commission and marks the transaction completed. Wrong code increments a counter; hitting MAX_CODE_ATTEMPTS auto-flags the transaction disputed for admin review AND broadcasts a live transaction.disputed event to connected admin WebSocket sessions.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"code\": \"123456\"\n}",
@@ -1326,10 +1624,10 @@
     },
     {
       "name": "Notifications",
-      "description": "FCM push only (no chat/websockets). Firebase touches nothing outside this module. A push failing never breaks the underlying operation (payment released, offer accepted, etc.).",
+      "description": "FCM push for mobile (buyers/sellers). Admin-only live in-app alerts are a separate WebSocket channel — see the Realtime (Admin WebSocket) folder. A push failing never breaks the underlying operation (payment released, offer accepted, etc.).",
       "item": [
         {
-          "name": "Register device token",
+          "name": "Register device token(s)",
           "request": {
             "method": "POST",
             "header": [
@@ -1354,10 +1652,10 @@
                 "register-token"
               ]
             },
-            "description": "platform is optional (ios|android). Upserts by token — re-registering the same device (even under a different account) moves it to the current caller.",
+            "description": "Batch endpoint — tokens is an array of 1-10 { token, platform? } entries (platform is optional, ios|android), so a client can register/re-sync several device tokens in one call. Each entry upserts by token — re-registering the same device (even under a different account) moves it to the current caller. Returns { registered: <count> }.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"token\": \"<fcm-device-token-from-mobile-app>\",\n  \"platform\": \"android\"\n}",
+              "raw": "{\n  \"tokens\": [\n    {\n      \"token\": \"<fcm-device-token-from-mobile-app>\",\n      \"platform\": \"android\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1397,7 +1695,7 @@
     },
     {
       "name": "Admin",
-      "description": "Requires JwtAuthGuard + AdminGuard (being logged in is not being an admin). Use the \"Admin login\" request in Auth with a bootstrapped admin account (npm run seed:admin), then set the adminAccessToken collection variable manually or via a small test script.",
+      "description": "Acting ON the marketplace (users/listings/transactions/offers/reviews) — requires AdminJwtAuthGuard (the separate admin JWT, see the Admin Auth folder for how to obtain one). There is no \"promote a user\" path anymore — Admin is a wholly separate collection from User.",
       "item": [
         {
           "name": "List users",
@@ -1411,7 +1709,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/admin/users?page=1&limit=20&role=user",
+              "raw": "{{baseUrl}}/admin/users?page=1&limit=20",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1429,11 +1727,6 @@
                   "key": "limit",
                   "value": "20",
                   "disabled": false
-                },
-                {
-                  "key": "role",
-                  "value": "user",
-                  "disabled": true
                 }
               ]
             },
@@ -1464,33 +1757,6 @@
               ]
             },
             "description": ""
-          },
-          "response": []
-        },
-        {
-          "name": "Promote user to admin",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{adminAccessToken}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/admin/users/{{userId}}/promote",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "admin",
-                "users",
-                "{{userId}}",
-                "promote"
-              ]
-            },
-            "description": "Ongoing admin-creation path once at least one admin exists. The FIRST admin can't come from here (chicken-and-egg) — see scripts/seed-admin.ts. The promoted user's existing JWT still carries the old role claim until they log in again."
           },
           "response": []
         },
@@ -1803,6 +2069,459 @@
           "response": []
         }
       ]
+    },
+    {
+      "name": "Admin Auth",
+      "description": "Admin identity/session lifecycle — separate collection, separate JWT secrets, separate password-reset flow from regular Users. This is the ONLY place admin accounts are created, logged in, or have their credentials changed.",
+      "item": [
+        {
+          "name": "Admin login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Admin is a wholly separate Mongoose collection from User, with its own JWT secrets — structurally impossible to forge an admin token from a regular-user token or vice versa. Bootstrap the very first admin with `npm run seed:admin -- <email> <password> [name]` (one-time manual step, since no admin exists yet to create one via the API). Auto-saves adminAccessToken/adminRefreshToken.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"rootadmin@declut.com\",\n  \"password\": \"ChangeMe123!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.data && data.data.accessToken) {",
+                  "    pm.collectionVariables.set(\"adminAccessToken\", data.data.accessToken);",
+                  "    pm.collectionVariables.set(\"adminRefreshToken\", data.data.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get my admin profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAccessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "me"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Admin refresh token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "Same rotation/revocation-detection behavior as the regular-user refresh endpoint, scoped to the separate AdminRefreshToken collection.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{adminRefreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.data && data.data.accessToken) {",
+                  "    pm.collectionVariables.set(\"adminAccessToken\", data.data.accessToken);",
+                  "    pm.collectionVariables.set(\"adminRefreshToken\", data.data.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{adminRefreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create sub-admin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAccessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/auth/sub-admins",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "sub-admins"
+              ]
+            },
+            "description": "Any authenticated admin can create another — flat permissions, no RBAC tiers in v1. This directly creates a new Admin document (there is no \"promote a user\" flow). createdBy is set to the creating admin's id, for audit purposes only.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"newadmin@declut.com\",\n  \"name\": \"New Admin\",\n  \"password\": \"SubAdminPass1!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Admin forgot password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/auth/forgot-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "forgot-password"
+              ]
+            },
+            "description": "Identical stateless OTP-token design as the regular-user flow, signed with the separate JWT_ADMIN_PASSWORD_RESET_SECRET. Auto-saves adminOtpToken.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"rootadmin@declut.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.data && data.data.otpToken) {",
+                  "    pm.collectionVariables.set(\"adminOtpToken\", data.data.otpToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin resend OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/auth/resend-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "resend-otp"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"otpToken\": \"{{adminOtpToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.data && data.data.otpToken) {",
+                  "    pm.collectionVariables.set(\"adminOtpToken\", data.data.otpToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin verify OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/auth/verify-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "verify-otp"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"otpToken\": \"{{adminOtpToken}}\",\n  \"otp\": \"123456\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.data && data.data.resetToken) {",
+                  "    pm.collectionVariables.set(\"adminResetToken\", data.data.resetToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin reset password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/auth/reset-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "reset-password"
+              ]
+            },
+            "description": "Self-invalidates via a password-hash fingerprint embedded in resetToken — reusing it after a successful reset (or after any other password change) correctly 401s. Revokes all of this admin's existing refresh tokens.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resetToken\": \"{{adminResetToken}}\",\n  \"newPassword\": \"NewAdminPass1!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Admin change password (in-app)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAccessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/auth/change-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "change-password"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"ChangeMe123!\",\n  \"newPassword\": \"NewAdminPass1!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Realtime (Admin WebSocket)",
+      "description": "Admin-only live in-app notifications over WebSocket — confirmed in scope as admin-only, not regular-user-facing (mobile stays on FCM push). See CLAUDE.md's \"Admin Live Notifications — WebSocket\" section.",
+      "item": [
+        {
+          "name": "Connect — admin-notifications gateway (see description)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin-notifications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin-notifications"
+              ]
+            },
+            "description": "NOT an HTTP request — Postman's standard v2.1 collection format has no native Socket.IO request type, so this entry exists purely as documentation (running it will 404, that's expected/harmless).\n\nConnect with a Socket.IO client to: `{{baseUrl}}` namespace `/admin-notifications` (e.g. `io(\"{{baseUrl}}/admin-notifications\", { auth: { token: adminAccessToken } })`).\n\nAuth happens at the handshake: pass the admin access token via `auth: { token }` (or an `Authorization: Bearer` header) — verified against the same JWT_ADMIN_ACCESS_SECRET as every other admin route. A missing/invalid/non-admin token gets force-disconnected immediately, before joining the broadcast room.\n\nEvents broadcast to all connected admin sessions: `transaction.disputed` ({ transactionId, buyer, seller, amount, attempts }) and `transaction.stalled` ({ transactionId, buyer, seller, amount, thresholdDays }).\n\nIf using Postman's desktop app's dedicated Socket.IO request type (separate from this REST collection), point it at the URL/namespace/auth above manually."
+          },
+          "response": []
+        }
+      ]
     }
   ],
   "variable": [
@@ -1822,7 +2541,32 @@
       "type": "string"
     },
     {
+      "key": "otpToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "resetToken",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "adminAccessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "adminRefreshToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "adminOtpToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "adminResetToken",
       "value": "",
       "type": "string"
     },

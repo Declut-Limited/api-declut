@@ -49,7 +49,12 @@ class GeoPoint {
  */
 @Schema({ timestamps: true })
 export class Listing {
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
   seller: Types.ObjectId;
 
   @Prop({ required: true, trim: true, maxlength: 120 })
@@ -70,7 +75,11 @@ export class Listing {
   // Cloudinary URLs — the mobile app uploads directly to Cloudinary using a
   // signed payload from GET /listings/upload-signature, then sends us the
   // resulting URLs. We never receive or store raw image bytes.
-  @Prop({ type: [String], required: true, validate: (v: string[]) => v.length > 0 })
+  @Prop({
+    type: [String],
+    required: true,
+    validate: (v: string[]) => v.length > 0,
+  })
   images: string[];
 
   @Prop({ type: GeoPoint, required: true })

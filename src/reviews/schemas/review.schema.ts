@@ -10,7 +10,12 @@ export enum ReviewerRole {
 
 @Schema({ timestamps: { createdAt: true, updatedAt: false } })
 export class Review {
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Transaction', required: true, index: true })
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'Transaction',
+    required: true,
+    index: true,
+  })
   transaction: Types.ObjectId;
 
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Listing', required: true })
@@ -19,7 +24,12 @@ export class Review {
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true })
   reviewer: Types.ObjectId;
 
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
   reviewee: Types.ObjectId;
 
   // Derived server-side from which party the reviewer is on the

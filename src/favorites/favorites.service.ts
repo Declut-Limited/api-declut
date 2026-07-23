@@ -30,7 +30,10 @@ export class FavoritesService {
     return { favorited: true };
   }
 
-  async remove(userId: string, listingId: string): Promise<{ favorited: false }> {
+  async remove(
+    userId: string,
+    listingId: string,
+  ): Promise<{ favorited: false }> {
     if (!isValidObjectId(listingId)) {
       throw new NotFoundException('Listing not found');
     }
@@ -47,14 +50,19 @@ export class FavoritesService {
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
-      .populate({ path: 'listing', match: { status: { $ne: ListingStatus.DELETED } } })
+      .populate({
+        path: 'listing',
+        match: { status: { $ne: ListingStatus.DELETED } },
+      })
       .exec();
 
     // A favorited listing may since have been soft-deleted — populate's
     // match option resolves those to null, filtered out here rather than
     // showing a dangling reference.
     return {
-      results: favorites.filter((f) => f.listing !== null).map((f) => f.listing),
+      results: favorites
+        .filter((f) => f.listing !== null)
+        .map((f) => f.listing),
       page,
       limit,
     };

@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
-import { UserRole } from '../users/schemas/user.schema';
 import { ListingsService } from '../listings/listings.service';
 import { ListingStatus } from '../listings/schemas/listing.schema';
 import { TransactionsService } from '../transactions/transactions.service';
@@ -30,16 +29,12 @@ export class AdminService {
     private readonly trustScoreService: TrustScoreService,
   ) {}
 
-  listUsers(page: number, limit: number, role?: UserRole) {
-    return this.usersService.adminListUsers(page, limit, role);
+  listUsers(page: number, limit: number) {
+    return this.usersService.adminListUsers(page, limit);
   }
 
   getUser(userId: string) {
     return this.usersService.getPrivateProfile(userId);
-  }
-
-  promoteToAdmin(userId: string) {
-    return this.usersService.promoteToAdmin(userId);
   }
 
   async overrideKycStatus(userId: string, status: KycStatus) {

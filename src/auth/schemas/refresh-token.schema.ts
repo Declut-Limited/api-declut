@@ -5,7 +5,12 @@ export type RefreshTokenDocument = HydratedDocument<RefreshToken>;
 
 @Schema({ timestamps: true })
 export class RefreshToken {
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
   user: Types.ObjectId;
 
   // Unique id embedded in the JWT's `jti` claim — lets us look this document

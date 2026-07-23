@@ -7,7 +7,9 @@ import { ListingsModule } from '../listings/listings.module';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: Favorite.name, schema: FavoriteSchema }]),
+    MongooseModule.forFeature([
+      { name: Favorite.name, schema: FavoriteSchema },
+    ]),
     ListingsModule,
   ],
   controllers: [FavoritesController],

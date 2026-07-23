@@ -127,7 +127,13 @@ export class ReviewsService {
       count: number;
     }>([
       { $match: { reviewee: new Types.ObjectId(userId) } },
-      { $group: { _id: null, avgRating: { $avg: '$rating' }, count: { $sum: 1 } } },
+      {
+        $group: {
+          _id: null,
+          avgRating: { $avg: '$rating' },
+          count: { $sum: 1 },
+        },
+      },
     ]);
 
     const avgRating = stats[0]?.avgRating ?? 0;

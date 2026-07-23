@@ -1,4 +1,9 @@
-import { Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
@@ -26,6 +31,19 @@ export class KycService {
   ) {}
 
   async verify(userId: string, dto: VerifyKycDto) {
+    // Per the intended signup flow (verify email -> KYC), KYC is gated on
+    // having a verified email — an unverified-email account shouldn't be
+    // able to reach NIN/liveness verification at all.
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (!user.emailVerified) {
+      throw new BadRequestException(
+        'Please verify your email before starting KYC verification',
+      );
+    }
+
     await this.usersService.setKycStatus(userId, KycStatus.PENDING);
 
     let result;
@@ -69,11 +87,14 @@ export class KycService {
     }
 
     await this.notificationsService.notifyUser(userId, {
-      title: result.status === 'verified' ? 'KYC verified' : 'KYC verification failed',
+      title:
+        result.status === 'verified'
+          ? 'KYC verified'
+          : 'KYC verification failed',
       body:
         result.status === 'verified'
           ? 'Your identity has been verified.'
-          : 'We couldn\'t verify your identity — you can try again.',
+          : "We couldn't verify your identity — you can try again.",
       data: { type: 'kyc_status_change', status: result.status },
     });
 

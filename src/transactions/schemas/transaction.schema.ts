@@ -16,13 +16,28 @@ export enum TransactionStatus {
 
 @Schema({ timestamps: true })
 export class Transaction {
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Listing', required: true, index: true })
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'Listing',
+    required: true,
+    index: true,
+  })
   listing: Types.ObjectId;
 
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
   buyer: Types.ObjectId;
 
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
   seller: Types.ObjectId;
 
   // Set only if this transaction was seeded from an accepted negotiation

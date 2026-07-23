@@ -15,7 +15,12 @@ export enum KycVerificationStatus {
  */
 @Schema({ timestamps: { createdAt: true, updatedAt: false } })
 export class KycVerification {
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
   user: Types.ObjectId;
 
   @Prop({ required: true, default: 'qoreid' })
@@ -33,4 +38,5 @@ export class KycVerification {
   createdAt: Date;
 }
 
-export const KycVerificationSchema = SchemaFactory.createForClass(KycVerification);
+export const KycVerificationSchema =
+  SchemaFactory.createForClass(KycVerification);

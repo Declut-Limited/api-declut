@@ -8,7 +8,12 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, isValidObjectId } from 'mongoose';
-import { Offer, OfferDocument, OfferProposer, OfferStatus } from './schemas/offer.schema';
+import {
+  Offer,
+  OfferDocument,
+  OfferProposer,
+  OfferStatus,
+} from './schemas/offer.schema';
 import { ListingsService } from '../listings/listings.service';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { CounterOfferDto } from './dto/counter-offer.dto';
@@ -28,7 +33,9 @@ export class OffersService {
     const listing = await this.listingsService.findById(dto.listingId);
 
     if (listing.seller.toString() === buyerId) {
-      throw new BadRequestException('You cannot make an offer on your own listing');
+      throw new BadRequestException(
+        'You cannot make an offer on your own listing',
+      );
     }
 
     const existingPending = await this.offerModel.findOne({
@@ -71,7 +78,12 @@ export class OffersService {
     offer.status = OfferStatus.ACCEPTED;
     await offer.save();
 
-    await this.notifyProposer(offer, 'offer_accepted', 'Offer accepted', 'Your offer was accepted — proceed to checkout.');
+    await this.notifyProposer(
+      offer,
+      'offer_accepted',
+      'Offer accepted',
+      'Your offer was accepted — proceed to checkout.',
+    );
     return offer;
   }
 
@@ -80,7 +92,12 @@ export class OffersService {
     offer.status = OfferStatus.REJECTED;
     await offer.save();
 
-    await this.notifyProposer(offer, 'offer_rejected', 'Offer rejected', 'Your offer was rejected.');
+    await this.notifyProposer(
+      offer,
+      'offer_rejected',
+      'Offer rejected',
+      'Your offer was rejected.',
+    );
     return offer;
   }
 
@@ -95,7 +112,9 @@ export class OffersService {
     await offer.save();
 
     const counterProposer =
-      offer.proposedBy === OfferProposer.BUYER ? OfferProposer.SELLER : OfferProposer.BUYER;
+      offer.proposedBy === OfferProposer.BUYER
+        ? OfferProposer.SELLER
+        : OfferProposer.BUYER;
 
     const newOffer = await this.offerModel.create({
       listing: offer.listing,
@@ -126,7 +145,7 @@ export class OffersService {
       offer.proposedBy === OfferProposer.BUYER ? offer.buyer : offer.seller;
 
     if (proposerId.toString() !== userId) {
-      throw new ForbiddenException('Only the offer\'s proposer can withdraw it');
+      throw new ForbiddenException("Only the offer's proposer can withdraw it");
     }
     if (offer.status !== OfferStatus.PENDING) {
       throw new BadRequestException('Only a pending offer can be withdrawn');
@@ -205,22 +224,32 @@ export class OffersService {
 
   private async findParty(id: string, userId: string): Promise<OfferDocument> {
     const offer = await this.findActive(id);
-    if (offer.buyer.toString() !== userId && offer.seller.toString() !== userId) {
+    if (
+      offer.buyer.toString() !== userId &&
+      offer.seller.toString() !== userId
+    ) {
       throw new ForbiddenException('You are not a party to this offer');
     }
     return offer;
   }
 
-  private async findRespondable(id: string, userId: string): Promise<OfferDocument> {
+  private async findRespondable(
+    id: string,
+    userId: string,
+  ): Promise<OfferDocument> {
     const offer = await this.findParty(id, userId);
 
     const responderId =
       offer.proposedBy === OfferProposer.BUYER ? offer.seller : offer.buyer;
     if (responderId.toString() !== userId) {
-      throw new ForbiddenException('It is not your turn to respond to this offer');
+      throw new ForbiddenException(
+        'It is not your turn to respond to this offer',
+      );
     }
     if (offer.status !== OfferStatus.PENDING) {
-      throw new BadRequestException(`Offer is ${offer.status}, no longer actionable`);
+      throw new BadRequestException(
+        `Offer is ${offer.status}, no longer actionable`,
+      );
     }
 
     return offer;

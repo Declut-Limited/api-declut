@@ -34,7 +34,8 @@ export class TransactionsService {
   private readonly logger = new Logger(TransactionsService.name);
 
   constructor(
-    @InjectModel(Transaction.name) private transactionModel: Model<TransactionDocument>,
+    @InjectModel(Transaction.name)
+    private transactionModel: Model<TransactionDocument>,
     @InjectModel(AuditLog.name) private auditLogModel: Model<AuditLogDocument>,
     private readonly listingsService: ListingsService,
     private readonly offersService: OffersService,
@@ -109,7 +110,10 @@ export class TransactionsService {
     }
 
     const reference = `declut_${randomUUID()}`;
-    const commissionPercentage = this.config.get<number>('COMMISSION_PERCENTAGE', 10);
+    const commissionPercentage = this.config.get<number>(
+      'COMMISSION_PERCENTAGE',
+      10,
+    );
 
     // Paystack call happens BEFORE the local record is persisted — if this
     // throws (Paystack down, bad request, whatever), there's nothing to
@@ -177,7 +181,8 @@ export class TransactionsService {
     }
 
     // Don't trust the webhook payload alone — re-verify server-to-server.
-    const verification = await this.paystackService.verifyTransaction(reference);
+    const verification =
+      await this.paystackService.verifyTransaction(reference);
     if (!verification.successful) {
       return;
     }
@@ -212,16 +217,26 @@ export class TransactionsService {
     await this.notificationsService.notifyUser(transaction.seller.toString(), {
       title: 'Payment received',
       body: `₦${transaction.amount.toLocaleString()} is now held in escrow — meet the buyer to complete the sale.`,
-      data: { type: 'payment_received', transactionId: transaction._id.toString() },
+      data: {
+        type: 'payment_received',
+        transactionId: transaction._id.toString(),
+      },
     });
     await this.notificationsService.notifyUser(transaction.buyer.toString(), {
       title: 'Payment confirmed',
       body: 'Your confirmation code is ready — share it with the seller at the meetup.',
-      data: { type: 'payment_received', transactionId: transaction._id.toString() },
+      data: {
+        type: 'payment_received',
+        transactionId: transaction._id.toString(),
+      },
     });
   }
 
-  async confirmCode(transactionId: string, sellerId: string, dto: ConfirmCodeDto) {
+  async confirmCode(
+    transactionId: string,
+    sellerId: string,
+    dto: ConfirmCodeDto,
+  ) {
     const transaction = await this.findRaw(transactionId);
     if (transaction.seller.toString() !== sellerId) {
       throw new ForbiddenException(
@@ -229,9 +244,10 @@ export class TransactionsService {
       );
     }
     if (
-      ![TransactionStatus.ESCROW_ACTIVE, TransactionStatus.AWAITING_INSPECTION].includes(
-        transaction.status,
-      )
+      ![
+        TransactionStatus.ESCROW_ACTIVE,
+        TransactionStatus.AWAITING_INSPECTION,
+      ].includes(transaction.status)
     ) {
       throw new BadRequestException(
         `Transaction is ${transaction.status}, code confirmation not available`,
@@ -246,12 +262,16 @@ export class TransactionsService {
     if (!seller?.bankCode || !seller.accountNumber || !seller.accountName) {
       // Shouldn't happen — create() already required these — but a
       // money-movement step should never assume, always re-check.
-      throw new InternalServerErrorException('Seller payout details are missing');
+      throw new InternalServerErrorException(
+        'Seller payout details are missing',
+      );
     }
 
-    const rawCommission = (transaction.amount * transaction.commissionPercentage) / 100;
+    const rawCommission =
+      (transaction.amount * transaction.commissionPercentage) / 100;
     const commissionAmount = Math.round(rawCommission * 100) / 100;
-    const sellerPayoutAmount = Math.round((transaction.amount - commissionAmount) * 100) / 100;
+    const sellerPayoutAmount =
+      Math.round((transaction.amount - commissionAmount) * 100) / 100;
 
     await this.paystackService.releaseToSeller({
       bankCode: seller.bankCode,
@@ -301,7 +321,9 @@ export class TransactionsService {
   async cancel(transactionId: string, buyerId: string) {
     const transaction = await this.findRaw(transactionId);
     if (transaction.buyer.toString() !== buyerId) {
-      throw new ForbiddenException('Only the buyer can cancel this transaction');
+      throw new ForbiddenException(
+        'Only the buyer can cancel this transaction',
+      );
     }
     if (transaction.status !== TransactionStatus.PENDING_PAYMENT) {
       throw new BadRequestException(
@@ -326,7 +348,10 @@ export class TransactionsService {
 
   async findForUser(transactionId: string, userId: string) {
     const transaction = await this.findRaw(transactionId);
-    if (transaction.buyer.toString() !== userId && transaction.seller.toString() !== userId) {
+    if (
+      transaction.buyer.toString() !== userId &&
+      transaction.seller.toString() !== userId
+    ) {
       throw new ForbiddenException('You are not a party to this transaction');
     }
     return this.toResponseShape(transaction, userId);
@@ -381,21 +406,29 @@ export class TransactionsService {
   async adminRelease(transactionId: string, adminId: string) {
     const transaction = await this.findRaw(transactionId);
     if (
-      ![TransactionStatus.STALLED, TransactionStatus.DISPUTED].includes(transaction.status)
+      ![TransactionStatus.STALLED, TransactionStatus.DISPUTED].includes(
+        transaction.status,
+      )
     ) {
       throw new BadRequestException(
         `Transaction is ${transaction.status} — admin release only applies to stalled or disputed transactions`,
       );
     }
 
-    const seller = await this.usersService.findById(transaction.seller.toString());
+    const seller = await this.usersService.findById(
+      transaction.seller.toString(),
+    );
     if (!seller?.bankCode || !seller.accountNumber || !seller.accountName) {
-      throw new InternalServerErrorException('Seller payout details are missing');
+      throw new InternalServerErrorException(
+        'Seller payout details are missing',
+      );
     }
 
-    const rawCommission = (transaction.amount * transaction.commissionPercentage) / 100;
+    const rawCommission =
+      (transaction.amount * transaction.commissionPercentage) / 100;
     const commissionAmount = Math.round(rawCommission * 100) / 100;
-    const sellerPayoutAmount = Math.round((transaction.amount - commissionAmount) * 100) / 100;
+    const sellerPayoutAmount =
+      Math.round((transaction.amount - commissionAmount) * 100) / 100;
 
     // Paystack call before the local write — same money-movement ordering
     // rule as confirmCode()'s release path.
@@ -445,7 +478,9 @@ export class TransactionsService {
   async adminRefund(transactionId: string, adminId: string, reason?: string) {
     const transaction = await this.findRaw(transactionId);
     if (
-      ![TransactionStatus.STALLED, TransactionStatus.DISPUTED].includes(transaction.status)
+      ![TransactionStatus.STALLED, TransactionStatus.DISPUTED].includes(
+        transaction.status,
+      )
     ) {
       throw new BadRequestException(
         `Transaction is ${transaction.status} — admin refund only applies to stalled or disputed transactions`,
@@ -494,12 +529,18 @@ export class TransactionsService {
   // gets flagged closer to the actual threshold instead of up to a day late.
   @Cron(CronExpression.EVERY_HOUR)
   async sweepStalledTransactions(): Promise<void> {
-    const thresholdDays = this.config.get<number>('ESCROW_STALLED_THRESHOLD_DAYS', 5);
+    const thresholdDays = this.config.get<number>(
+      'ESCROW_STALLED_THRESHOLD_DAYS',
+      5,
+    );
     const cutoff = new Date(Date.now() - thresholdDays * 24 * 60 * 60 * 1000);
 
     const stale = await this.transactionModel.find({
       status: {
-        $in: [TransactionStatus.ESCROW_ACTIVE, TransactionStatus.AWAITING_INSPECTION],
+        $in: [
+          TransactionStatus.ESCROW_ACTIVE,
+          TransactionStatus.AWAITING_INSPECTION,
+        ],
       },
       escrowActiveAt: { $lte: cutoff },
     });
@@ -521,14 +562,28 @@ export class TransactionsService {
         this.notificationsService.notifyUser(transaction.buyer.toString(), {
           title: 'Transaction stalled',
           body: 'This transaction has been inactive too long and was flagged for review.',
-          data: { type: 'transaction_stalled', transactionId: transaction._id.toString() },
+          data: {
+            type: 'transaction_stalled',
+            transactionId: transaction._id.toString(),
+          },
         }),
         this.notificationsService.notifyUser(transaction.seller.toString(), {
           title: 'Transaction stalled',
           body: 'This transaction has been inactive too long and was flagged for review.',
-          data: { type: 'transaction_stalled', transactionId: transaction._id.toString() },
+          data: {
+            type: 'transaction_stalled',
+            transactionId: transaction._id.toString(),
+          },
         }),
       ]);
+
+      this.notificationsService.notifyAdmins('transaction.stalled', {
+        transactionId: transaction._id.toString(),
+        buyer: transaction.buyer.toString(),
+        seller: transaction.seller.toString(),
+        amount: transaction.amount,
+        thresholdDays,
+      });
     }
 
     if (stale.length > 0) {
@@ -536,7 +591,10 @@ export class TransactionsService {
     }
   }
 
-  private async handleWrongCode(transaction: TransactionDocument, sellerId: string) {
+  private async handleWrongCode(
+    transaction: TransactionDocument,
+    sellerId: string,
+  ) {
     transaction.failedCodeAttempts += 1;
     const maxAttempts = this.config.get<number>('MAX_CODE_ATTEMPTS', 3);
     const oldStatus = transaction.status;
@@ -559,6 +617,14 @@ export class TransactionsService {
         this.trustScoreService.recalculate(transaction.buyer.toString()),
         this.trustScoreService.recalculate(transaction.seller.toString()),
       ]);
+
+      this.notificationsService.notifyAdmins('transaction.disputed', {
+        transactionId: transaction._id.toString(),
+        buyer: transaction.buyer.toString(),
+        seller: transaction.seller.toString(),
+        amount: transaction.amount,
+        attempts: transaction.failedCodeAttempts,
+      });
 
       throw new BadRequestException(
         'Too many failed attempts — this transaction has been flagged for admin review',
@@ -612,14 +678,18 @@ export class TransactionsService {
     return transaction;
   }
 
-  private toResponseShape(transaction: TransactionDocument, requesterId: string) {
+  private toResponseShape(
+    transaction: TransactionDocument,
+    requesterId: string,
+  ) {
     const obj = transaction.toObject();
     const isBuyer = transaction.buyer.toString() === requesterId;
     const showCode =
       isBuyer &&
-      [TransactionStatus.ESCROW_ACTIVE, TransactionStatus.AWAITING_INSPECTION].includes(
-        transaction.status,
-      );
+      [
+        TransactionStatus.ESCROW_ACTIVE,
+        TransactionStatus.AWAITING_INSPECTION,
+      ].includes(transaction.status);
     if (!showCode) {
       delete obj.confirmationCode;
     }

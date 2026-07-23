@@ -31,7 +31,10 @@ export class ListingsService {
       condition: dto.condition,
       price: dto.price,
       images: dto.images,
-      location: { type: 'Point', coordinates: [dto.location.lng, dto.location.lat] },
+      location: {
+        type: 'Point',
+        coordinates: [dto.location.lng, dto.location.lat],
+      },
       locationLabel: dto.locationLabel,
     });
   }
@@ -63,7 +66,8 @@ export class ListingsService {
     if (dto.condition !== undefined) listing.condition = dto.condition;
     if (dto.price !== undefined) listing.price = dto.price;
     if (dto.images !== undefined) listing.images = dto.images;
-    if (dto.locationLabel !== undefined) listing.locationLabel = dto.locationLabel;
+    if (dto.locationLabel !== undefined)
+      listing.locationLabel = dto.locationLabel;
     if (dto.location !== undefined) {
       listing.location = {
         type: 'Point',
@@ -157,7 +161,12 @@ export class ListingsService {
     page: number,
     limit: number,
     status?: ListingStatus,
-  ): Promise<{ results: ListingDocument[]; total: number; page: number; limit: number }> {
+  ): Promise<{
+    results: ListingDocument[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
     const filter = status ? { status } : {};
     const [results, total] = await Promise.all([
       this.listingModel
@@ -182,7 +191,10 @@ export class ListingsService {
     return listing;
   }
 
-  private async findOwned(id: string, userId: string): Promise<ListingDocument> {
+  private async findOwned(
+    id: string,
+    userId: string,
+  ): Promise<ListingDocument> {
     const listing = await this.findById(id);
     if (listing.seller.toString() !== userId) {
       throw new ForbiddenException('You do not own this listing');

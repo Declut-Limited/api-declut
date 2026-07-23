@@ -37,20 +37,29 @@ export class TransactionsController {
     @Req() req: RawBodyRequest<Request>,
     @Headers('x-paystack-signature') signature: string,
   ) {
-    await this.transactionsService.handlePaystackWebhook(req.rawBody!, signature);
+    await this.transactionsService.handlePaystackWebhook(
+      req.rawBody!,
+      signature,
+    );
     return { received: true };
   }
 
   @UseGuards(JwtAuthGuard)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post()
-  create(@CurrentUser() user: AccessTokenPayload, @Body() dto: CreateTransactionDto) {
+  create(
+    @CurrentUser() user: AccessTokenPayload,
+    @Body() dto: CreateTransactionDto,
+  ) {
     return this.transactionsService.create(user.sub, dto);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get()
-  list(@CurrentUser() user: AccessTokenPayload, @Query() dto: ListTransactionsDto) {
+  list(
+    @CurrentUser() user: AccessTokenPayload,
+    @Query() dto: ListTransactionsDto,
+  ) {
     return this.transactionsService.listForUser(user.sub, dto.page, dto.limit);
   }
 

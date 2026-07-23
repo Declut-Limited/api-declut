@@ -1,4 +1,13 @@
-import { Body, Controller, Delete, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { AdminService } from './admin.service';
 import {
   AdminListListingsDto,
@@ -8,29 +17,23 @@ import {
 } from './dto/admin-list.dto';
 import { SetKycStatusDto } from './dto/set-kyc-status.dto';
 import { AdminRefundDto } from './dto/admin-refund.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { AdminGuard } from '../auth/guards/admin.guard';
-import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import type { AccessTokenPayload } from '../auth/interfaces/jwt-payload.interface';
+import { AdminJwtAuthGuard } from '../admin-auth/guards/admin-jwt-auth.guard';
+import { CurrentAdmin } from '../admin-auth/decorators/current-admin.decorator';
+import type { AdminAccessTokenPayload } from '../admin-auth/interfaces/admin-jwt-payload.interface';
 
 @Controller('admin')
-@UseGuards(JwtAuthGuard, AdminGuard)
+@UseGuards(AdminJwtAuthGuard)
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
   @Get('users')
   listUsers(@Query() dto: AdminListUsersDto) {
-    return this.adminService.listUsers(dto.page ?? 1, dto.limit ?? 20, dto.role);
+    return this.adminService.listUsers(dto.page ?? 1, dto.limit ?? 20);
   }
 
   @Get('users/:id')
   getUser(@Param('id') id: string) {
     return this.adminService.getUser(id);
-  }
-
-  @Patch('users/:id/promote')
-  promoteToAdmin(@Param('id') id: string) {
-    return this.adminService.promoteToAdmin(id);
   }
 
   @Patch('users/:id/kyc')
@@ -40,7 +43,11 @@ export class AdminController {
 
   @Get('listings')
   listListings(@Query() dto: AdminListListingsDto) {
-    return this.adminService.listListings(dto.page ?? 1, dto.limit ?? 20, dto.status);
+    return this.adminService.listListings(
+      dto.page ?? 1,
+      dto.limit ?? 20,
+      dto.status,
+    );
   }
 
   @Get('listings/:id')
@@ -50,7 +57,11 @@ export class AdminController {
 
   @Get('transactions')
   listTransactions(@Query() dto: AdminListTransactionsDto) {
-    return this.adminService.listTransactions(dto.page ?? 1, dto.limit ?? 20, dto.status);
+    return this.adminService.listTransactions(
+      dto.page ?? 1,
+      dto.limit ?? 20,
+      dto.status,
+    );
   }
 
   @Get('transactions/:id')
@@ -60,7 +71,7 @@ export class AdminController {
 
   @Patch('transactions/:id/release')
   releaseTransaction(
-    @CurrentUser() admin: AccessTokenPayload,
+    @CurrentAdmin() admin: AdminAccessTokenPayload,
     @Param('id') id: string,
   ) {
     return this.adminService.releaseTransaction(id, admin.sub);
@@ -68,7 +79,7 @@ export class AdminController {
 
   @Patch('transactions/:id/refund')
   refundTransaction(
-    @CurrentUser() admin: AccessTokenPayload,
+    @CurrentAdmin() admin: AdminAccessTokenPayload,
     @Param('id') id: string,
     @Body() dto: AdminRefundDto,
   ) {

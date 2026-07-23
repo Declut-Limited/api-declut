@@ -1,16 +1,17 @@
-// One-time bootstrap for the very first admin account. CLAUDE.md flags this
-// as a real gap: POST /auth/register and POST /auth/google both
-// unconditionally set role: 'user', so no HTTP path can ever produce the
-// first admin — and PATCH /admin/users/:id/promote requires an admin to
-// already be logged in to call it. This script is the one-time manual DB
-// step that breaks the chicken-and-egg problem. Run it once per environment;
-// every admin after the first can be created via the promote endpoint.
+// One-time bootstrap for the very first admin account. Admin is now a
+// wholly separate Mongoose collection from User (see src/admin-auth) with
+// its own JWT secrets — there's no "promote a user" path anymore, and even
+// if there were, the very first admin still couldn't come from an
+// already-logged-in admin, since none exists yet. This script is the
+// one-time manual DB step that breaks that chicken-and-egg problem. Run it
+// once per environment; every admin after the first is created by an
+// already-authenticated admin via POST /admin/auth/sub-admins.
 //
 // Usage: npm run seed:admin -- <email> <password> [name]
 import 'dotenv/config';
 import * as mongoose from 'mongoose';
 import * as bcrypt from 'bcrypt';
-import { AuthProvider, UserRole, UserSchema } from '../src/users/schemas/user.schema';
+import { AdminSchema } from '../src/admin-auth/schemas/admin.schema';
 
 async function main() {
   const [, , email, password, name] = process.argv;
@@ -31,14 +32,14 @@ async function main() {
   }
 
   await mongoose.connect(mongoUri);
-  const UserModel = mongoose.model('User', UserSchema);
+  const AdminModel = mongoose.model('Admin', AdminSchema);
 
   const normalizedEmail = email.toLowerCase();
-  const existing = await UserModel.findOne({ email: normalizedEmail });
+  const existing = await AdminModel.findOne({ email: normalizedEmail });
   if (existing) {
     console.error(
-      `A user with email ${normalizedEmail} already exists (role: ${existing.get('role')}). ` +
-        'This script only bootstraps the FIRST admin — use PATCH /admin/users/:id/promote (as an existing admin) instead.',
+      `An admin with email ${normalizedEmail} already exists. ` +
+        'This script only bootstraps the FIRST admin — use POST /admin/auth/sub-admins (as an existing admin) instead.',
     );
     await mongoose.disconnect();
     process.exit(1);
@@ -47,12 +48,11 @@ async function main() {
   const saltRounds = Number(process.env.BCRYPT_SALT_ROUNDS) || 12;
   const passwordHash = await bcrypt.hash(password, saltRounds);
 
-  const admin = await UserModel.create({
+  const admin = await AdminModel.create({
     email: normalizedEmail,
     name: name || 'Admin',
     passwordHash,
-    authProvider: AuthProvider.EMAIL,
-    role: UserRole.ADMIN,
+    // No createdBy — this is the root admin, nobody created it.
   });
 
   console.log(`Admin created: ${admin.get('email')} (${admin._id.toString()})`);

@@ -3,11 +3,6 @@ import { HydratedDocument } from 'mongoose';
 
 export type UserDocument = HydratedDocument<User>;
 
-export enum UserRole {
-  USER = 'user',
-  ADMIN = 'admin',
-}
-
 export enum AuthProvider {
   GOOGLE = 'google',
   EMAIL = 'email',
@@ -34,8 +29,15 @@ export class User {
   @Prop({ required: true, trim: true })
   name: string;
 
-  @Prop({ type: String, enum: UserRole, default: UserRole.USER })
-  role: UserRole;
+  // Required by RegisterDto for email/password signup (email + password +
+  // phone, per CLAUDE.md's Auth Architecture) — not required at the schema
+  // level because Google sign-in (POST /auth/google) only ever gives us
+  // email/name and was never asked to collect phone too. Sparse unique
+  // index mirrors googleId below: many documents with no phone don't
+  // collide on "null". Used as the alternate login identifier (email OR
+  // phone + password) for email/password accounts.
+  @Prop({ unique: true, sparse: true, trim: true })
+  phone?: string;
 
   @Prop({ type: String, enum: AuthProvider, required: true })
   authProvider: AuthProvider;
@@ -53,11 +55,17 @@ export class User {
   @Prop({ select: false })
   passwordHash?: string;
 
-  // Set by the KYC module (not built yet) — the field exists now so Users
-  // profile responses have somewhere to report status from day one.
-  // Admins are permanently exempt from KYC — gating logic in every module
-  // that checks this must skip role === 'admin' rather than relying on this
-  // ever becoming 'verified' for them.
+  // Signup-time OTP email verification (see AuthService.verifyEmail). Google
+  // accounts are implicitly trusted (Google already verified the email
+  // before issuing the ID token) and are created with this already true —
+  // there is no separate "verify your email" step for the Google path.
+  @Prop({ default: false })
+  emailVerified: boolean;
+
+  // KYC status for this marketplace user. Admin accounts are a wholly
+  // separate collection (see src/admin-auth/schemas/admin.schema.ts) and
+  // never have a User document at all, so there's no "admin bypasses KYC"
+  // special-casing needed here anymore — every User is a real buyer/seller.
   @Prop({ type: String, enum: KycStatus, default: KycStatus.UNVERIFIED })
   kycStatus: KycStatus;
 

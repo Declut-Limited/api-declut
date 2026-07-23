@@ -1,4 +1,12 @@
-import { Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { FavoritesService } from './favorites.service';
 import { ListFavoritesDto } from './dto/list-favorites.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -11,7 +19,10 @@ export class FavoritesController {
   constructor(private readonly favoritesService: FavoritesService) {}
 
   @Get()
-  list(@CurrentUser() user: AccessTokenPayload, @Query() dto: ListFavoritesDto) {
+  list(
+    @CurrentUser() user: AccessTokenPayload,
+    @Query() dto: ListFavoritesDto,
+  ) {
     return this.favoritesService.list(user.sub, dto);
   }
 

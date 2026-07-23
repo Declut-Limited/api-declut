@@ -1,4 +1,11 @@
-import { Body, Controller, Delete, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { RegisterDeviceTokenDto } from './dto/register-device-token.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -15,8 +22,8 @@ export class NotificationsController {
     @CurrentUser() user: AccessTokenPayload,
     @Body() dto: RegisterDeviceTokenDto,
   ) {
-    await this.notificationsService.registerToken(user.sub, dto.token, dto.platform);
-    return { registered: true };
+    await this.notificationsService.registerTokens(user.sub, dto.tokens);
+    return { registered: dto.tokens.length };
   }
 
   @Delete('token/:token')

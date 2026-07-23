@@ -23,7 +23,9 @@ import {
 export class QoreIdProvider implements KycProvider {
   constructor(private readonly config: ConfigService) {}
 
-  async verifyIdentity(input: KycVerificationInput): Promise<KycVerificationResult> {
+  async verifyIdentity(
+    input: KycVerificationInput,
+  ): Promise<KycVerificationResult> {
     const baseUrl = this.config.get<string>('QOREID_BASE_URL');
     const clientId = this.config.get<string>('QOREID_CLIENT_ID');
     const clientSecret = this.config.get<string>('QOREID_CLIENT_SECRET');
@@ -62,7 +64,9 @@ export class QoreIdProvider implements KycProvider {
     return {
       status: verified ? 'verified' : 'rejected',
       referenceId: data.referenceId,
-      failureReason: verified ? undefined : (data.reason ?? 'Verification failed'),
+      failureReason: verified
+        ? undefined
+        : (data.reason ?? 'Verification failed'),
     };
   }
 }

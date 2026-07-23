@@ -25,6 +25,32 @@ export const envValidationSchema = Joi.object({
     .default('30d'),
   BCRYPT_SALT_ROUNDS: Joi.number().default(12),
 
+  // Signs the stateless forgot-password OTP-session token AND the
+  // post-verification reset token for regular Users — distinct claims
+  // (`purpose`) differentiate the two within this one secret. Deliberately
+  // separate from JWT_ACCESS_SECRET/JWT_REFRESH_SECRET so a leak of one
+  // doesn't cross-contaminate the other, and separate from the admin
+  // equivalent below for the same reason.
+  JWT_PASSWORD_RESET_SECRET: Joi.string().min(32).required(),
+  OTP_EXPIRY_MINUTES: Joi.number().default(10),
+  PASSWORD_RESET_TOKEN_EXPIRY_MINUTES: Joi.number().default(15),
+
+  // Admin accounts are now a wholly separate Mongoose collection with their
+  // own JWT secrets — structurally impossible to forge an admin token from
+  // a compromised regular-user secret, or vice versa.
+  JWT_ADMIN_ACCESS_SECRET: Joi.string().min(32).required(),
+  JWT_ADMIN_ACCESS_EXPIRY: Joi.string()
+    .pattern(/^[0-9]+(ms|s|m|h|d|w|y)$/)
+    .default('15m'),
+  JWT_ADMIN_REFRESH_SECRET: Joi.string().min(32).required(),
+  JWT_ADMIN_REFRESH_EXPIRY: Joi.string()
+    .pattern(/^[0-9]+(ms|s|m|h|d|w|y)$/)
+    .default('30d'),
+  JWT_ADMIN_PASSWORD_RESET_SECRET: Joi.string().min(32).required(),
+
+  EMAIL_FROM: Joi.string().allow('').optional(),
+  EMAIL_FROM_NAME: Joi.string().default('Declut'),
+
   // Comma-separated OAuth client id(s) accepted as a valid audience when
   // verifying a Google ID token (e.g. iOS + Android + Web client ids).
   // Optional for now since we don't have real values yet — GoogleOAuthService

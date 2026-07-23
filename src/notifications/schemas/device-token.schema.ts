@@ -17,7 +17,12 @@ export enum DevicePlatform {
  */
 @Schema({ timestamps: { createdAt: true, updatedAt: false } })
 export class DeviceToken {
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
   user: Types.ObjectId;
 
   @Prop({ required: true, unique: true })

@@ -1,6 +1,5 @@
 import { Type } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, Max, Min } from 'class-validator';
-import { UserRole } from '../../users/schemas/user.schema';
 import { ListingStatus } from '../../listings/schemas/listing.schema';
 import { TransactionStatus } from '../../transactions/schemas/transaction.schema';
 
@@ -19,11 +18,7 @@ class PageDto {
   limit?: number = 20;
 }
 
-export class AdminListUsersDto extends PageDto {
-  @IsOptional()
-  @IsEnum(UserRole)
-  role?: UserRole;
-}
+export class AdminListUsersDto extends PageDto {}
 
 export class AdminListListingsDto extends PageDto {
   @IsOptional()

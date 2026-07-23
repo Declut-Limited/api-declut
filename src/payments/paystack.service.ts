@@ -130,13 +130,18 @@ export class PaystackService {
     await this.request('/refund', 'POST', { transaction: reference });
   }
 
-  verifyWebhookSignature(rawBody: Buffer, signature: string | undefined): boolean {
+  verifyWebhookSignature(
+    rawBody: Buffer,
+    signature: string | undefined,
+  ): boolean {
     if (!signature) return false;
 
     const secretKey = this.config.get<string>('PAYSTACK_SECRET_KEY');
     if (!secretKey) return false;
 
-    const expected = createHmac('sha512', secretKey).update(rawBody).digest('hex');
+    const expected = createHmac('sha512', secretKey)
+      .update(rawBody)
+      .digest('hex');
 
     // Constant-time comparison — a naive === here would leak timing info
     // that could help an attacker guess a valid signature byte-by-byte.

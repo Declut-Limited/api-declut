@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { KycVerification, KycVerificationSchema } from './schemas/kyc-verification.schema';
+import {
+  KycVerification,
+  KycVerificationSchema,
+} from './schemas/kyc-verification.schema';
 import { KycService } from './kyc.service';
 import { KycController } from './kyc.controller';
 import { KYC_PROVIDER } from './providers/kyc-provider.interface';

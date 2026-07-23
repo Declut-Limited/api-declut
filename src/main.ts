@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 import { ConfigService } from '@nestjs/config';
 import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
@@ -16,6 +17,10 @@ async function bootstrap() {
     rawBody: true,
   });
   const config = app.get(ConfigService);
+
+  // Explicit rather than relying on Nest's default — makes the WS
+  // transport for AdminNotificationsGateway unambiguous.
+  app.useWebSocketAdapter(new IoAdapter(app));
 
   app.use(helmet());
 

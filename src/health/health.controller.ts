@@ -8,7 +8,12 @@ export class HealthController {
 
   @Get()
   check() {
-    const mongoStates = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+    const mongoStates = [
+      'disconnected',
+      'connected',
+      'connecting',
+      'disconnecting',
+    ];
     return {
       status: 'ok',
       mongo: mongoStates[this.connection.readyState] ?? 'unknown',

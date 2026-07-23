@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ReviewsService } from './reviews.service';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { ListReviewsDto } from './dto/list-reviews.dto';
@@ -12,7 +20,10 @@ export class ReviewsController {
   constructor(private readonly reviewsService: ReviewsService) {}
 
   @Post()
-  create(@CurrentUser() user: AccessTokenPayload, @Body() dto: CreateReviewDto) {
+  create(
+    @CurrentUser() user: AccessTokenPayload,
+    @Body() dto: CreateReviewDto,
+  ) {
     return this.reviewsService.create(user.sub, dto);
   }
 

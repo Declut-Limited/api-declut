@@ -7,6 +7,7 @@ import { TransactionsModule } from '../transactions/transactions.module';
 import { OffersModule } from '../offers/offers.module';
 import { ReviewsModule } from '../reviews/reviews.module';
 import { TrustScoreModule } from '../trust-score/trust-score.module';
+import { AdminAuthModule } from '../admin-auth/admin-auth.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { TrustScoreModule } from '../trust-score/trust-score.module';
     OffersModule,
     ReviewsModule,
     TrustScoreModule,
+    AdminAuthModule,
   ],
   controllers: [AdminController],
   providers: [AdminService],

@@ -10,7 +10,12 @@ export type AuditLogDocument = HydratedDocument<AuditLog>;
  */
 @Schema({ timestamps: { createdAt: true, updatedAt: false } })
 export class AuditLog {
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Transaction', required: true, index: true })
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'Transaction',
+    required: true,
+    index: true,
+  })
   transaction: Types.ObjectId;
 
   @Prop({ required: true })

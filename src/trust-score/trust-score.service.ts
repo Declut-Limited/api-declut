@@ -33,7 +33,8 @@ const MS_PER_MONTH = 1000 * 60 * 60 * 24 * 30;
 export class TrustScoreService {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
-    @InjectModel(Transaction.name) private transactionModel: Model<TransactionDocument>,
+    @InjectModel(Transaction.name)
+    private transactionModel: Model<TransactionDocument>,
   ) {}
 
   async recalculate(userId: string): Promise<void> {
@@ -65,7 +66,8 @@ export class TrustScoreService {
     const accountAgeMonths = (Date.now() - createdAt.getTime()) / MS_PER_MONTH;
     const agePoints = Math.min(accountAgeMonths, 10);
 
-    const raw = kycPoints + transactionPoints + ratingPoints - disputePenalty + agePoints;
+    const raw =
+      kycPoints + transactionPoints + ratingPoints - disputePenalty + agePoints;
     const trustScore = Math.max(0, Math.min(100, Math.round(raw)));
 
     await this.userModel.updateOne({ _id: userId }, { trustScore }).exec();
