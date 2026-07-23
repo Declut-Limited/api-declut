@@ -13,8 +13,6 @@ export const envValidationSchema = Joi.object({
 
   MONGODB_URI: Joi.string().required(),
 
-  ALLOWED_ORIGINS: Joi.string().required(),
-
   JWT_ACCESS_SECRET: Joi.string().min(32).required(),
   JWT_ACCESS_EXPIRY: Joi.string()
     .pattern(/^[0-9]+(ms|s|m|h|d|w|y)$/)
@@ -57,13 +55,12 @@ export const envValidationSchema = Joi.object({
   // throws a clear 500 if POST /auth/google is hit before this is set.
   GOOGLE_CLIENT_ID: Joi.string().allow('').optional(),
 
-  ESCROW_STALLED_THRESHOLD_DAYS: Joi.number().default(5),
-  COMMISSION_PERCENTAGE: Joi.number().default(10),
-  OFFER_EXPIRY_DAYS: Joi.number().default(3),
-  DEFAULT_SEARCH_RADIUS_KM: Joi.number().default(15),
-  // Not named in CLAUDE.md (just "a small number of failed attempts") —
-  // picked a default when building the Payments module.
-  MAX_CODE_ATTEMPTS: Joi.number().default(3),
+  // ESCROW_STALLED_THRESHOLD_DAYS, COMMISSION_PERCENTAGE, OFFER_EXPIRY_DAYS,
+  // DEFAULT_SEARCH_RADIUS_KM, and MAX_CODE_ATTEMPTS used to live here as env
+  // vars — moved to the DB-backed AppSettings singleton (src/settings/) on
+  // 2026-07-23 so admins can tune them at runtime via GET/PATCH
+  // /admin/settings without a redeploy. See SettingsService for the current
+  // defaults (unchanged from what these env vars used to default to).
 
   FIREBASE_PROJECT_ID: Joi.string().allow('').optional(),
   FIREBASE_CLIENT_EMAIL: Joi.string().allow('').optional(),

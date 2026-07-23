@@ -7,10 +7,19 @@ import {
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import type { Server, Socket } from 'socket.io';
+import type { Server, Socket as IoSocket } from 'socket.io';
 import type { AdminAccessTokenPayload } from '../admin-auth/interfaces/admin-jwt-payload.interface';
 
 const ADMIN_ROOM = 'admins';
+
+interface AdminSocketData {
+  adminId?: string;
+}
+
+// socket.io types `Socket.data` as `any` unless the SocketData generic is
+// given — this pins it to a real shape so client.data.adminId below is a
+// checked assignment, not an unsafe any-access.
+type Socket = IoSocket<any, any, any, AdminSocketData>;
 
 /**
  * Admin-only live notifications (new dispute, transaction stalled, etc.) —

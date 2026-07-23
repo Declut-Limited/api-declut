@@ -5,7 +5,6 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, isValidObjectId } from 'mongoose';
 import {
@@ -19,6 +18,7 @@ import { CreateOfferDto } from './dto/create-offer.dto';
 import { CounterOfferDto } from './dto/counter-offer.dto';
 import { ListOffersDto } from './dto/list-offers.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { SettingsService } from '../settings/settings.service';
 
 @Injectable()
 export class OffersService {
@@ -26,7 +26,7 @@ export class OffersService {
     @InjectModel(Offer.name) private offerModel: Model<OfferDocument>,
     private readonly listingsService: ListingsService,
     private readonly notificationsService: NotificationsService,
-    private readonly config: ConfigService,
+    private readonly settingsService: SettingsService,
   ) {}
 
   async create(buyerId: string, dto: CreateOfferDto): Promise<OfferDocument> {
@@ -56,7 +56,7 @@ export class OffersService {
       amount: dto.amount,
       proposedBy: OfferProposer.BUYER,
       status: OfferStatus.PENDING,
-      expiresAt: this.computeExpiry(),
+      expiresAt: await this.computeExpiry(),
     });
 
     await this.notificationsService.notifyUser(listing.seller.toString(), {
@@ -124,7 +124,7 @@ export class OffersService {
       proposedBy: counterProposer,
       parentOffer: offer._id,
       status: OfferStatus.PENDING,
-      expiresAt: this.computeExpiry(),
+      expiresAt: await this.computeExpiry(),
     });
 
     // Whoever DIDN'T make this counter is the one who now needs to respond.
@@ -198,9 +198,11 @@ export class OffersService {
     });
   }
 
-  private computeExpiry(): Date {
-    const days = this.config.get<number>('OFFER_EXPIRY_DAYS', 3);
-    return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+  private async computeExpiry(): Promise<Date> {
+    const settings = await this.settingsService.get();
+    return new Date(
+      Date.now() + settings.offerExpiryDays * 24 * 60 * 60 * 1000,
+    );
   }
 
   // Lazily expires a stale pending offer on read/action rather than a

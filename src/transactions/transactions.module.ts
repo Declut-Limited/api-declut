@@ -10,6 +10,7 @@ import { PaymentsModule } from '../payments/payments.module';
 import { UsersModule } from '../users/users.module';
 import { TrustScoreModule } from '../trust-score/trust-score.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { SettingsModule } from '../settings/settings.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     UsersModule,
     TrustScoreModule,
     NotificationsModule,
+    SettingsModule,
   ],
   controllers: [TransactionsController],
   providers: [TransactionsService],

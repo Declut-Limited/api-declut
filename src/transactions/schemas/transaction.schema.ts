@@ -49,8 +49,9 @@ export class Transaction {
   @Prop({ required: true, min: 0 })
   amount: number;
 
-  // Snapshotted at creation so a later change to COMMISSION_PERCENTAGE
-  // never retroactively changes an in-flight or historical transaction.
+  // Snapshotted at creation so a later admin change to the platform-wide
+  // commissionPercentage setting never retroactively changes an in-flight
+  // or historical transaction.
   @Prop({ required: true })
   commissionPercentage: number;
 

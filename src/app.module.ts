@@ -21,6 +21,7 @@ import { ReviewsModule } from './reviews/reviews.module';
 import { TrustScoreModule } from './trust-score/trust-score.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AdminModule } from './admin/admin.module';
+import { SettingsModule } from './settings/settings.module';
 
 @Module({
   imports: [
@@ -67,6 +68,7 @@ import { AdminModule } from './admin/admin.module';
     TrustScoreModule,
     NotificationsModule,
     AdminModule,
+    SettingsModule,
   ],
   providers: [
     // APP_GUARD/APP_FILTER/APP_INTERCEPTOR are Nest's tokens for registering

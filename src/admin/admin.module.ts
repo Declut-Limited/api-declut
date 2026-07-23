@@ -8,6 +8,7 @@ import { OffersModule } from '../offers/offers.module';
 import { ReviewsModule } from '../reviews/reviews.module';
 import { TrustScoreModule } from '../trust-score/trust-score.module';
 import { AdminAuthModule } from '../admin-auth/admin-auth.module';
+import { SettingsModule } from '../settings/settings.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { AdminAuthModule } from '../admin-auth/admin-auth.module';
     ReviewsModule,
     TrustScoreModule,
     AdminAuthModule,
+    SettingsModule,
   ],
   controllers: [AdminController],
   providers: [AdminService],

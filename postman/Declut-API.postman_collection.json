@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "a2f1b6e0-declut-api-collection-0001",
     "name": "Declut API",
-    "description": "Declut — trust-first escrow marketplace API for buying/selling pre-owned household items. NestJS + MongoDB. Payment is held in escrow until a buyer-held confirmation code is entered by the seller at the meetup.\n\nAUTH PATTERN (regular users): every protected route expects `Authorization: Bearer {{accessToken}}`. Run Auth → Register (email + password + phone) or Auth → Login (identifier = email OR phone, + password) first — both auto-save `accessToken`/`refreshToken` into collection variables via a test script, so every other request in this collection picks them up automatically. When the access token expires (15m default), run Auth → Refresh Token. Register also auto-saves an `otpToken` for Auth → Verify Email (signup OTP) — verifying flips `emailVerified` to true, which KYC → Verify Identity requires before it will run. Forgot-password/OTP/reset-password tokens are the same kind of stateless JWT the client carries between steps — never stored server-side — and also auto-save into `otpToken`/`resetToken` via the Auth folder's requests.\n\nADMIN: Admin is a WHOLLY SEPARATE collection/identity from User, with its own JWT secrets — a regular accessToken will never work on an admin route, and vice versa. Bootstrap the first admin with `npm run seed:admin -- <email> <password> [name]` (see CLAUDE.md), then use Admin Auth → Admin login, which auto-saves `adminAccessToken`/`adminRefreshToken`. The Admin folder (acting on the marketplace) and Admin Auth folder (managing admin accounts themselves) both use `{{adminAccessToken}}`.\n\nREALTIME: admin-only live notifications (new dispute, stalled transaction) are delivered over a WebSocket (Socket.IO) gateway, not plain HTTP — see the Realtime (Admin WebSocket) folder for connection details, since Postman's standard REST collection format can't execute a Socket.IO connection directly.\n\nSet the `baseUrl` collection variable to wherever the API is running (defaults to http://localhost:3000).",
+    "description": "Declut — trust-first escrow marketplace API for buying/selling pre-owned household items. NestJS + MongoDB. Payment is held in escrow until a buyer-held confirmation code is entered by the seller at the meetup.\n\nAUTH PATTERN (regular users): every protected route expects `Authorization: Bearer {{accessToken}}`. Run Auth → Register (email + password + phone) or Auth → Login (identifier = email OR phone, + password) first — both auto-save `accessToken`/`refreshToken` into collection variables via a test script, so every other request in this collection picks them up automatically. When the access token expires (15m default), run Auth → Refresh Token. Register also auto-saves an `otpToken` for Auth → Verify Email (signup OTP) — verifying flips `emailVerified` to true, which KYC → Verify Identity requires before it will run. Forgot-password/OTP/reset-password tokens are the same kind of stateless JWT the client carries between steps — never stored server-side — and also auto-save into `otpToken`/`resetToken` via the Auth folder's requests.\n\nADMIN: Admin is a WHOLLY SEPARATE collection/identity from User, with its own JWT secrets — a regular accessToken will never work on an admin route, and vice versa. Bootstrap the first admin with `npm run seed:admin -- <email> <password> [name]` (see CLAUDE.md), then use Admin Auth → Admin login, which auto-saves `adminAccessToken`/`adminRefreshToken`. The Admin folder (acting on the marketplace) and Admin Auth folder (managing admin accounts themselves) both use `{{adminAccessToken}}`.\n\nREALTIME: admin-only live notifications (new dispute, stalled transaction) are delivered over a WebSocket (Socket.IO) gateway, not plain HTTP — see the Realtime (Admin WebSocket) folder for connection details, since Postman's standard REST collection format can't execute a Socket.IO connection directly.\n\nEvery HTTP route lives under /api (e.g. /api/auth/login) — the admin WebSocket gateway is the one exception, since setGlobalPrefix only affects the HTTP router, not Socket.IO namespaces. Set the `baseUrl` collection variable to wherever the API is running, including the /api prefix (defaults to http://localhost:3000/api).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -1695,7 +1695,7 @@
     },
     {
       "name": "Admin",
-      "description": "Acting ON the marketplace (users/listings/transactions/offers/reviews) — requires AdminJwtAuthGuard (the separate admin JWT, see the Admin Auth folder for how to obtain one). There is no \"promote a user\" path anymore — Admin is a wholly separate collection from User.",
+      "description": "Acting ON the marketplace (users/listings/transactions/offers/reviews) plus platform-wide App Settings — requires AdminJwtAuthGuard (the separate admin JWT, see the Admin Auth folder for how to obtain one). There is no \"promote a user\" path anymore — Admin is a wholly separate collection from User.",
       "item": [
         {
           "name": "List users",
@@ -2065,6 +2065,70 @@
               ]
             },
             "description": "Removes an abusive/violating review and recalculates the affected user's avgRating/reviewCount and trust score."
+          },
+          "response": []
+        },
+        {
+          "name": "Get app settings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAccessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "settings"
+              ]
+            },
+            "description": "Platform-wide tunables, DB-backed (no redeploy needed to change): escrowStalledThresholdDays, commissionPercentage, offerExpiryDays, defaultSearchRadiusKm, maxCodeAttempts. The very first call ever made creates the singleton document with defaults (5 / 10 / 3 / 15 / 3) if it doesn't exist yet — no separate seed step."
+          },
+          "response": []
+        },
+        {
+          "name": "Update app settings",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAccessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "settings"
+              ]
+            },
+            "description": "Partial update — every field optional, only send what you're changing. Bounds: commissionPercentage 0-100, the three day-counts are integers >=1, defaultSearchRadiusKm > 0. A Transaction snapshots commissionPercentage at checkout time, so changing it here never retroactively affects an in-flight or historical transaction.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"defaultSearchRadiusKm\": 20,\n  \"commissionPercentage\": 12\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "response": []
         }
@@ -2517,7 +2581,7 @@
                 "admin-notifications"
               ]
             },
-            "description": "NOT an HTTP request — Postman's standard v2.1 collection format has no native Socket.IO request type, so this entry exists purely as documentation (running it will 404, that's expected/harmless).\n\nConnect with a Socket.IO client to: `{{baseUrl}}` namespace `/admin-notifications` (e.g. `io(\"{{baseUrl}}/admin-notifications\", { auth: { token: adminAccessToken } })`).\n\nAuth happens at the handshake: pass the admin access token via `auth: { token }` (or an `Authorization: Bearer` header) — verified against the same JWT_ADMIN_ACCESS_SECRET as every other admin route. A missing/invalid/non-admin token gets force-disconnected immediately, before joining the broadcast room.\n\nEvents broadcast to all connected admin sessions: `transaction.disputed` ({ transactionId, buyer, seller, amount, attempts }) and `transaction.stalled` ({ transactionId, buyer, seller, amount, thresholdDays }).\n\nIf using Postman's desktop app's dedicated Socket.IO request type (separate from this REST collection), point it at the URL/namespace/auth above manually."
+            "description": "NOT an HTTP request — Postman's standard v2.1 collection format has no native Socket.IO request type, so this entry exists purely as documentation (running it will 404 against {{baseUrl}}/admin-notifications, that's expected/harmless — the URL field above is just a placeholder, not the real connection endpoint).\n\nConnect with a Socket.IO client to: `{{wsBaseUrl}}` (no /api prefix — setGlobalPrefix only affects the HTTP router, not Socket.IO namespaces) namespace `/admin-notifications` (e.g. `io(\"{{wsBaseUrl}}/admin-notifications\", { auth: { token: adminAccessToken } })`).\n\nAuth happens at the handshake: pass the admin access token via `auth: { token }` (or an `Authorization: Bearer` header) — verified against the same JWT_ADMIN_ACCESS_SECRET as every other admin route. A missing/invalid/non-admin token gets force-disconnected immediately, before joining the broadcast room.\n\nEvents broadcast to all connected admin sessions: `transaction.disputed` ({ transactionId, buyer, seller, amount, attempts }) and `transaction.stalled` ({ transactionId, buyer, seller, amount, thresholdDays }).\n\nIf using Postman's desktop app's dedicated Socket.IO request type (separate from this REST collection), point it at the wsBaseUrl/namespace/auth above manually."
           },
           "response": []
         }
@@ -2527,6 +2591,11 @@
   "variable": [
     {
       "key": "baseUrl",
+      "value": "http://localhost:3000/api",
+      "type": "string"
+    },
+    {
+      "key": "wsBaseUrl",
       "value": "http://localhost:3000",
       "type": "string"
     },

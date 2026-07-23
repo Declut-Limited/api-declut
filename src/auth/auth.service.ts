@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -16,7 +15,10 @@ import * as bcrypt from 'bcrypt';
 import type { StringValue } from 'ms';
 import { UsersService } from '../users/users.service';
 import { AuthProvider, UserDocument } from '../users/schemas/user.schema';
-import { GoogleOAuthService } from '../google/google-oauth.service';
+import {
+  GoogleIdentity,
+  GoogleOAuthService,
+} from '../google/google-oauth.service';
 import {
   RefreshToken,
   RefreshTokenDocument,
@@ -141,7 +143,7 @@ export class AuthService {
   }
 
   async googleAuth(dto: GoogleAuthDto): Promise<TokenPair> {
-    let identity;
+    let identity: GoogleIdentity;
     try {
       identity = await this.googleOAuth.verifyIdToken(dto.idToken);
     } catch (err) {

@@ -8,7 +8,6 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Model, isValidObjectId } from 'mongoose';
@@ -28,6 +27,12 @@ import { UsersService } from '../users/users.service';
 import { PaystackService } from '../payments/paystack.service';
 import { TrustScoreService } from '../trust-score/trust-score.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { SettingsService } from '../settings/settings.service';
+
+interface PaystackWebhookPayload {
+  event: string;
+  data?: { reference?: string };
+}
 
 @Injectable()
 export class TransactionsService {
@@ -43,7 +48,7 @@ export class TransactionsService {
     private readonly paystackService: PaystackService,
     private readonly trustScoreService: TrustScoreService,
     private readonly notificationsService: NotificationsService,
-    private readonly config: ConfigService,
+    private readonly settingsService: SettingsService,
   ) {}
 
   async create(buyerId: string, dto: CreateTransactionDto) {
@@ -110,10 +115,7 @@ export class TransactionsService {
     }
 
     const reference = `declut_${randomUUID()}`;
-    const commissionPercentage = this.config.get<number>(
-      'COMMISSION_PERCENTAGE',
-      10,
-    );
+    const { commissionPercentage } = await this.settingsService.get();
 
     // Paystack call happens BEFORE the local record is persisted — if this
     // throws (Paystack down, bad request, whatever), there's nothing to
@@ -160,12 +162,19 @@ export class TransactionsService {
       throw new UnauthorizedException('Invalid webhook signature');
     }
 
-    const payload = JSON.parse(rawBody.toString('utf8'));
+    const payload = JSON.parse(
+      rawBody.toString('utf8'),
+    ) as PaystackWebhookPayload;
     if (payload.event !== 'charge.success') {
       return;
     }
 
     const reference = payload.data?.reference;
+    if (!reference) {
+      this.logger.warn('Webhook payload missing data.reference — ignoring');
+      return;
+    }
+
     const transaction = await this.transactionModel.findOne({
       paystackReference: reference,
     });
@@ -524,15 +533,13 @@ export class TransactionsService {
     return this.toAdminResponseShape(transaction);
   }
 
-  // Runs hourly rather than daily — ESCROW_STALLED_THRESHOLD_DAYS is a
-  // count of days, but checking more often just means a stalled transaction
-  // gets flagged closer to the actual threshold instead of up to a day late.
+  // Runs hourly rather than daily — escrowStalledThresholdDays is a count
+  // of days, but checking more often just means a stalled transaction gets
+  // flagged closer to the actual threshold instead of up to a day late.
   @Cron(CronExpression.EVERY_HOUR)
   async sweepStalledTransactions(): Promise<void> {
-    const thresholdDays = this.config.get<number>(
-      'ESCROW_STALLED_THRESHOLD_DAYS',
-      5,
-    );
+    const { escrowStalledThresholdDays: thresholdDays } =
+      await this.settingsService.get();
     const cutoff = new Date(Date.now() - thresholdDays * 24 * 60 * 60 * 1000);
 
     const stale = await this.transactionModel.find({
@@ -596,7 +603,7 @@ export class TransactionsService {
     sellerId: string,
   ) {
     transaction.failedCodeAttempts += 1;
-    const maxAttempts = this.config.get<number>('MAX_CODE_ATTEMPTS', 3);
+    const { maxCodeAttempts: maxAttempts } = await this.settingsService.get();
     const oldStatus = transaction.status;
 
     if (transaction.failedCodeAttempts >= maxAttempts) {

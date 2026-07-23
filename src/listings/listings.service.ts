@@ -3,7 +3,6 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, isValidObjectId } from 'mongoose';
 import {
@@ -14,12 +13,13 @@ import {
 import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { SearchListingsDto } from './dto/search-listings.dto';
+import { SettingsService } from '../settings/settings.service';
 
 @Injectable()
 export class ListingsService {
   constructor(
     @InjectModel(Listing.name) private listingModel: Model<ListingDocument>,
-    private readonly config: ConfigService,
+    private readonly settingsService: SettingsService,
   ) {}
 
   create(sellerId: string, dto: CreateListingDto): Promise<ListingDocument> {
@@ -119,10 +119,10 @@ export class ListingsService {
     // our other filters into its own `query` option (Mongo supports $text
     // there too) rather than a separate $match.
     if (dto.lat !== undefined && dto.lng !== undefined) {
-      const radiusKm =
-        dto.radiusKm ?? this.config.get<number>('DEFAULT_SEARCH_RADIUS_KM', 15);
+      const settings = await this.settingsService.get();
+      const radiusKm = dto.radiusKm ?? settings.defaultSearchRadiusKm;
 
-      const results = await this.listingModel.aggregate([
+      const results = await this.listingModel.aggregate<ListingDocument>([
         {
           $geoNear: {
             near: { type: 'Point', coordinates: [dto.lng, dto.lat] },

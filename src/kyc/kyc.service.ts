@@ -12,7 +12,10 @@ import {
   KycVerificationStatus,
 } from './schemas/kyc-verification.schema';
 import { KYC_PROVIDER } from './providers/kyc-provider.interface';
-import type { KycProvider } from './providers/kyc-provider.interface';
+import type {
+  KycProvider,
+  KycVerificationResult,
+} from './providers/kyc-provider.interface';
 import { VerifyKycDto } from './dto/verify-kyc.dto';
 import { UsersService } from '../users/users.service';
 import { KycStatus } from '../users/schemas/user.schema';
@@ -46,7 +49,7 @@ export class KycService {
 
     await this.usersService.setKycStatus(userId, KycStatus.PENDING);
 
-    let result;
+    let result: KycVerificationResult;
     try {
       result = await this.kycProvider.verifyIdentity({
         nin: dto.nin,

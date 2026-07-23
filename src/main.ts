@@ -18,6 +18,12 @@ async function bootstrap() {
   });
   const config = app.get(ConfigService);
 
+  // Every HTTP route now lives under /api (e.g. /api/auth/login). This is
+  // Nest's HTTP router prefix only — it doesn't touch the WebSocket
+  // gateway, so AdminNotificationsGateway's /admin-notifications namespace
+  // is unaffected and stays exactly as documented.
+  app.setGlobalPrefix('api');
+
   // Explicit rather than relying on Nest's default — makes the WS
   // transport for AdminNotificationsGateway unambiguous.
   app.useWebSocketAdapter(new IoAdapter(app));
@@ -30,14 +36,8 @@ async function bootstrap() {
   // Nest's rawBody capture intact while raising the limit.
   app.useBodyParser('json', { limit: '20mb' });
 
-  const allowedOrigins = config
-    .get<string>('ALLOWED_ORIGINS', '')
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-
   app.enableCors({
-    origin: allowedOrigins,
+    origin: true,
     credentials: true,
   });
 
@@ -57,4 +57,4 @@ async function bootstrap() {
   const port = config.get<number>('PORT', 3000);
   await app.listen(port);
 }
-bootstrap();
+void bootstrap();

@@ -8,6 +8,8 @@ import { OffersService } from '../offers/offers.service';
 import { ReviewsService } from '../reviews/reviews.service';
 import { TrustScoreService } from '../trust-score/trust-score.service';
 import { KycStatus } from '../users/schemas/user.schema';
+import { SettingsService } from '../settings/settings.service';
+import { UpdateAppSettingsDto } from '../settings/dto/update-app-settings.dto';
 
 /**
  * Thin orchestration layer over services that already exist — every method
@@ -27,6 +29,7 @@ export class AdminService {
     private readonly offersService: OffersService,
     private readonly reviewsService: ReviewsService,
     private readonly trustScoreService: TrustScoreService,
+    private readonly settingsService: SettingsService,
   ) {}
 
   listUsers(page: number, limit: number) {
@@ -75,5 +78,13 @@ export class AdminService {
 
   removeReview(reviewId: string) {
     return this.reviewsService.adminRemove(reviewId);
+  }
+
+  getSettings() {
+    return this.settingsService.get();
+  }
+
+  updateSettings(dto: UpdateAppSettingsDto) {
+    return this.settingsService.update(dto);
   }
 }

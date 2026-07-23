@@ -17,6 +17,7 @@ import {
 } from './dto/admin-list.dto';
 import { SetKycStatusDto } from './dto/set-kyc-status.dto';
 import { AdminRefundDto } from './dto/admin-refund.dto';
+import { UpdateAppSettingsDto } from '../settings/dto/update-app-settings.dto';
 import { AdminJwtAuthGuard } from '../admin-auth/guards/admin-jwt-auth.guard';
 import { CurrentAdmin } from '../admin-auth/decorators/current-admin.decorator';
 import type { AdminAccessTokenPayload } from '../admin-auth/interfaces/admin-jwt-payload.interface';
@@ -95,5 +96,15 @@ export class AdminController {
   async removeReview(@Param('id') id: string) {
     await this.adminService.removeReview(id);
     return { removed: true };
+  }
+
+  @Get('settings')
+  getSettings() {
+    return this.adminService.getSettings();
+  }
+
+  @Patch('settings')
+  updateSettings(@Body() dto: UpdateAppSettingsDto) {
+    return this.adminService.updateSettings(dto);
   }
 }
