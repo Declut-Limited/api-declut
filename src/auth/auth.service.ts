@@ -468,7 +468,7 @@ export class AuthService {
     });
 
     // Dev convenience only — lets you complete the verify-email flow
-    this.logger.warn(
+    this.logger.log(
       `[DEV ONLY] Email verification OTP for user ${userId}: ${otp}`,
     );
 
