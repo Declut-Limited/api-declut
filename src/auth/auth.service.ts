@@ -466,6 +466,12 @@ export class AuthService {
       saltRounds: this.saltRounds(),
       purpose: 'email_verify',
     });
+
+    // Dev convenience only — lets you complete the verify-email flow
+    this.logger.warn(
+      `[DEV ONLY] Email verification OTP for user ${userId}: ${otp}`,
+    );
+
     return { otp, otpToken };
   }
 
