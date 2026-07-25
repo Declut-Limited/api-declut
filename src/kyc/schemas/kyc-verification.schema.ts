@@ -8,11 +8,13 @@ export enum KycVerificationStatus {
   REJECTED = 'rejected',
 }
 
-/**
- * Audit trail of verification attempts — deliberately holds only the
- * provider's result (pass/fail + reference id), never the selfie/ID photo
- * bytes themselves, per CLAUDE.md's KYC image handling rule.
- */
+export enum KycCheckStage {
+  NIN = 'nin',
+  LIVENESS = 'liveness',
+}
+
+// Audit trail only — pass/fail + reference id per attempt, never the
+// selfie/ID photo bytes themselves.
 @Schema({ timestamps: { createdAt: true, updatedAt: false } })
 export class KycVerification {
   @Prop({
@@ -25,6 +27,9 @@ export class KycVerification {
 
   @Prop({ required: true, default: 'qoreid' })
   provider: string;
+
+  @Prop({ type: String, enum: KycCheckStage, required: true })
+  stage: KycCheckStage;
 
   @Prop({ type: String, enum: KycVerificationStatus, required: true })
   status: KycVerificationStatus;

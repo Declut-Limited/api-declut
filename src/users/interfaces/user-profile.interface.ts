@@ -9,6 +9,7 @@ export interface PrivateUserProfile {
   authProvider: AuthProvider;
   emailVerified: boolean;
   kycStatus: KycStatus;
+  kyc: { verifiedNIN: boolean; livenessChecked: boolean };
   trustScore: number;
   avgRating: number;
   reviewCount: number;

@@ -12,10 +12,6 @@ import { randomUUID } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import type { StringValue } from 'ms';
 import { Admin, AdminDocument } from './schemas/admin.schema';
-import {
-  AdminRefreshToken,
-  AdminRefreshTokenDocument,
-} from './schemas/admin-refresh-token.schema';
 import { AdminLoginDto } from './dto/admin-login.dto';
 import { CreateSubAdminDto } from './dto/create-sub-admin.dto';
 import { AdminRefreshTokenDto } from './dto/admin-refresh-token.dto';
@@ -26,6 +22,10 @@ import { AdminResetPasswordDto } from './dto/admin-reset-password.dto';
 import { AdminChangePasswordDto } from './dto/admin-change-password.dto';
 import { AdminRefreshTokenPayload } from './interfaces/admin-jwt-payload.interface';
 import { PasswordResetTokenService } from '../auth/password-reset-token.service';
+import {
+  hashRefreshToken,
+  refreshTokenMatches,
+} from '../auth/refresh-token-hash.util';
 import { EmailService } from '../email/email.service';
 
 export interface AdminTokenPair {
@@ -41,21 +41,12 @@ export interface AdminProfile {
   createdAt: Date;
 }
 
-/**
- * Structurally identical shape to AuthService (login/refresh/logout,
- * stateless forgot-password/OTP/reset-password) but operating on the
- * separate Admin collection with its own JWT secrets — see
- * src/auth/password-reset-token.service.ts's doc comment for why the
- * reset/OTP tokens are never stored in the DB, and CLAUDE.md's "Admin Auth
- * Model" section for why this is a fully separate stack rather than a role
- * flag on User.
- */
+// Mirrors AuthService (login/refresh/logout, stateless forgot-password/OTP)
+// but on the separate Admin collection with its own JWT secrets.
 @Injectable()
 export class AdminAuthService {
   constructor(
     @InjectModel(Admin.name) private adminModel: Model<AdminDocument>,
-    @InjectModel(AdminRefreshToken.name)
-    private adminRefreshTokenModel: Model<AdminRefreshTokenDocument>,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
     private readonly passwordResetTokens: PasswordResetTokenService,
@@ -65,13 +56,13 @@ export class AdminAuthService {
   async login(dto: AdminLoginDto): Promise<AdminTokenPair> {
     const admin = await this.adminModel
       .findOne({ email: dto.email.toLowerCase() })
-      .select('+passwordHash')
+      .select('+password')
       .exec();
 
     if (!admin) {
       throw new UnauthorizedException('Invalid credentials');
     }
-    const matches = await bcrypt.compare(dto.password, admin.passwordHash);
+    const matches = await bcrypt.compare(dto.password, admin.password);
     if (!matches) {
       throw new UnauthorizedException('Invalid credentials');
     }
@@ -79,10 +70,6 @@ export class AdminAuthService {
     return this.issueTokens(admin);
   }
 
-  // No "first sub-admin" bootstrap problem here beyond what
-  // scripts/seed-admin.ts already solves — every admin after the seeded
-  // root is created by an already-authenticated admin via this method,
-  // gated by AdminJwtAuthGuard at the controller level.
   async createSubAdmin(
     creatorAdminId: string,
     dto: CreateSubAdminDto,
@@ -94,11 +81,11 @@ export class AdminAuthService {
       throw new ConflictException('An admin with this email already exists');
     }
 
-    const passwordHash = await bcrypt.hash(dto.password, this.saltRounds());
+    const password = await bcrypt.hash(dto.password, this.saltRounds());
     const admin = await this.adminModel.create({
       email: dto.email.toLowerCase(),
       name: dto.name,
-      passwordHash,
+      password,
       createdBy: creatorAdminId,
     });
 
@@ -116,23 +103,15 @@ export class AdminAuthService {
   async refresh(dto: AdminRefreshTokenDto): Promise<AdminTokenPair> {
     const payload = await this.verifyRefreshToken(dto.refreshToken);
 
-    const stored = await this.adminRefreshTokenModel.findOne({
-      jti: payload.jti,
-    });
-    if (!stored || stored.revokedAt || stored.expiresAt < new Date()) {
-      throw new UnauthorizedException('Invalid refresh token');
-    }
-
-    const matches = await bcrypt.compare(dto.refreshToken, stored.tokenHash);
-    if (!matches) {
-      throw new UnauthorizedException('Invalid refresh token');
-    }
-
-    stored.revokedAt = new Date();
-    await stored.save();
-
-    const admin = await this.adminModel.findById(payload.sub);
-    if (!admin) {
+    const admin = await this.adminModel
+      .findById(payload.sub)
+      .select('+refreshToken')
+      .exec();
+    if (
+      !admin?.refreshToken ||
+      admin.refreshToken.expiresAt < new Date() ||
+      !refreshTokenMatches(dto.refreshToken, admin.refreshToken.hashedToken)
+    ) {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
@@ -147,10 +126,9 @@ export class AdminAuthService {
       return;
     }
 
-    await this.adminRefreshTokenModel.updateOne(
-      { jti: payload.jti },
-      { revokedAt: new Date() },
-    );
+    await this.adminModel
+      .updateOne({ _id: payload.sub }, { $unset: { refreshToken: 1 } })
+      .exec();
   }
 
   private static readonly INERT_SUBJECT = '000000000000000000000000';
@@ -160,7 +138,7 @@ export class AdminAuthService {
   ): Promise<{ otpToken: string; message: string }> {
     const admin = await this.adminModel
       .findOne({ email: dto.email.toLowerCase() })
-      .select('+passwordHash')
+      .select('+password')
       .exec();
     const message =
       'If that email is registered, a verification code has been sent.';
@@ -249,7 +227,7 @@ export class AdminAuthService {
 
     const admin = await this.adminModel
       .findById(sub)
-      .select('+passwordHash')
+      .select('+password')
       .exec();
     if (!admin) {
       throw new UnauthorizedException('Invalid or expired code');
@@ -257,7 +235,7 @@ export class AdminAuthService {
 
     const resetToken = await this.passwordResetTokens.signResetToken({
       sub: admin._id.toString(),
-      passwordHash: admin.passwordHash,
+      passwordHash: admin.password,
       secret: this.passwordResetSecret(),
       expiresIn: this.resetTokenExpiry(),
     });
@@ -272,21 +250,20 @@ export class AdminAuthService {
     const admin = unverified?.sub
       ? await this.adminModel
           .findById(unverified.sub)
-          .select('+passwordHash')
+          .select('+password')
           .exec()
       : null;
 
     await this.passwordResetTokens.verifyResetToken(
       dto.resetToken,
-      admin?.passwordHash,
+      admin?.password,
       this.passwordResetSecret(),
     );
 
-    const passwordHash = await bcrypt.hash(dto.newPassword, this.saltRounds());
+    const password = await bcrypt.hash(dto.newPassword, this.saltRounds());
     await this.adminModel
-      .updateOne({ _id: admin!._id }, { passwordHash })
+      .updateOne({ _id: admin!._id }, { password, $unset: { refreshToken: 1 } })
       .exec();
-    await this.revokeAllRefreshTokens(admin!._id.toString());
 
     return { message: 'Password reset successfully. Please log in again.' };
   }
@@ -297,35 +274,26 @@ export class AdminAuthService {
   ): Promise<{ message: string }> {
     const admin = await this.adminModel
       .findById(adminId)
-      .select('+passwordHash')
+      .select('+password')
       .exec();
     if (!admin) {
       throw new UnauthorizedException('Admin not found');
     }
 
-    const matches = await bcrypt.compare(
-      dto.currentPassword,
-      admin.passwordHash,
-    );
+    const matches = await bcrypt.compare(dto.currentPassword, admin.password);
     if (!matches) {
       throw new UnauthorizedException('Current password is incorrect');
     }
 
-    const passwordHash = await bcrypt.hash(dto.newPassword, this.saltRounds());
-    await this.adminModel.updateOne({ _id: adminId }, { passwordHash }).exec();
-    await this.revokeAllRefreshTokens(adminId);
+    const password = await bcrypt.hash(dto.newPassword, this.saltRounds());
+    await this.adminModel
+      .updateOne({ _id: adminId }, { password, $unset: { refreshToken: 1 } })
+      .exec();
 
     return {
       message:
         'Password changed successfully. Please log in again on other devices.',
     };
-  }
-
-  private async revokeAllRefreshTokens(adminId: string): Promise<void> {
-    await this.adminRefreshTokenModel.updateMany(
-      { admin: adminId, revokedAt: { $exists: false } },
-      { revokedAt: new Date() },
-    );
   }
 
   private async verifyRefreshToken(
@@ -356,9 +324,8 @@ export class AdminAuthService {
       },
     );
 
-    const jti = randomUUID();
     const refreshToken = await this.jwtService.signAsync(
-      { sub: adminId, jti },
+      { sub: adminId, jti: randomUUID() },
       {
         secret: this.config.get<string>('JWT_ADMIN_REFRESH_SECRET'),
         expiresIn: this.config.get<string>(
@@ -368,14 +335,17 @@ export class AdminAuthService {
     );
 
     const decoded = this.jwtService.decode<{ exp: number }>(refreshToken);
-    const tokenHash = await bcrypt.hash(refreshToken, this.saltRounds());
-
-    await this.adminRefreshTokenModel.create({
-      admin: admin._id,
-      jti,
-      tokenHash,
-      expiresAt: new Date(decoded.exp * 1000),
-    });
+    await this.adminModel
+      .updateOne(
+        { _id: adminId },
+        {
+          refreshToken: {
+            hashedToken: hashRefreshToken(refreshToken),
+            expiresAt: new Date(decoded.exp * 1000),
+          },
+        },
+      )
+      .exec();
 
     return { accessToken, refreshToken };
   }

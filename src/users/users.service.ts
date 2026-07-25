@@ -21,11 +21,10 @@ export class UsersService {
     return this.userModel.findOne({ email: email.toLowerCase() }).exec();
   }
 
-  // Explicitly re-selects passwordHash since the schema excludes it by default.
   findByEmailWithPassword(email: string): Promise<UserDocument | null> {
     return this.userModel
       .findOne({ email: email.toLowerCase() })
-      .select('+passwordHash')
+      .select('+password')
       .exec();
   }
 
@@ -34,12 +33,10 @@ export class UsersService {
   }
 
   findByPhoneWithPassword(phone: string): Promise<UserDocument | null> {
-    return this.userModel.findOne({ phone }).select('+passwordHash').exec();
+    return this.userModel.findOne({ phone }).select('+password').exec();
   }
 
-  // Login accepts either an email or a phone number in the same field (per
-  // CLAUDE.md's Auth Architecture) — the '@' check is just format
-  // disambiguation, not validation (LoginDto already confirms the shape).
+  // identifier can be an email or a phone number — disambiguated by '@'.
   findByIdentifierWithPassword(
     identifier: string,
   ): Promise<UserDocument | null> {
@@ -56,24 +53,26 @@ export class UsersService {
     return this.userModel.findById(id).exec();
   }
 
-  // Explicitly re-selects passwordHash — used by change-password/reset-password,
-  // which both need to verify against (or fingerprint) the current hash.
   findByIdWithPassword(id: string): Promise<UserDocument | null> {
-    return this.userModel.findById(id).select('+passwordHash').exec();
+    return this.userModel.findById(id).select('+password').exec();
+  }
+
+  findByIdWithRefreshToken(id: string): Promise<UserDocument | null> {
+    return this.userModel.findById(id).select('+refreshToken').exec();
   }
 
   createEmailUser(params: {
     email: string;
     name: string;
     phone: string;
-    passwordHash: string;
+    password: string;
   }): Promise<UserDocument> {
     return this.userModel.create({
       email: params.email.toLowerCase(),
       name: params.name,
       phone: params.phone,
-      passwordHash: params.passwordHash,
-      authProvider: AuthProvider.EMAIL,
+      password: params.password,
+      authProvider: AuthProvider.EMAIL_PHONE,
       emailVerified: false,
     });
   }
@@ -88,8 +87,7 @@ export class UsersService {
       name: params.name,
       googleId: params.googleId,
       authProvider: AuthProvider.GOOGLE,
-      // Google already verified this email before issuing the ID token we
-      // checked in GoogleOAuthService — no signup-OTP step needed here.
+      // Google already verified the email — no signup-OTP step needed.
       emailVerified: true,
     });
   }
@@ -136,10 +134,22 @@ export class UsersService {
     await this.userModel.updateOne({ _id: userId }, { kycStatus }).exec();
   }
 
-  // Used by both in-app change-password and the stateless forgot-password/
-  // reset-password flow (see AuthService + PasswordResetTokenService).
-  async setPasswordHash(userId: string, passwordHash: string): Promise<void> {
-    await this.userModel.updateOne({ _id: userId }, { passwordHash }).exec();
+  async updateKycFlags(
+    userId: string,
+    flags: Partial<{ verifiedNIN: boolean; livenessChecked: boolean }>,
+  ): Promise<void> {
+    const update: Record<string, boolean> = {};
+    if (flags.verifiedNIN !== undefined) {
+      update['kyc.verifiedNIN'] = flags.verifiedNIN;
+    }
+    if (flags.livenessChecked !== undefined) {
+      update['kyc.livenessChecked'] = flags.livenessChecked;
+    }
+    await this.userModel.updateOne({ _id: userId }, update).exec();
+  }
+
+  async setPassword(userId: string, password: string): Promise<void> {
+    await this.userModel.updateOne({ _id: userId }, { password }).exec();
   }
 
   async setEmailVerified(userId: string): Promise<void> {
@@ -154,8 +164,40 @@ export class UsersService {
       .exec();
   }
 
-  // Called by ReviewsService after a review is created or removed — cached
-  // rather than computed live on every profile read.
+  async setRefreshToken(
+    userId: string,
+    refreshToken: { hashedToken: string; expiresAt: Date },
+  ): Promise<void> {
+    await this.userModel.updateOne({ _id: userId }, { refreshToken }).exec();
+  }
+
+  async clearRefreshToken(userId: string): Promise<void> {
+    await this.userModel
+      .updateOne({ _id: userId }, { $unset: { refreshToken: 1 } })
+      .exec();
+  }
+
+  async addDeviceTokens(userId: string, tokens: string[]): Promise<void> {
+    await this.userModel
+      .updateOne(
+        { _id: userId },
+        { $addToSet: { deviceTokens: { $each: tokens } } },
+      )
+      .exec();
+  }
+
+  async removeDeviceToken(userId: string, token: string): Promise<void> {
+    await this.userModel
+      .updateOne({ _id: userId }, { $pull: { deviceTokens: token } })
+      .exec();
+  }
+
+  async removeDeviceTokens(tokens: string[]): Promise<void> {
+    await this.userModel
+      .updateMany({}, { $pullAll: { deviceTokens: tokens } })
+      .exec();
+  }
+
   async setRatingStats(
     userId: string,
     avgRating: number,
@@ -201,6 +243,7 @@ export class UsersService {
       authProvider: user.authProvider,
       emailVerified: user.emailVerified,
       kycStatus: user.kycStatus,
+      kyc: user.kyc,
       trustScore: user.trustScore,
       avgRating: user.avgRating,
       reviewCount: user.reviewCount,

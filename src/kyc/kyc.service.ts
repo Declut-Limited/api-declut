@@ -7,18 +7,20 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
+  KycCheckStage,
   KycVerification,
   KycVerificationDocument,
   KycVerificationStatus,
 } from './schemas/kyc-verification.schema';
 import { KYC_PROVIDER } from './providers/kyc-provider.interface';
 import type {
+  KycCheckResult,
   KycProvider,
-  KycVerificationResult,
 } from './providers/kyc-provider.interface';
-import { VerifyKycDto } from './dto/verify-kyc.dto';
+import { VerifyNinDto } from './dto/verify-nin.dto';
+import { LivenessCheckDto } from './dto/liveness-check.dto';
 import { UsersService } from '../users/users.service';
-import { KycStatus } from '../users/schemas/user.schema';
+import { KycStatus, UserDocument } from '../users/schemas/user.schema';
 import { TrustScoreService } from '../trust-score/trust-score.service';
 import { NotificationsService } from '../notifications/notifications.service';
 
@@ -33,10 +35,38 @@ export class KycService {
     private readonly notificationsService: NotificationsService,
   ) {}
 
-  async verify(userId: string, dto: VerifyKycDto) {
-    // Per the intended signup flow (verify email -> KYC), KYC is gated on
-    // having a verified email — an unverified-email account shouldn't be
-    // able to reach NIN/liveness verification at all.
+  async verifyNin(userId: string, dto: VerifyNinDto) {
+    const user = await this.requireEmailVerified(userId);
+    const result = await this.kycProvider.verifyNin(dto.nin);
+    return this.recordCheck(
+      user,
+      KycCheckStage.NIN,
+      result,
+      result.status === 'verified',
+      user.kyc.livenessChecked,
+    );
+  }
+
+  async checkLiveness(userId: string, dto: LivenessCheckDto) {
+    const user = await this.requireEmailVerified(userId);
+    const result = await this.kycProvider.checkLiveness(dto.selfieImageBase64);
+    return this.recordCheck(
+      user,
+      KycCheckStage.LIVENESS,
+      result,
+      user.kyc.verifiedNIN,
+      result.status === 'verified',
+    );
+  }
+
+  history(userId: string): Promise<KycVerificationDocument[]> {
+    return this.kycVerificationModel
+      .find({ user: userId })
+      .sort({ createdAt: -1 })
+      .exec();
+  }
+
+  private async requireEmailVerified(userId: string): Promise<UserDocument> {
     const user = await this.usersService.findById(userId);
     if (!user) {
       throw new NotFoundException('User not found');
@@ -46,27 +76,21 @@ export class KycService {
         'Please verify your email before starting KYC verification',
       );
     }
+    return user;
+  }
 
-    await this.usersService.setKycStatus(userId, KycStatus.PENDING);
-
-    let result: KycVerificationResult;
-    try {
-      result = await this.kycProvider.verifyIdentity({
-        nin: dto.nin,
-        selfieImageBase64: dto.selfieImageBase64,
-      });
-    } catch (err) {
-      // A provider/config error is not the same as "this person failed
-      // verification" — leaving kycStatus at 'pending' would misleadingly
-      // suggest a check is still in progress. Revert to unverified so a
-      // retry is unambiguous, and no KycVerification record gets created
-      // for a call that never actually completed.
-      await this.usersService.setKycStatus(userId, KycStatus.UNVERIFIED);
-      throw err;
-    }
+  private async recordCheck(
+    user: UserDocument,
+    stage: KycCheckStage,
+    result: KycCheckResult,
+    verifiedNIN: boolean,
+    livenessChecked: boolean,
+  ) {
+    const userId = user._id.toString();
 
     await this.kycVerificationModel.create({
       user: userId,
+      stage,
       status:
         result.status === 'verified'
           ? KycVerificationStatus.VERIFIED
@@ -75,43 +99,43 @@ export class KycService {
       failureReason: result.failureReason,
     });
 
-    await this.usersService.setKycStatus(
-      userId,
-      result.status === 'verified' ? KycStatus.VERIFIED : KycStatus.REJECTED,
-    );
+    if (stage === KycCheckStage.NIN) {
+      await this.usersService.updateKycFlags(userId, {
+        verifiedNIN: result.status === 'verified',
+      });
+    } else {
+      await this.usersService.updateKycFlags(userId, {
+        livenessChecked: result.status === 'verified',
+      });
+    }
 
-    // Not one of CLAUDE.md's three listed trigger events (transaction
-    // completed / review created / dispute resolved), but KYC verified IS
-    // one of the formula's inputs — recalculating here avoids a freshly
-    // verified user's score sitting stale until their next transaction or
-    // review.
-    if (result.status === 'verified') {
+    const kycStatus =
+      result.status === 'rejected'
+        ? KycStatus.REJECTED
+        : verifiedNIN && livenessChecked
+          ? KycStatus.VERIFIED
+          : KycStatus.PENDING;
+    await this.usersService.setKycStatus(userId, kycStatus);
+
+    if (kycStatus === KycStatus.VERIFIED) {
       await this.trustScoreService.recalculate(userId);
     }
 
     await this.notificationsService.notifyUser(userId, {
       title:
-        result.status === 'verified'
-          ? 'KYC verified'
-          : 'KYC verification failed',
+        result.status === 'verified' ? 'KYC check passed' : 'KYC check failed',
       body:
         result.status === 'verified'
-          ? 'Your identity has been verified.'
-          : "We couldn't verify your identity — you can try again.",
-      data: { type: 'kyc_status_change', status: result.status },
+          ? `Your ${stage} check passed.`
+          : `Your ${stage} check failed — you can try again.`,
+      data: { type: 'kyc_status_change', stage, status: result.status },
     });
 
     return {
       status: result.status,
       referenceId: result.referenceId,
+      kycStatus,
       ...(result.failureReason && { failureReason: result.failureReason }),
     };
-  }
-
-  history(userId: string): Promise<KycVerificationDocument[]> {
-    return this.kycVerificationModel
-      .find({ user: userId })
-      .sort({ createdAt: -1 })
-      .exec();
   }
 }

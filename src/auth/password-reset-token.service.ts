@@ -4,11 +4,8 @@ import { createHash, randomInt } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import type { StringValue } from 'ms';
 
-// 'otp' = forgot-password OTP session; 'email_verify' = signup email
-// verification. Same signed-JWT-carrying-a-bcrypt-hash shape for both, but
-// the purpose claim is checked strictly on every verify — without it, an
-// email-verification token could otherwise be replayed as a password-reset
-// OTP token (or vice versa), since both may be signed with the same secret.
+// 'otp' = forgot-password; 'email_verify' = signup verification. Checked
+// strictly so one purpose's token can't be replayed as the other.
 type OtpPurpose = 'otp' | 'email_verify';
 
 interface OtpTokenPayload {
@@ -23,32 +20,11 @@ interface ResetTokenPayload {
   purpose: 'reset';
 }
 
-/**
- * Deliberately stateless — neither the OTP nor the password-reset token is
- * ever written to the database. Both are self-contained, signed JWTs the
- * *client* carries between steps (forgot-password → verify-otp →
- * reset-password), verified purely by signature + expiry + an embedded
- * fingerprint, the same way this codebase already treats access/refresh
- * JWTs as bearer credentials rather than DB lookups where it can.
- *
- * The one place a plain DB lookup would normally be needed — "has this
- * specific reset token already been used?" — is solved without any storage
- * by embedding a fingerprint of the user's CURRENT passwordHash into the
- * reset token at issue time (signResetToken). Verifying compares that
- * embedded fingerprint against the password hash's fingerprint *at
- * verification time*: the moment the password actually changes, the
- * fingerprint changes too, so the token that was used to make that change
- * (and any other older token for the same account) stops matching and is
- * permanently dead — a single-use, auto-expiring token with zero server-side
- * state. This is the same trick Django's PasswordResetTokenGenerator uses.
- *
- * Shared between the regular-user Auth module and the separate Admin auth
- * module — each passes its own secret so a leaked user-flow secret can
- * never be used to forge an admin token or vice versa. Lives in the
- * already-@Global() AuthGuardsModule (see guards.module.ts) since both
- * consumers need it and it has the same "global JWT-adjacent auth utility"
- * shape as the guards already there.
- */
+// Stateless — OTP and reset tokens are signed JWTs the client carries
+// between steps, never stored in the DB. Reset-token single-use comes from
+// embedding a fingerprint of the CURRENT password hash: once the password
+// changes, the fingerprint changes too, so the token dies automatically.
+// Shared by both the User and Admin auth modules, each with its own secret.
 @Injectable()
 export class PasswordResetTokenService {
   constructor(private readonly jwtService: JwtService) {}
@@ -79,12 +55,9 @@ export class PasswordResetTokenService {
     });
   }
 
-  /**
-   * Verifies signature + expiry + the `purpose` claim only — deliberately
-   * does NOT compare the OTP here. Callers that just need to re-derive
-   * `sub` from an unexpired token (e.g. resend-otp, which is about to issue
-   * a brand new code anyway) call this instead of verifyOtp.
-   */
+  // Verifies signature + purpose only, ignoring expiry — resend-otp's whole
+  // job is handling a token whose OTP already expired, so it must still
+  // decode an expired-but-signature-valid token to find out who to resend to.
   async decodeOtpToken(
     token: string,
     secret: string,
@@ -94,6 +67,7 @@ export class PasswordResetTokenService {
       token,
       secret,
       purpose,
+      { ignoreExpiration: true },
     );
     return { sub: payload.sub };
   }
@@ -166,16 +140,17 @@ export class PasswordResetTokenService {
     token: string,
     secret: string,
     purpose: T['purpose'],
+    options?: { ignoreExpiration?: boolean },
   ): Promise<T> {
     let payload: T;
     try {
-      payload = await this.jwtService.verifyAsync<T>(token, { secret });
+      payload = await this.jwtService.verifyAsync<T>(token, {
+        secret,
+        ignoreExpiration: options?.ignoreExpiration,
+      });
     } catch {
       throw new UnauthorizedException('Invalid or expired token');
     }
-    // Explicit purpose check — without this, a valid OTP-session token could
-    // otherwise be replayed as a reset token (or vice versa), since both are
-    // signed with the same secret per audience (user or admin).
     if (payload.purpose !== purpose) {
       throw new UnauthorizedException('Invalid or expired token');
     }

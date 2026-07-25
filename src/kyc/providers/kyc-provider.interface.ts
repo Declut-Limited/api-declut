@@ -1,22 +1,14 @@
-export interface KycVerificationInput {
-  nin: string;
-  selfieImageBase64: string;
-}
-
-export interface KycVerificationResult {
+export interface KycCheckResult {
   status: 'verified' | 'rejected';
   referenceId: string;
   failureReason?: string;
 }
 
-/**
- * Vendor-agnostic boundary — KycService depends on this, never on QoreID
- * directly. Swapping to Dojah/Youverify/Smile Identity/Prembly later means
- * writing one new class and changing the provider binding in KycModule,
- * with zero changes to KycService or the controller.
- */
+// Vendor-agnostic boundary — swapping to Dojah/Youverify/Smile Identity/
+// Prembly means a new class + one binding change in KycModule.
 export interface KycProvider {
-  verifyIdentity(input: KycVerificationInput): Promise<KycVerificationResult>;
+  verifyNin(nin: string): Promise<KycCheckResult>;
+  checkLiveness(selfieImageBase64: string): Promise<KycCheckResult>;
 }
 
 export const KYC_PROVIDER = Symbol('KYC_PROVIDER');

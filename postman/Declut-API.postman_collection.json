@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "a2f1b6e0-declut-api-collection-0001",
     "name": "Declut API",
-    "description": "Declut — trust-first escrow marketplace API for buying/selling pre-owned household items. NestJS + MongoDB. Payment is held in escrow until a buyer-held confirmation code is entered by the seller at the meetup.\n\nAUTH PATTERN (regular users): every protected route expects `Authorization: Bearer {{accessToken}}`. Run Auth → Register (email + password + phone) or Auth → Login (identifier = email OR phone, + password) first — both auto-save `accessToken`/`refreshToken` into collection variables via a test script, so every other request in this collection picks them up automatically. When the access token expires (15m default), run Auth → Refresh Token. Register also auto-saves an `otpToken` for Auth → Verify Email (signup OTP) — verifying flips `emailVerified` to true, which KYC → Verify Identity requires before it will run. Forgot-password/OTP/reset-password tokens are the same kind of stateless JWT the client carries between steps — never stored server-side — and also auto-save into `otpToken`/`resetToken` via the Auth folder's requests.\n\nADMIN: Admin is a WHOLLY SEPARATE collection/identity from User, with its own JWT secrets — a regular accessToken will never work on an admin route, and vice versa. Bootstrap the first admin with `npm run seed:admin -- <email> <password> [name]` (see CLAUDE.md), then use Admin Auth → Admin login, which auto-saves `adminAccessToken`/`adminRefreshToken`. The Admin folder (acting on the marketplace) and Admin Auth folder (managing admin accounts themselves) both use `{{adminAccessToken}}`.\n\nREALTIME: admin-only live notifications (new dispute, stalled transaction) are delivered over a WebSocket (Socket.IO) gateway, not plain HTTP — see the Realtime (Admin WebSocket) folder for connection details, since Postman's standard REST collection format can't execute a Socket.IO connection directly.\n\nEvery HTTP route lives under /api (e.g. /api/auth/login) — the admin WebSocket gateway is the one exception, since setGlobalPrefix only affects the HTTP router, not Socket.IO namespaces. Set the `baseUrl` collection variable to wherever the API is running, including the /api prefix (defaults to http://localhost:3000/api).",
+    "description": "Declut — escrow marketplace API for pre-owned household items. NestJS + MongoDB.\n\nRun Auth → Register or Login first (auto-saves accessToken/refreshToken). Admin routes need a separate token from Admin Auth → Admin login. baseUrl defaults to http://localhost:3000/api.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -24,7 +24,7 @@
                 "health"
               ]
             },
-            "description": "Basic liveness + Mongo connectivity check. No auth required."
+            "description": ""
           },
           "response": []
         }
@@ -32,10 +32,10 @@
     },
     {
       "name": "Auth",
-      "description": "Google sign-in (google-auth-library, no Firebase) + email/password (email + password + phone), both converging on backend-issued JWT access/refresh tokens. Login accepts either email or phone as the identifier. Email/password signup requires OTP email verification before KYC — see Verify Email below. Password reset/OTP and email-verification tokens are stateless JWTs — never stored in the DB — see CLAUDE.md's \"Password Reset & OTP Flow\" and \"Signup Flow\" sections.",
+      "description": "Google sign-in or email/phone + password, converging on JWT access/refresh tokens.",
       "item": [
         {
-          "name": "Register (email/password)",
+          "name": "Register",
           "request": {
             "method": "POST",
             "header": [
@@ -55,10 +55,10 @@
                 "register"
               ]
             },
-            "description": "Creates an email/password account. phone is a Nigerian number (07/08/09 + 9 digits local, or +234 international) — it doubles as the alternate login identifier and must be unique. Always a plain User — admin accounts are a wholly separate collection/flow (see the Admin Auth folder), never created here. Immediately sends a 6-digit email-verification OTP (see Verify Email below) and returns it as a stateless otpToken alongside the session tokens. Rate-limited. Auto-saves accessToken/refreshToken/otpToken to collection variables.",
+            "description": "Sends a 6-digit email verification OTP. Response includes emailVerified and kycStatus.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"buyer@example.com\",\n  \"name\": \"Jane Buyer\",\n  \"password\": \"Passw0rd!23\",\n  \"phone\": \"08012345678\"\n}",
+              "raw": "{\n  \"email\": \"damolaidowudavid+2@gmail.com\",\n  \"name\": \"Damola Idowu\",\n  \"password\": \"Password123@\",\n  \"phone\": \"08012345678\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -87,7 +87,7 @@
           ]
         },
         {
-          "name": "Login (email or phone)",
+          "name": "Login",
           "request": {
             "method": "POST",
             "header": [
@@ -107,10 +107,10 @@
                 "login"
               ]
             },
-            "description": "identifier accepts either an email or a phone number (whichever the account was registered with) — set it to \"08012345678\" to log in by phone instead. Generic \"invalid credentials\" on either a missing user or wrong password. Rate-limited. Auto-saves accessToken/refreshToken.",
+            "description": "identifier is email or phone. Logging in elsewhere invalidates the previous refresh token (one active session at a time).",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"identifier\": \"buyer@example.com\",\n  \"password\": \"Passw0rd!23\"\n}",
+              "raw": "{\n  \"identifier\": \"damolaidowudavid+2@gmail.com\",\n  \"password\": \"Password123@\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -136,7 +136,7 @@
           ]
         },
         {
-          "name": "Verify email (signup OTP)",
+          "name": "Verify email",
           "request": {
             "method": "POST",
             "header": [
@@ -161,7 +161,7 @@
                 "verify-email"
               ]
             },
-            "description": "Confirms the 6-digit code emailed at registration and flips emailVerified to true. Unlike the forgot-password OTP chain, this is JwtAuthGuard-protected (not stateless/anonymous) — the caller already has a session from Register, so there's no enumeration concern to defend against. The mobile app should move the user into KYC verification right after this succeeds. Rate-limited.",
+            "description": "Flips emailVerified to true. Required before KYC.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"otpToken\": \"{{otpToken}}\",\n  \"otp\": \"123456\"\n}",
@@ -195,7 +195,7 @@
                 "resend-verification-email"
               ]
             },
-            "description": "Issues a fresh OTP + otpToken if the caller's email isn't verified yet (short-circuits with \"Email is already verified\" and no send attempt if it already is). Auto-saves the new otpToken."
+            "description": ""
           },
           "response": [],
           "event": [
@@ -234,10 +234,10 @@
                 "google"
               ]
             },
-            "description": "idToken is verified server-side against Google's public keys via google-auth-library (GOOGLE_CLIENT_ID as audience) — Firebase is never involved. Rate-limited. Auto-saves accessToken/refreshToken.",
+            "description": "",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"idToken\": \"<google-issued-id-token-from-mobile-app>\"\n}",
+              "raw": "{\n  \"idToken\": \"<google-id-token-from-mobile-app>\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -283,7 +283,7 @@
                 "refresh"
               ]
             },
-            "description": "Rotates both tokens — the presented refresh token is revoked and a new pair issued. A revoked/expired/reused token is rejected. Rate-limited. Auto-saves the new accessToken/refreshToken.",
+            "description": "Rotates the token pair; the old refresh token stops working.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
@@ -332,7 +332,7 @@
                 "logout"
               ]
             },
-            "description": "Revokes the presented refresh token's session row. Does not affect other logged-in devices.",
+            "description": "",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
@@ -366,10 +366,10 @@
                 "forgot-password"
               ]
             },
-            "description": "Sends a 6-digit OTP via email (Brevo) and returns a stateless otpToken — nothing is stored server-side; the token itself carries a bcrypt hash of the OTP, verified in Verify OTP below. Same generic response whether or not the email is registered (anti-enumeration). Rate-limited (5/min). Auto-saves otpToken.",
+            "description": "Same response whether or not the email exists.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"buyer@example.com\"\n}",
+              "raw": "{\n  \"email\": \"damolaidowudavid+2@gmail.com\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -414,7 +414,7 @@
                 "resend-otp"
               ]
             },
-            "description": "Issues a brand new OTP + otpToken for the same account the current otpToken was for. Rate-limited (5/min). Auto-saves the new otpToken.",
+            "description": "",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"otpToken\": \"{{otpToken}}\"\n}",
@@ -462,7 +462,7 @@
                 "verify-otp"
               ]
             },
-            "description": "Verifies the 6-digit code against the hash embedded in otpToken. On success, returns a resetToken (also stateless — its single-use property comes from a fingerprint of the CURRENT password hash embedded in it, not a DB lookup). Rate-limited (5/min). Auto-saves resetToken.",
+            "description": "Returns a resetToken on success.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"otpToken\": \"{{otpToken}}\",\n  \"otp\": \"123456\"\n}",
@@ -510,10 +510,10 @@
                 "reset-password"
               ]
             },
-            "description": "Consumes resetToken — verified against a fingerprint of the account's CURRENT password hash, so the token self-invalidates the instant the password changes (reusing it afterward correctly 401s). Revokes all of the account's existing refresh tokens (forces re-login everywhere). Rate-limited (5/min).",
+            "description": "",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"resetToken\": \"{{resetToken}}\",\n  \"newPassword\": \"NewPassw0rd!45\"\n}",
+              "raw": "{\n  \"resetToken\": \"{{resetToken}}\",\n  \"newPassword\": \"NewPassword123@\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -524,7 +524,7 @@
           "response": []
         },
         {
-          "name": "Change password (in-app)",
+          "name": "Change password",
           "request": {
             "method": "PATCH",
             "header": [
@@ -549,10 +549,10 @@
                 "change-password"
               ]
             },
-            "description": "Authenticated equivalent of reset-password — verifies currentPassword instead of an OTP flow. Also revokes all other sessions' refresh tokens.",
+            "description": "",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"currentPassword\": \"Passw0rd!23\",\n  \"newPassword\": \"NewPassw0rd!45\"\n}",
+              "raw": "{\n  \"currentPassword\": \"Password123@\",\n  \"newPassword\": \"NewPassword123@\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -566,7 +566,7 @@
     },
     {
       "name": "Users",
-      "description": "Profile, KYC status, cached trust score and rating stats.",
+      "description": "Profile, KYC status, trust score, rating stats. One user type — anyone can buy or sell.",
       "item": [
         {
           "name": "Get my profile",
@@ -589,7 +589,7 @@
                 "me"
               ]
             },
-            "description": "Full private profile — email, kycStatus, trustScore, bank details, etc. Only ever returned to the user themselves."
+            "description": ""
           },
           "response": []
         },
@@ -619,10 +619,10 @@
                 "me"
               ]
             },
-            "description": "All fields optional. Bank details are required before a seller can accept a checkout (used to create a Paystack subaccount).",
+            "description": "All fields optional. Bank details are required to receive a payout.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Jane B. Buyer\",\n  \"bankCode\": \"058\",\n  \"bankName\": \"GTBank\",\n  \"accountNumber\": \"0123456789\",\n  \"accountName\": \"Jane Buyer\"\n}",
+              "raw": "{\n  \"name\": \"Damola Idowu\",\n  \"bankCode\": \"058\",\n  \"bankName\": \"GTBank\",\n  \"accountNumber\": \"0123456789\",\n  \"accountName\": \"Damola Idowu\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -653,7 +653,7 @@
                 "{{userId}}"
               ]
             },
-            "description": "Public-safe subset only: name, verified (boolean, from kycStatus), trustScore, avgRating, reviewCount. No email, no bank details."
+            "description": ""
           },
           "response": []
         }
@@ -661,7 +661,7 @@
     },
     {
       "name": "Listings",
-      "description": "Create/edit/archive/delete, radius + keyword search. All routes require login (no guest browsing in v1).",
+      "description": "Create/edit/archive/delete, radius + keyword search.",
       "item": [
         {
           "name": "Get Cloudinary upload signature",
@@ -684,7 +684,7 @@
                 "upload-signature"
               ]
             },
-            "description": "Backend never touches image bytes — returns a short-lived signed payload the mobile app uses to upload directly to Cloudinary, then sends the resulting URLs back in Create Listing's images field."
+            "description": ""
           },
           "response": []
         },
@@ -760,7 +760,7 @@
                 }
               ]
             },
-            "description": "All query params optional. Supplying lat/lng runs a $geoNear radius search (default radius DEFAULT_SEARCH_RADIUS_KM); keyword alone ranks by text relevance; neither param falls back to newest-first. Remove query params you don't need."
+            "description": "All params optional. lat/lng runs a radius search."
           },
           "response": []
         },
@@ -814,7 +814,7 @@
                 "listings"
               ]
             },
-            "description": "category: furniture|electronics|appliances|kitchenware|clothing|decor|books|other. condition: new|like_new|good|fair|poor. location is {lat, lng}, not GeoJSON — the service converts it internally.",
+            "description": "category: furniture|electronics|appliances|kitchenware|clothing|decor|books|other. condition: new|like_new|good|fair|poor.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"title\": \"Comfortable 3-seater sofa\",\n  \"description\": \"Barely used, no stains, smoke-free home.\",\n  \"category\": \"furniture\",\n  \"condition\": \"good\",\n  \"price\": 45000,\n  \"images\": [\n    \"https://res.cloudinary.com/example/image/upload/v1/sofa.jpg\"\n  ],\n  \"location\": {\n    \"lat\": 6.5244,\n    \"lng\": 3.3792\n  },\n  \"locationLabel\": \"Lekki, Lagos\"\n}",
@@ -853,7 +853,7 @@
                 "{{listingId}}"
               ]
             },
-            "description": "Owner-only (403 otherwise). All fields from Create Listing are optional here.",
+            "description": "Owner-only.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"price\": 42000,\n  \"description\": \"Price reduced — barely used, no stains.\"\n}",
@@ -888,7 +888,7 @@
                 "archive"
               ]
             },
-            "description": "Owner-only. Removes it from search without deleting it."
+            "description": "Owner-only."
           },
           "response": []
         },
@@ -913,7 +913,7 @@
                 "{{listingId}}"
               ]
             },
-            "description": "Owner-only. Soft delete (status: deleted) — never a real Mongo delete, since a Transaction may reference this listing."
+            "description": "Owner-only. Soft delete."
           },
           "response": []
         }
@@ -921,7 +921,7 @@
     },
     {
       "name": "Favorites",
-      "description": "Buyer save/unsave listings, list saved listings.",
+      "description": "",
       "item": [
         {
           "name": "List my favorites",
@@ -980,7 +980,7 @@
                 "{{listingId}}"
               ]
             },
-            "description": "Idempotent upsert — favoriting an already-favorited listing is a no-op, not an error."
+            "description": ""
           },
           "response": []
         },
@@ -1013,10 +1013,10 @@
     },
     {
       "name": "KYC",
-      "description": "NIN + facial liveness, gated at first listing (sellers) / first purchase (buyers) — not mandatory at signup.",
+      "description": "Two independent checks — kycStatus becomes verified once both pass.",
       "item": [
         {
-          "name": "Verify identity",
+          "name": "Verify NIN",
           "request": {
             "method": "POST",
             "header": [
@@ -1032,19 +1032,58 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/kyc/verify",
+              "raw": "{{baseUrl}}/kyc/verify-nin",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "kyc",
-                "verify"
+                "verify-nin"
               ]
             },
-            "description": "Requires emailVerified: true (400 otherwise) — per the intended signup flow, verify email before KYC. NIN + facial liveness via QoreID (behind a KycProvider interface — swappable vendor). The selfie image is held in memory only long enough to forward to the provider; never persisted. Sets kycStatus to pending, then verified/rejected (or reverts to unverified on a provider/config error, not a false rejection). Rate-limited (5/min) given the payload size and cost per call.",
+            "description": "Requires emailVerified: true.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"nin\": \"12345678901\",\n  \"selfieImageBase64\": \"<base64-encoded-selfie-jpeg>\"\n}",
+              "raw": "{\n  \"nin\": \"12345678901\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Liveness check",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kyc/liveness-check",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kyc",
+                "liveness-check"
+              ]
+            },
+            "description": "Requires emailVerified: true. Selfie is never persisted.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"selfieImageBase64\": \"<base64-encoded-selfie-jpeg>\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1075,7 +1114,7 @@
                 "history"
               ]
             },
-            "description": "Audit trail only — pass/fail + reference ID per attempt, never images."
+            "description": ""
           },
           "response": []
         }
@@ -1083,7 +1122,7 @@
     },
     {
       "name": "Offers",
-      "description": "Buyer offers below asking price; seller accepts/rejects/counters. An accepted offer seeds a Transaction at its amount instead of list price.",
+      "description": "Negotiate below asking price. An accepted offer sets the checkout amount.",
       "item": [
         {
           "name": "List my offers",
@@ -1117,7 +1156,7 @@
                 }
               ]
             },
-            "description": "Offers where you're the buyer or the seller."
+            "description": ""
           },
           "response": []
         },
@@ -1142,7 +1181,7 @@
                 "{{offerId}}"
               ]
             },
-            "description": "Only visible to the buyer/seller on that offer."
+            "description": ""
           },
           "response": []
         },
@@ -1171,7 +1210,7 @@
                 "offers"
               ]
             },
-            "description": "Can't offer on your own listing. One pending offer per (buyer, listing) at a time (409 on a second). Auto-expires after OFFER_EXPIRY_DAYS if untouched.",
+            "description": "One pending offer per listing at a time.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"listingId\": \"{{listingId}}\",\n  \"amount\": 38000\n}",
@@ -1206,7 +1245,7 @@
                 "accept"
               ]
             },
-            "description": "Only the party who did NOT propose the current amount can accept/reject/counter — it must be \"their turn\". An accepted offer's amount is what Create Transaction uses instead of list price."
+            "description": "Only whoever did not make the current offer can accept/reject/counter."
           },
           "response": []
         },
@@ -1263,7 +1302,7 @@
                 "counter"
               ]
             },
-            "description": "Terminal-status's the current offer (status: countered) and creates a new offer in the chain (parentOffer points back), with proposedBy flipped and a fresh expiry.",
+            "description": "",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"amount\": 40000\n}",
@@ -1298,7 +1337,7 @@
                 "withdraw"
               ]
             },
-            "description": "Only the current proposer can withdraw, and only while pending."
+            "description": "Only while pending, only by whoever made the current offer."
           },
           "response": []
         }
@@ -1306,7 +1345,7 @@
     },
     {
       "name": "Transactions & Payments",
-      "description": "Paystack checkout → escrow → buyer-held confirmation code → seller-triggered release, 10% commission at release. See the webhook note before trying to call it manually.",
+      "description": "Escrow checkout → buyer-held confirmation code → seller-triggered release.",
       "item": [
         {
           "name": "Checkout (create transaction)",
@@ -1333,7 +1372,7 @@
                 "transactions"
               ]
             },
-            "description": "Initializes a Paystack transaction (held via subaccount split, manual settlement) and returns paystackAuthorizationUrl for the mobile app to open. offerId is optional — omit it to buy outright at list price, or pass an accepted offer's ID to check out at the negotiated amount. One pending checkout per (buyer, listing) at a time. Rate-limited.",
+            "description": "offerId optional — omit to pay list price, or pass an accepted offer to pay the negotiated amount.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"listingId\": \"{{listingId}}\",\n  \"offerId\": \"\"\n}",
@@ -1378,7 +1417,7 @@
                 }
               ]
             },
-            "description": "Transactions where you're the buyer or seller. confirmationCode is only ever included for the buyer, and only while status is escrow_active/awaiting_inspection."
+            "description": ""
           },
           "response": []
         },
@@ -1403,12 +1442,12 @@
                 "{{transactionId}}"
               ]
             },
-            "description": "Only visible to the buyer/seller on that transaction."
+            "description": ""
           },
           "response": []
         },
         {
-          "name": "Confirm code (seller releases funds)",
+          "name": "Confirm code (release funds)",
           "request": {
             "method": "POST",
             "header": [
@@ -1434,7 +1473,7 @@
                 "confirm-code"
               ]
             },
-            "description": "Seller-only. Correct code triggers a Paystack payout to the seller minus commission and marks the transaction completed. Wrong code increments a counter; hitting MAX_CODE_ATTEMPTS auto-flags the transaction disputed for admin review AND broadcasts a live transaction.disputed event to connected admin WebSocket sessions.",
+            "description": "Seller-only. Too many wrong attempts flags the transaction disputed.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"code\": \"123456\"\n}",
@@ -1469,7 +1508,7 @@
                 "cancel"
               ]
             },
-            "description": "Buyer-only, and only while still pending_payment — once paid, resolution requires an admin action (release/refund), never a direct cancel."
+            "description": "Buyer-only, only before payment."
           },
           "response": []
         },
@@ -1499,7 +1538,7 @@
                 "paystack"
               ]
             },
-            "description": "NOT for manual testing — Paystack calls this directly, authenticated by HMAC-SHA512 signature (not a bearer token) over the raw request body. Included here for completeness/documentation only. Idempotent: replaying a webhook for an already-processed transaction is a no-op.",
+            "description": "Not for manual testing — signature-authenticated by Paystack, not a bearer token.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"event\": \"charge.success\",\n  \"data\": {\n    \"reference\": \"declut_xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx\",\n    \"amount\": 4500000,\n    \"status\": \"success\"\n  }\n}",
@@ -1516,7 +1555,7 @@
     },
     {
       "name": "Reviews",
-      "description": "Buyer and seller rate each other after a transaction completes. Feeds User.avgRating/reviewCount and the trust score formula.",
+      "description": "",
       "item": [
         {
           "name": "Leave a review",
@@ -1543,7 +1582,7 @@
                 "reviews"
               ]
             },
-            "description": "Only once the transaction is completed, only by the buyer or seller on it, one review per reviewer per transaction (409 on a repeat). role/reviewee are derived server-side from the transaction, never trusted from the body.",
+            "description": "Only on a completed transaction, one review per person per transaction.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"transactionId\": \"{{transactionId}}\",\n  \"rating\": 5,\n  \"comment\": \"Great transaction, item as described!\"\n}",
@@ -1590,7 +1629,7 @@
                 }
               ]
             },
-            "description": "Reviews received by that user (as reviewee) — open to any logged-in user, since a public rating history is the point."
+            "description": ""
           },
           "response": []
         },
@@ -1616,7 +1655,7 @@
                 "{{transactionId}}"
               ]
             },
-            "description": "Both reviews on a deal (if they exist) — only visible to the buyer/seller on that transaction."
+            "description": ""
           },
           "response": []
         }
@@ -1624,7 +1663,7 @@
     },
     {
       "name": "Notifications",
-      "description": "FCM push for mobile (buyers/sellers). Admin-only live in-app alerts are a separate WebSocket channel — see the Realtime (Admin WebSocket) folder. A push failing never breaks the underlying operation (payment released, offer accepted, etc.).",
+      "description": "FCM push tokens. Admin live alerts are a separate WebSocket channel — see Realtime.",
       "item": [
         {
           "name": "Register device token(s)",
@@ -1652,10 +1691,10 @@
                 "register-token"
               ]
             },
-            "description": "Batch endpoint — tokens is an array of 1-10 { token, platform? } entries (platform is optional, ios|android), so a client can register/re-sync several device tokens in one call. Each entry upserts by token — re-registering the same device (even under a different account) moves it to the current caller. Returns { registered: <count> }.",
+            "description": "Array of 1-10 token strings.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"tokens\": [\n    {\n      \"token\": \"<fcm-device-token-from-mobile-app>\",\n      \"platform\": \"android\"\n    }\n  ]\n}",
+              "raw": "{\n  \"tokens\": [\n    \"<fcm-device-token-from-mobile-app>\"\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1687,7 +1726,7 @@
                 "{{deviceToken}}"
               ]
             },
-            "description": "Scoped to the caller's own tokens — deleting a token you don't own is a silent no-op, not an error."
+            "description": ""
           },
           "response": []
         }
@@ -1695,7 +1734,7 @@
     },
     {
       "name": "Admin",
-      "description": "Acting ON the marketplace (users/listings/transactions/offers/reviews) plus platform-wide App Settings — requires AdminJwtAuthGuard (the separate admin JWT, see the Admin Auth folder for how to obtain one). There is no \"promote a user\" path anymore — Admin is a wholly separate collection from User.",
+      "description": "Acting on the marketplace, plus platform-wide App Settings. Requires an admin token — see Admin Auth.",
       "item": [
         {
           "name": "List users",
@@ -1788,7 +1827,7 @@
                 "kyc"
               ]
             },
-            "description": "status: unverified|pending|verified|rejected. Setting verified also triggers a trust score recalculation (the same +20 flat bonus KycService.verify() applies automatically on a real provider pass).",
+            "description": "status: unverified|pending|verified|rejected.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"status\": \"verified\"\n}",
@@ -1839,7 +1878,7 @@
                 }
               ]
             },
-            "description": "Unlike the public search, includes archived and deleted listings."
+            "description": "Includes archived and deleted listings."
           },
           "response": []
         },
@@ -1907,7 +1946,7 @@
                 }
               ]
             },
-            "description": "confirmationCode is always stripped, even for admins — \"only ever returned to the buyer\" holds with no exception."
+            "description": ""
           },
           "response": []
         },
@@ -1960,7 +1999,7 @@
                 "release"
               ]
             },
-            "description": "Only valid on stalled/disputed transactions (400 otherwise). Triggers the same Paystack payout path as a normal code confirmation, minus commission, then marks completed."
+            "description": "Only valid on stalled/disputed transactions."
           },
           "response": []
         },
@@ -1992,7 +2031,7 @@
                 "refund"
               ]
             },
-            "description": "Only valid on stalled/disputed transactions (400 otherwise). reason is optional, stored on the audit log entry.",
+            "description": "Only valid on stalled/disputed transactions. reason is optional.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"reason\": \"Seller unresponsive after multiple buyer attempts to coordinate a meetup.\"\n}",
@@ -2064,7 +2103,7 @@
                 "{{reviewId}}"
               ]
             },
-            "description": "Removes an abusive/violating review and recalculates the affected user's avgRating/reviewCount and trust score."
+            "description": ""
           },
           "response": []
         },
@@ -2089,7 +2128,7 @@
                 "settings"
               ]
             },
-            "description": "Platform-wide tunables, DB-backed (no redeploy needed to change): escrowStalledThresholdDays, commissionPercentage, offerExpiryDays, defaultSearchRadiusKm, maxCodeAttempts. The very first call ever made creates the singleton document with defaults (5 / 10 / 3 / 15 / 3) if it doesn't exist yet — no separate seed step."
+            "description": "escrowStalledThresholdDays, commissionPercentage, offerExpiryDays, defaultSearchRadiusKm, maxCodeAttempts."
           },
           "response": []
         },
@@ -2119,7 +2158,7 @@
                 "settings"
               ]
             },
-            "description": "Partial update — every field optional, only send what you're changing. Bounds: commissionPercentage 0-100, the three day-counts are integers >=1, defaultSearchRadiusKm > 0. A Transaction snapshots commissionPercentage at checkout time, so changing it here never retroactively affects an in-flight or historical transaction.",
+            "description": "Partial update — only send fields you're changing.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"defaultSearchRadiusKm\": 20,\n  \"commissionPercentage\": 12\n}",
@@ -2136,7 +2175,7 @@
     },
     {
       "name": "Admin Auth",
-      "description": "Admin identity/session lifecycle — separate collection, separate JWT secrets, separate password-reset flow from regular Users. This is the ONLY place admin accounts are created, logged in, or have their credentials changed.",
+      "description": "Admin is a separate collection with its own JWT secrets — a regular user token never works here.",
       "item": [
         {
           "name": "Admin login",
@@ -2160,10 +2199,10 @@
                 "login"
               ]
             },
-            "description": "Admin is a wholly separate Mongoose collection from User, with its own JWT secrets — structurally impossible to forge an admin token from a regular-user token or vice versa. Bootstrap the very first admin with `npm run seed:admin -- <email> <password> [name]` (one-time manual step, since no admin exists yet to create one via the API). Auto-saves adminAccessToken/adminRefreshToken.",
+            "description": "Bootstrap the first admin with: npm run seed:admin -- <email> <password> [name]",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"rootadmin@declut.com\",\n  \"password\": \"ChangeMe123!\"\n}",
+              "raw": "{\n  \"email\": \"admin@declut.com\",\n  \"password\": \"Password123@\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2236,7 +2275,7 @@
                 "refresh"
               ]
             },
-            "description": "Same rotation/revocation-detection behavior as the regular-user refresh endpoint, scoped to the separate AdminRefreshToken collection.",
+            "description": "",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"refreshToken\": \"{{adminRefreshToken}}\"\n}",
@@ -2326,10 +2365,10 @@
                 "sub-admins"
               ]
             },
-            "description": "Any authenticated admin can create another — flat permissions, no RBAC tiers in v1. This directly creates a new Admin document (there is no \"promote a user\" flow). createdBy is set to the creating admin's id, for audit purposes only.",
+            "description": "Any admin can create another — flat permissions, no tiers.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"newadmin@declut.com\",\n  \"name\": \"New Admin\",\n  \"password\": \"SubAdminPass1!\"\n}",
+              "raw": "{\n  \"email\": \"newadmin@declut.com\",\n  \"name\": \"New Admin\",\n  \"password\": \"Password123@\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2361,10 +2400,10 @@
                 "forgot-password"
               ]
             },
-            "description": "Identical stateless OTP-token design as the regular-user flow, signed with the separate JWT_ADMIN_PASSWORD_RESET_SECRET. Auto-saves adminOtpToken.",
+            "description": "",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"rootadmin@declut.com\"\n}",
+              "raw": "{\n  \"email\": \"admin@declut.com\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2508,10 +2547,10 @@
                 "reset-password"
               ]
             },
-            "description": "Self-invalidates via a password-hash fingerprint embedded in resetToken — reusing it after a successful reset (or after any other password change) correctly 401s. Revokes all of this admin's existing refresh tokens.",
+            "description": "",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"resetToken\": \"{{adminResetToken}}\",\n  \"newPassword\": \"NewAdminPass1!\"\n}",
+              "raw": "{\n  \"resetToken\": \"{{adminResetToken}}\",\n  \"newPassword\": \"NewPassword123@\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2522,7 +2561,7 @@
           "response": []
         },
         {
-          "name": "Admin change password (in-app)",
+          "name": "Admin change password",
           "request": {
             "method": "PATCH",
             "header": [
@@ -2551,7 +2590,7 @@
             "description": "",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"currentPassword\": \"ChangeMe123!\",\n  \"newPassword\": \"NewAdminPass1!\"\n}",
+              "raw": "{\n  \"currentPassword\": \"Password123@\",\n  \"newPassword\": \"NewPassword123@\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2565,7 +2604,7 @@
     },
     {
       "name": "Realtime (Admin WebSocket)",
-      "description": "Admin-only live in-app notifications over WebSocket — confirmed in scope as admin-only, not regular-user-facing (mobile stays on FCM push). See CLAUDE.md's \"Admin Live Notifications — WebSocket\" section.",
+      "description": "Admin-only live alerts over WebSocket.",
       "item": [
         {
           "name": "Connect — admin-notifications gateway (see description)",
@@ -2581,7 +2620,7 @@
                 "admin-notifications"
               ]
             },
-            "description": "NOT an HTTP request — Postman's standard v2.1 collection format has no native Socket.IO request type, so this entry exists purely as documentation (running it will 404 against {{baseUrl}}/admin-notifications, that's expected/harmless — the URL field above is just a placeholder, not the real connection endpoint).\n\nConnect with a Socket.IO client to: `{{wsBaseUrl}}` (no /api prefix — setGlobalPrefix only affects the HTTP router, not Socket.IO namespaces) namespace `/admin-notifications` (e.g. `io(\"{{wsBaseUrl}}/admin-notifications\", { auth: { token: adminAccessToken } })`).\n\nAuth happens at the handshake: pass the admin access token via `auth: { token }` (or an `Authorization: Bearer` header) — verified against the same JWT_ADMIN_ACCESS_SECRET as every other admin route. A missing/invalid/non-admin token gets force-disconnected immediately, before joining the broadcast room.\n\nEvents broadcast to all connected admin sessions: `transaction.disputed` ({ transactionId, buyer, seller, amount, attempts }) and `transaction.stalled` ({ transactionId, buyer, seller, amount, thresholdDays }).\n\nIf using Postman's desktop app's dedicated Socket.IO request type (separate from this REST collection), point it at the wsBaseUrl/namespace/auth above manually."
+            "description": "Not a real HTTP request (running it 404s — expected). Connect a Socket.IO client to {{wsBaseUrl}}/admin-notifications (no /api prefix) with auth: { token: adminAccessToken }. Events: transaction.disputed, transaction.stalled."
           },
           "response": []
         }

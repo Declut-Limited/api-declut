@@ -3,14 +3,16 @@ import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 
 export type AdminDocument = HydratedDocument<Admin>;
 
-/**
- * A wholly separate collection from User — an admin account is never a
- * User document with a role flag. This is a deliberate reversal of the
- * earlier decision (documented in CLAUDE.md's Auth Architecture section)
- * to keep admins on the same identity model; revisited per explicit
- * instruction. See CLAUDE.md's "Admin Auth Model" section for the
- * reasoning and trade-offs.
- */
+@Schema({ _id: false })
+class RefreshTokenInfo {
+  @Prop({ required: true })
+  hashedToken: string;
+
+  @Prop({ required: true })
+  expiresAt: Date;
+}
+
+// Separate collection from User — an admin is never a User document.
 @Schema({ timestamps: true })
 export class Admin {
   @Prop({ required: true, unique: true, lowercase: true, trim: true })
@@ -19,16 +21,13 @@ export class Admin {
   @Prop({ required: true, trim: true })
   name: string;
 
-  // Always set — email/password is the ONLY admin auth path, there is no
-  // admin equivalent of Google sign-in.
   @Prop({ required: true, select: false })
-  passwordHash: string;
+  password: string;
 
-  // Who created this admin — null for the bootstrapped root admin (seeded
-  // via scripts/seed-admin.ts, which has no existing admin to attribute
-  // creation to). Every admin has equal permissions in v1 (no RBAC tiers,
-  // per CLAUDE.md's "not the PRD's full RBAC matrix") — this is purely an
-  // audit trail, not a permission hierarchy.
+  @Prop({ type: RefreshTokenInfo, select: false })
+  refreshToken?: RefreshTokenInfo;
+
+  // Provenance only — every admin has equal, flat permissions in v1.
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Admin' })
   createdBy?: Types.ObjectId;
 

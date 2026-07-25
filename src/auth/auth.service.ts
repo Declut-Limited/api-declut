@@ -7,23 +7,25 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { InjectModel } from '@nestjs/mongoose';
 import { JwtService } from '@nestjs/jwt';
-import { Model } from 'mongoose';
 import { randomUUID } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import type { StringValue } from 'ms';
 import { UsersService } from '../users/users.service';
-import { AuthProvider, UserDocument } from '../users/schemas/user.schema';
+import {
+  AuthProvider,
+  KycStatus,
+  UserDocument,
+} from '../users/schemas/user.schema';
 import {
   GoogleIdentity,
   GoogleOAuthService,
 } from '../google/google-oauth.service';
-import {
-  RefreshToken,
-  RefreshTokenDocument,
-} from './schemas/refresh-token.schema';
 import { PasswordResetTokenService } from './password-reset-token.service';
+import {
+  hashRefreshToken,
+  refreshTokenMatches,
+} from './refresh-token-hash.util';
 import { EmailService } from '../email/email.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -40,6 +42,8 @@ import { RefreshTokenPayload } from './interfaces/jwt-payload.interface';
 export interface TokenPair {
   accessToken: string;
   refreshToken: string;
+  emailVerified: boolean;
+  kycStatus: KycStatus;
 }
 
 export interface RegisterResult extends TokenPair {
@@ -52,8 +56,6 @@ export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
   constructor(
-    @InjectModel(RefreshToken.name)
-    private refreshTokenModel: Model<RefreshTokenDocument>,
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
@@ -73,12 +75,12 @@ export class AuthService {
       throw new ConflictException('Phone number already registered');
     }
 
-    const passwordHash = await bcrypt.hash(dto.password, this.saltRounds());
+    const password = await bcrypt.hash(dto.password, this.saltRounds());
     const user = await this.usersService.createEmailUser({
       email: dto.email,
       name: dto.name,
       phone: dto.phone,
-      passwordHash,
+      password,
     });
 
     const tokens = await this.issueTokens(user);
@@ -86,16 +88,9 @@ export class AuthService {
       user._id.toString(),
     );
 
-    // The account is already created and tokens already issued at this
-    // point — a failed/unconfigured email send (e.g. Brevo not set up in
-    // this dev environment) must not turn an otherwise-successful
-    // registration into a 500. Unlike forgotPassword/resendVerificationEmail
-    // (whose entire job IS sending an email, so a failure there is the
-    // whole story), this is a secondary side-effect of an already-completed
-    // operation — swallow and log instead. The otpToken returned is still
-    // valid either way (it's a signed JWT computed locally, independent of
-    // delivery); the client can call resend-verification-email once email
-    // is working to get a fresh code actually delivered.
+    // Account already exists at this point — a failed/unconfigured email
+    // send must not fail the whole registration. resendVerificationEmail
+    // exists for the client to retry the actual send.
     try {
       await this.emailService.sendOtpEmail(
         user.email,
@@ -123,18 +118,15 @@ export class AuthService {
       dto.identifier,
     );
 
-    // Same generic error whether the identifier doesn't match anything,
-    // belongs to a Google-only account, or the password is wrong — never
-    // tell an attacker which case they hit.
     if (
       !user ||
-      user.authProvider !== AuthProvider.EMAIL ||
-      !user.passwordHash
+      user.authProvider !== AuthProvider.EMAIL_PHONE ||
+      !user.password
     ) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const matches = await bcrypt.compare(dto.password, user.passwordHash);
+    const matches = await bcrypt.compare(dto.password, user.password);
     if (!matches) {
       throw new UnauthorizedException('Invalid credentials');
     }
@@ -147,8 +139,6 @@ export class AuthService {
     try {
       identity = await this.googleOAuth.verifyIdToken(dto.idToken);
     } catch (err) {
-      // A server misconfiguration (missing GOOGLE_CLIENT_ID) is a 500, not a
-      // 401 — don't let it masquerade as "client sent a bad token."
       if (err instanceof InternalServerErrorException) {
         throw err;
       }
@@ -162,10 +152,6 @@ export class AuthService {
         identity.email,
       );
       if (existingByEmail) {
-        // Judgment call: if an email/password account already owns this
-        // email, we don't silently merge it with the Google identity —
-        // that would let anyone sign in to an existing account just by
-        // controlling the same email address on Google. Reject instead.
         throw new ConflictException(
           'An account with this email already exists',
         );
@@ -184,24 +170,12 @@ export class AuthService {
   async refresh(dto: RefreshTokenDto): Promise<TokenPair> {
     const payload = await this.verifyRefreshToken(dto.refreshToken);
 
-    const stored = await this.refreshTokenModel.findOne({ jti: payload.jti });
-    if (!stored || stored.revokedAt || stored.expiresAt < new Date()) {
-      throw new UnauthorizedException('Invalid refresh token');
-    }
-
-    const matches = await bcrypt.compare(dto.refreshToken, stored.tokenHash);
-    if (!matches) {
-      throw new UnauthorizedException('Invalid refresh token');
-    }
-
-    // Rotation: this refresh token is now spent. If it gets presented again
-    // later, `stored.revokedAt` will be set and the request above rejects it
-    // — that's the signal a token was stolen and replayed.
-    stored.revokedAt = new Date();
-    await stored.save();
-
-    const user = await this.usersService.findById(payload.sub);
-    if (!user) {
+    const user = await this.usersService.findByIdWithRefreshToken(payload.sub);
+    if (
+      !user?.refreshToken ||
+      user.refreshToken.expiresAt < new Date() ||
+      !refreshTokenMatches(dto.refreshToken, user.refreshToken.hashedToken)
+    ) {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
@@ -213,21 +187,14 @@ export class AuthService {
     try {
       payload = await this.verifyRefreshToken(dto.refreshToken);
     } catch {
-      return; // already invalid/expired — logout is idempotent either way
+      return;
     }
 
-    await this.refreshTokenModel.updateOne(
-      { jti: payload.jti },
-      { revokedAt: new Date() },
-    );
+    await this.usersService.clearRefreshToken(payload.sub);
   }
 
-  // A fixed, never-real ObjectId used as the `sub` of an OTP token issued
-  // for an email that doesn't map to a real (or password-capable) account —
-  // keeps the response shape/timing identical to the real-account path so
-  // POST /auth/forgot-password can't be used to enumerate registered
-  // emails. Any later verify-otp attempt against it just fails the same way
-  // a wrong code would.
+  // Fixed, never-real ObjectId used so a non-existent email gets the same
+  // response shape/timing as a real one — stops enumeration via forgot-password.
   private static readonly INERT_SUBJECT = '000000000000000000000000';
 
   async forgotPassword(
@@ -237,12 +204,10 @@ export class AuthService {
     const message =
       'If that email is registered, a verification code has been sent.';
 
-    // Google-only accounts have no password to reset — silently no-op
-    // (same generic response) rather than revealing that via an error.
     if (
       !user ||
-      user.authProvider !== AuthProvider.EMAIL ||
-      !user.passwordHash
+      user.authProvider !== AuthProvider.EMAIL_PHONE ||
+      !user.password
     ) {
       const otpToken = await this.passwordResetTokens.signOtpToken({
         sub: AuthService.INERT_SUBJECT,
@@ -326,15 +291,13 @@ export class AuthService {
     );
 
     const user = await this.usersService.findByIdWithPassword(sub);
-    if (!user || !user.passwordHash) {
-      // Covers both the inert-subject case and a real account that somehow
-      // has no password (Google-only) — same error either way.
+    if (!user || !user.password) {
       throw new UnauthorizedException('Invalid or expired code');
     }
 
     const resetToken = await this.passwordResetTokens.signResetToken({
       sub: user._id.toString(),
-      passwordHash: user.passwordHash,
+      passwordHash: user.password,
       secret: this.passwordResetSecret(),
       expiresIn: this.resetTokenExpiry(),
     });
@@ -343,10 +306,6 @@ export class AuthService {
   }
 
   async resetPassword(dto: ResetPasswordDto): Promise<{ message: string }> {
-    // Deliberately re-decode without verifying the fingerprint first, just
-    // to get `sub` — verifyResetToken (below) does the real fingerprint
-    // check against a freshly-read passwordHash, which is what makes this
-    // token single-use with no DB storage of the token itself.
     const unverified = this.jwtService.decode<{ sub?: string }>(dto.resetToken);
     const user = unverified?.sub
       ? await this.usersService.findByIdWithPassword(unverified.sub)
@@ -354,15 +313,13 @@ export class AuthService {
 
     await this.passwordResetTokens.verifyResetToken(
       dto.resetToken,
-      user?.passwordHash,
+      user?.password,
       this.passwordResetSecret(),
     );
 
-    // user is guaranteed non-null here — verifyResetToken throws otherwise
-    // (a null passwordHash can never match a fingerprint).
-    const passwordHash = await bcrypt.hash(dto.newPassword, this.saltRounds());
-    await this.usersService.setPasswordHash(user!._id.toString(), passwordHash);
-    await this.revokeAllRefreshTokens(user!._id.toString());
+    const password = await bcrypt.hash(dto.newPassword, this.saltRounds());
+    await this.usersService.setPassword(user!._id.toString(), password);
+    await this.usersService.clearRefreshToken(user!._id.toString());
 
     return { message: 'Password reset successfully. Please log in again.' };
   }
@@ -372,23 +329,20 @@ export class AuthService {
     dto: ChangePasswordDto,
   ): Promise<{ message: string }> {
     const user = await this.usersService.findByIdWithPassword(userId);
-    if (!user || !user.passwordHash) {
+    if (!user || !user.password) {
       throw new BadRequestException(
         'This account signed up with Google and has no password to change',
       );
     }
 
-    const matches = await bcrypt.compare(
-      dto.currentPassword,
-      user.passwordHash,
-    );
+    const matches = await bcrypt.compare(dto.currentPassword, user.password);
     if (!matches) {
       throw new UnauthorizedException('Current password is incorrect');
     }
 
-    const passwordHash = await bcrypt.hash(dto.newPassword, this.saltRounds());
-    await this.usersService.setPasswordHash(userId, passwordHash);
-    await this.revokeAllRefreshTokens(userId);
+    const password = await bcrypt.hash(dto.newPassword, this.saltRounds());
+    await this.usersService.setPassword(userId, password);
+    await this.usersService.clearRefreshToken(userId);
 
     return {
       message:
@@ -396,10 +350,6 @@ export class AuthService {
     };
   }
 
-  // Authenticated (JwtAuthGuard) rather than the stateless email-lookup
-  // pattern forgot-password uses — the caller already has a valid access
-  // token from register()/login(), so there's no enumeration concern to
-  // guard against and no need to re-identify the user by email.
   async verifyEmail(
     userId: string,
     dto: VerifyEmailDto,
@@ -411,9 +361,6 @@ export class AuthService {
       'email_verify',
     );
 
-    // The otpToken must belong to the same account as the caller's access
-    // token — stops one account's (otpToken, otp) pair, if leaked, from
-    // verifying a different account's email.
     if (sub !== userId) {
       throw new UnauthorizedException('Invalid or expired code');
     }
@@ -435,9 +382,6 @@ export class AuthService {
     }
 
     const { otp, otpToken } = await this.issueEmailVerificationOtp(userId);
-    // Unlike register()'s auto-send, resend's entire job IS sending the
-    // email — same critical-path posture as forgotPassword/resendOtp, so a
-    // failure here propagates as a 500 rather than being swallowed.
     await this.emailService.sendOtpEmail(
       user.email,
       user.name,
@@ -451,9 +395,6 @@ export class AuthService {
     };
   }
 
-  // Pure/local — generates the OTP and signs its carrying token, no network
-  // call. Callers decide separately whether an email-send failure should
-  // propagate (resend) or be swallowed (register, see the comment there).
   private async issueEmailVerificationOtp(
     userId: string,
   ): Promise<{ otp: string; otpToken: string }> {
@@ -467,19 +408,12 @@ export class AuthService {
       purpose: 'email_verify',
     });
 
-    // Dev convenience only — lets you complete the verify-email flow
+    // DEV ONLY — lets you complete verify-email without Brevo configured.
     this.logger.log(
       `[DEV ONLY] Email verification OTP for user ${userId}: ${otp}`,
     );
 
     return { otp, otpToken };
-  }
-
-  private async revokeAllRefreshTokens(userId: string): Promise<void> {
-    await this.refreshTokenModel.updateMany(
-      { user: userId, revokedAt: { $exists: false } },
-      { revokedAt: new Date() },
-    );
   }
 
   private passwordResetSecret(): string {
@@ -510,6 +444,7 @@ export class AuthService {
     }
   }
 
+  // IMPLEMENTATION OF ACCESS TOKEN AND REFRESH TOKEN ISSUANCE
   private async issueTokens(user: UserDocument): Promise<TokenPair> {
     const userId = user._id.toString();
 
@@ -521,26 +456,32 @@ export class AuthService {
       },
     );
 
-    const jti = randomUUID();
+    const refreshExpiresIn = this.config.get<string>(
+      'JWT_REFRESH_EXPIRY',
+    ) as StringValue;
+    // jti makes each issued token unique — without it, two tokens signed
+    // for the same user within the same second are byte-identical, which
+    // breaks "the old token no longer matches" after rotation.
     const refreshToken = await this.jwtService.signAsync(
-      { sub: userId, jti },
+      { sub: userId, jti: randomUUID() },
       {
         secret: this.config.get<string>('JWT_REFRESH_SECRET'),
-        expiresIn: this.config.get<string>('JWT_REFRESH_EXPIRY') as StringValue,
+        expiresIn: refreshExpiresIn,
       },
     );
 
     const decoded = this.jwtService.decode<{ exp: number }>(refreshToken);
-    const tokenHash = await bcrypt.hash(refreshToken, this.saltRounds());
-
-    await this.refreshTokenModel.create({
-      user: user._id,
-      jti,
-      tokenHash,
+    await this.usersService.setRefreshToken(userId, {
+      hashedToken: hashRefreshToken(refreshToken),
       expiresAt: new Date(decoded.exp * 1000),
     });
 
-    return { accessToken, refreshToken };
+    return {
+      accessToken,
+      refreshToken,
+      emailVerified: user.emailVerified,
+      kycStatus: user.kycStatus,
+    };
   }
 
   private saltRounds(): number {
