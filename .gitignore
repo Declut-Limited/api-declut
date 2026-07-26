@@ -6,3 +6,6 @@ dist/
 coverage/
 .DS_Store
 CLAUDE.md
+scripts/*
+postman/*
+test/*
