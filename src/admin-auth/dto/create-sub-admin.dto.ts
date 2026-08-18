@@ -26,10 +26,13 @@ export class CreateSubAdminDto {
   })
   password: string;
 
+  // Free-text job title for display only (e.g. "Operations Manager") — not
+  // a role. The only account roles are User and Admin; what distinguishes
+  // one admin from another is `permissions` below.
   @IsOptional()
   @IsString()
   @MaxLength(100)
-  role?: string;
+  title?: string;
 
   @IsOptional()
   @IsString()

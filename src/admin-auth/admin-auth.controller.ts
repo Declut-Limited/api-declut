@@ -17,6 +17,7 @@ import { AdminRefreshTokenDto } from './dto/admin-refresh-token.dto';
 import { AdminForgotPasswordDto } from './dto/admin-forgot-password.dto';
 import { AdminResetPasswordDto } from './dto/admin-reset-password.dto';
 import { AdminChangePasswordDto } from './dto/admin-change-password.dto';
+import { UpdateAdminPermissionsDto } from './dto/update-admin-permissions.dto';
 import { AdminJwtAuthGuard } from './guards/admin-jwt-auth.guard';
 import { CurrentAdmin } from './decorators/current-admin.decorator';
 import type { AdminAccessTokenPayload } from './interfaces/admin-jwt-payload.interface';
@@ -64,9 +65,12 @@ export class AdminAuthController {
 
   @Throttle(RESET_THROTTLE)
   @HttpCode(HttpStatus.OK)
-  @Post('reset-password')
-  resetPassword(@Body() dto: AdminResetPasswordDto) {
-    return this.adminAuthService.resetPassword(dto);
+  @Post('reset-password/:token')
+  resetPassword(
+    @Param('token') token: string,
+    @Body() dto: AdminResetPasswordDto,
+  ) {
+    return this.adminAuthService.resetPassword(token, dto);
   }
 
   @UseGuards(AdminJwtAuthGuard)
@@ -95,5 +99,17 @@ export class AdminAuthController {
     @Body() dto: CreateSubAdminDto,
   ) {
     return this.adminAuthService.createSubAdmin(admin.sub, dto);
+  }
+
+  // Partial patch of an existing admin's permissions — separate from
+  // creation since it merges into what's already there instead of
+  // resetting every omitted module/action to false.
+  @UseGuards(AdminJwtAuthGuard)
+  @Patch('sub-admins/:id/permissions')
+  updatePermissions(
+    @Param('id') id: string,
+    @Body() dto: UpdateAdminPermissionsDto,
+  ) {
+    return this.adminAuthService.updatePermissions(id, dto);
   }
 }

@@ -20,6 +20,18 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { escapeRegex } from '../common/utils/regex.util';
 
 const CATEGORY_POPULATE_FIELDS = 'title slug';
+const SELLER_POPULATE_FIELDS =
+  'name phone accountStatus company avgRating createdAt';
+
+interface PopulatedSeller {
+  _id: Types.ObjectId;
+  name: string;
+  phone?: string;
+  accountStatus: string;
+  company?: string;
+  avgRating: number;
+  createdAt: Date;
+}
 
 @Injectable()
 export class ListingsService {
@@ -75,6 +87,27 @@ export class ListingsService {
       throw new NotFoundException('Listing not found');
     }
     return listing;
+  }
+
+  // Display-only variant of findById() — seller populated and reshaped for
+  // the public single-listing GET. Deliberately separate from findById()
+  // itself: OffersService/TransactionsService/FavoritesService all call
+  // findById() internally and read listing.seller as a raw ObjectId
+  // (ownership checks, seller lookups) — populating seller there would
+  // silently corrupt every one of those .toString() comparisons.
+  async findByIdForDisplay(id: string): Promise<Record<string, unknown>> {
+    if (!isValidObjectId(id)) {
+      throw new NotFoundException('Listing not found');
+    }
+    const listing = await this.listingModel
+      .findOne({ _id: id, status: { $ne: ListingStatus.DELETED } })
+      .populate('category', CATEGORY_POPULATE_FIELDS)
+      .populate('seller', SELLER_POPULATE_FIELDS);
+    if (!listing) {
+      throw new NotFoundException('Listing not found');
+    }
+    const [shaped] = await this.attachSellerSummaries([listing]);
+    return shaped;
   }
 
   async update(
@@ -198,7 +231,7 @@ export class ListingsService {
   }
 
   async search(dto: SearchListingsDto): Promise<{
-    results: ListingDocument[];
+    results: Record<string, unknown>[];
     page: number;
     limit: number;
   }> {
@@ -229,7 +262,9 @@ export class ListingsService {
       const settings = await this.settingsService.get();
       const radiusKm = dto.radiusKm ?? settings.defaultSearchRadiusKm;
 
-      const results = await this.listingModel.aggregate<ListingDocument>([
+      const rows = await this.listingModel.aggregate<
+        ListingDocument & { seller: PopulatedSeller }
+      >([
         {
           $geoNear: {
             near: { type: 'Point', coordinates: [dto.lng, dto.lat] },
@@ -251,7 +286,39 @@ export class ListingsService {
           },
         },
         { $unwind: '$category' },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'seller',
+            foreignField: '_id',
+            as: 'seller',
+            pipeline: [
+              {
+                $project: {
+                  name: 1,
+                  phone: 1,
+                  accountStatus: 1,
+                  company: 1,
+                  avgRating: 1,
+                  createdAt: 1,
+                },
+              },
+            ],
+          },
+        },
+        { $unwind: '$seller' },
       ]);
+
+      const counts = await this.countsBySeller([
+        ...new Set(rows.map((r) => r.seller._id.toString())),
+      ]);
+      const results = rows.map((r) => ({
+        ...r,
+        seller: this.shapeSellerSummary(
+          r.seller,
+          counts.get(r.seller._id.toString())?.total ?? 0,
+        ),
+      }));
       return { results, page, limit };
     }
 
@@ -259,16 +326,18 @@ export class ListingsService {
     // when a keyword is given, otherwise newest first.
     const query = this.listingModel
       .find(filter)
-      .populate('category', CATEGORY_POPULATE_FIELDS);
+      .populate('category', CATEGORY_POPULATE_FIELDS)
+      .populate('seller', SELLER_POPULATE_FIELDS);
     if (dto.keyword) {
       query.sort({ score: { $meta: 'textScore' } });
     } else {
       query.sort({ createdAt: -1 });
     }
-    const results = await query
+    const found = await query
       .skip((page - 1) * limit)
       .limit(limit)
       .exec();
+    const results = await this.attachSellerSummaries(found);
 
     return { results, page, limit };
   }
@@ -282,7 +351,7 @@ export class ListingsService {
     status?: ListingStatus,
     search?: string,
   ): Promise<{
-    results: ListingDocument[];
+    results: Record<string, unknown>[];
     total: number;
     page: number;
     limit: number;
@@ -292,16 +361,18 @@ export class ListingsService {
       const re = new RegExp(escapeRegex(search), 'i');
       filter.title = re;
     }
-    const [results, total] = await Promise.all([
+    const [found, total] = await Promise.all([
       this.listingModel
         .find(filter)
         .populate('category', CATEGORY_POPULATE_FIELDS)
+        .populate('seller', SELLER_POPULATE_FIELDS)
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
         .exec(),
       this.listingModel.countDocuments(filter),
     ]);
+    const results = await this.attachSellerSummaries(found);
     return { results, total, page, limit };
   }
 
@@ -343,11 +414,30 @@ export class ListingsService {
       .exec();
   }
 
+  // Used internally as a mutation target (flag/adminRemove) and by
+  // AdminService.emailSeller() for the raw seller id — deliberately
+  // unpopulated. See adminFindByIdWithCategory() for the display variant.
   async adminFindById(id: string): Promise<ListingDocument> {
     if (!isValidObjectId(id)) {
       throw new NotFoundException('Listing not found');
     }
     const listing = await this.listingModel.findById(id);
+    if (!listing) {
+      throw new NotFoundException('Listing not found');
+    }
+    return listing;
+  }
+
+  // Display variant for TransactionsService's admin transaction-detail view
+  // (its `listing` sub-object populates category → { name, slug }).
+  async adminFindByIdWithCategory(id: string): Promise<ListingDocument> {
+    if (!isValidObjectId(id)) {
+      throw new NotFoundException('Listing not found');
+    }
+    const listing = await this.listingModel
+      .findById(id)
+      .populate('category', CATEGORY_POPULATE_FIELDS)
+      .exec();
     if (!listing) {
       throw new NotFoundException('Listing not found');
     }
@@ -434,22 +524,24 @@ export class ListingsService {
     page: number,
     limit: number,
   ): Promise<{
-    results: ListingDocument[];
+    results: Record<string, unknown>[];
     total: number;
     page: number;
     limit: number;
   }> {
     const filter = { seller: sellerId, status: { $ne: ListingStatus.DELETED } };
-    const [results, total] = await Promise.all([
+    const [found, total] = await Promise.all([
       this.listingModel
         .find(filter)
         .populate('category', CATEGORY_POPULATE_FIELDS)
+        .populate('seller', SELLER_POPULATE_FIELDS)
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
         .exec(),
       this.listingModel.countDocuments(filter),
     ]);
+    const results = await this.attachSellerSummaries(found);
     return { results, total, page, limit };
   }
 
@@ -462,5 +554,49 @@ export class ListingsService {
       throw new ForbiddenException('You do not own this listing');
     }
     return listing;
+  }
+
+  // Shared by every display-facing query method above — turns a populated
+  // seller sub-document into the agreed response shape. listingsCount comes
+  // from countsBySeller() (already built for the admin Users insights view)
+  // rather than being recomputed here.
+  private shapeSellerSummary(
+    seller: PopulatedSeller | null,
+    listingsCount: number,
+  ): Record<string, unknown> | null {
+    if (!seller) return null;
+    return {
+      id: seller._id.toString(),
+      name: seller.name,
+      contact: seller.phone,
+      role: 'Seller',
+      status: seller.accountStatus,
+      company: seller.company,
+      listingsCount,
+      createdAt: seller.createdAt,
+      rating: seller.avgRating.toFixed(1),
+    };
+  }
+
+  private async attachSellerSummaries(
+    listings: ListingDocument[],
+  ): Promise<Record<string, unknown>[]> {
+    const sellerIds = [
+      ...new Set(
+        listings
+          .map((l) => (l.seller as unknown as PopulatedSeller | null)?._id.toString())
+          .filter((id): id is string => !!id),
+      ),
+    ];
+    const counts = await this.countsBySeller(sellerIds);
+    return listings.map((l) => {
+      const obj = l.toObject() as unknown as Record<string, unknown>;
+      const seller = l.seller as unknown as PopulatedSeller | null;
+      obj.seller = this.shapeSellerSummary(
+        seller,
+        seller ? (counts.get(seller._id.toString())?.total ?? 0) : 0,
+      );
+      return obj;
+    });
   }
 }

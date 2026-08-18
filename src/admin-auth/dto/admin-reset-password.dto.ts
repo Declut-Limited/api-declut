@@ -1,9 +1,8 @@
 import { IsString, Matches, MaxLength, MinLength } from 'class-validator';
 
+// token now travels as a URL param (POST /admin/auth/reset-password/:token),
+// not a body field — matches the emailed reset link's own shape.
 export class AdminResetPasswordDto {
-  @IsString()
-  token: string;
-
   @IsString()
   @MinLength(8)
   @MaxLength(64)

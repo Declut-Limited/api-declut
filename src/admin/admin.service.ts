@@ -101,7 +101,11 @@ export class AdminService {
       id: a._id.toString(),
       name: a.name,
       email: a.email,
-      role: a.role ?? 'Admin',
+      // Literal, like 'User' above — there are only two account roles.
+      // a.title (job title, e.g. "Support Lead") is a display label, never
+      // what's shown in the role column; permissions are what actually
+      // distinguish one admin from another.
+      role: 'Admin',
       listingsCount: 0,
       status: 'active',
       joinedAt: (a as unknown as { createdAt: Date }).createdAt,
@@ -183,7 +187,11 @@ export class AdminService {
       return {
         type: 'admin' as const,
         details: {
-          role: admin.role,
+          // Literal, like 'User' above — the only two account roles.
+          // title is the free-text job title; permissions (below) are what
+          // actually distinguish one admin from another.
+          role: 'Admin',
+          title: admin.title,
           status: 'active',
           company: admin.company,
           createdAt: (admin as unknown as { createdAt: Date }).createdAt,

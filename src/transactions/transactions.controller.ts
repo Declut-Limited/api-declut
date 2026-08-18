@@ -66,7 +66,7 @@ export class TransactionsController {
   @UseGuards(JwtAuthGuard)
   @Get(':id')
   findOne(@CurrentUser() user: AccessTokenPayload, @Param('id') id: string) {
-    return this.transactionsService.findForUser(id, user.sub);
+    return this.transactionsService.findForUserDisplay(id, user.sub);
   }
 
   @UseGuards(JwtAuthGuard)

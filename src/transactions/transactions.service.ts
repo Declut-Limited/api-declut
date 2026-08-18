@@ -35,6 +35,18 @@ interface PaystackWebhookPayload {
   data?: { reference?: string };
 }
 
+const PARTY_POPULATE_FIELDS = 'name email accountStatus slug company';
+const LISTING_POPULATE_FIELDS = 'title';
+
+interface PopulatedParty {
+  _id: Types.ObjectId;
+  name: string;
+  email: string;
+  accountStatus: string;
+  slug?: string;
+  company?: string;
+}
+
 @Injectable()
 export class TransactionsService {
   private readonly logger = new Logger(TransactionsService.name);
@@ -369,9 +381,20 @@ export class TransactionsService {
       TransactionStatus.CANCELLED,
     );
 
+    await transaction.populate([
+      { path: 'buyer', select: PARTY_POPULATE_FIELDS },
+      { path: 'seller', select: PARTY_POPULATE_FIELDS },
+      { path: 'listing', select: LISTING_POPULATE_FIELDS },
+    ]);
     return this.toResponseShape(transaction, buyerId);
   }
 
+  // Raw — buyer/seller/listing stay unpopulated ObjectIds. Used internally
+  // by ReviewsService.create(), which reads transaction.buyer/.seller/
+  // .listing directly; populating here would corrupt those comparisons and
+  // the new Review's `listing` ref. See findForUserDisplay() for the
+  // populated variant the transactions controller actually returns to a
+  // client.
   async findForUser(transactionId: string, userId: string) {
     const transaction = await this.findRaw(transactionId);
     if (
@@ -380,12 +403,25 @@ export class TransactionsService {
     ) {
       throw new ForbiddenException('You are not a party to this transaction');
     }
+    return transaction;
+  }
+
+  async findForUserDisplay(transactionId: string, userId: string) {
+    const transaction = await this.findForUser(transactionId, userId);
+    await transaction.populate([
+      { path: 'buyer', select: PARTY_POPULATE_FIELDS },
+      { path: 'seller', select: PARTY_POPULATE_FIELDS },
+      { path: 'listing', select: LISTING_POPULATE_FIELDS },
+    ]);
     return this.toResponseShape(transaction, userId);
   }
 
   async listForUser(userId: string, page = 1, limit = 20) {
     const results = await this.transactionModel
       .find({ $or: [{ buyer: userId }, { seller: userId }] })
+      .populate('buyer', PARTY_POPULATE_FIELDS)
+      .populate('seller', PARTY_POPULATE_FIELDS)
+      .populate('listing', LISTING_POPULATE_FIELDS)
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
@@ -413,6 +449,9 @@ export class TransactionsService {
     const [results, total] = await Promise.all([
       this.transactionModel
         .find(filter)
+        .populate('buyer', PARTY_POPULATE_FIELDS)
+        .populate('seller', PARTY_POPULATE_FIELDS)
+        .populate('listing', LISTING_POPULATE_FIELDS)
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
@@ -427,8 +466,15 @@ export class TransactionsService {
     };
   }
 
+  // Currently unused (superseded by adminFindByIdDetailed() below) — kept
+  // populated too so it isn't a landmine if something starts calling it.
   async adminFindById(transactionId: string) {
     const transaction = await this.findRaw(transactionId);
+    await transaction.populate([
+      { path: 'buyer', select: PARTY_POPULATE_FIELDS },
+      { path: 'seller', select: PARTY_POPULATE_FIELDS },
+      { path: 'listing', select: LISTING_POPULATE_FIELDS },
+    ]);
     return this.toAdminResponseShape(transaction);
   }
 
@@ -441,7 +487,9 @@ export class TransactionsService {
     const [buyer, seller, listing, settings, timeline] = await Promise.all([
       this.usersService.findById(transaction.buyer.toString()),
       this.usersService.findById(transaction.seller.toString()),
-      this.listingsService.adminFindById(transaction.listing.toString()),
+      this.listingsService.adminFindByIdWithCategory(
+        transaction.listing.toString(),
+      ),
       this.settingsService.get(),
       this.auditLogService.findForEntity('transaction', transactionId, 20),
     ]);
@@ -492,16 +540,30 @@ export class TransactionsService {
       reference: transaction.reference,
       status,
       amount: transaction.amount,
-      buyer: buyer
-        ? { id: buyer._id.toString(), name: buyer.name, email: buyer.email }
-        : null,
-      seller: seller
-        ? { id: seller._id.toString(), name: seller.name, email: seller.email }
-        : null,
+      buyer: buyer ? this.shapeParty(buyer, 'buyer') : null,
+      seller: seller ? this.shapeParty(seller, 'seller') : null,
+      // "defect summary text" from the spec has no home yet — Listing has
+      // no defect/condition-notes field beyond `description`, and nothing
+      // else in this codebase tracks it. Left out rather than guessed;
+      // flag back if that should map to `description` or be a new field.
       listing: {
         id: listing._id.toString(),
         title: listing.title,
         slug: listing.slug,
+        description: listing.description,
+        brand: listing.specs?.brand,
+        condition: listing.condition,
+        price: listing.price,
+        location: listing.locationLabel,
+        status: listing.status,
+        createdAt: (listing as unknown as { createdAt: Date }).createdAt,
+        category:
+          listing.category && typeof listing.category === 'object'
+            ? {
+                name: (listing.category as unknown as { title: string }).title,
+                slug: (listing.category as unknown as { slug: string }).slug,
+              }
+            : null,
       },
       stages,
       payment: {
@@ -701,6 +763,11 @@ export class TransactionsService {
       data: { type: 'admin_released', transactionId },
     });
 
+    await transaction.populate([
+      { path: 'buyer', select: PARTY_POPULATE_FIELDS },
+      { path: 'seller', select: PARTY_POPULATE_FIELDS },
+      { path: 'listing', select: LISTING_POPULATE_FIELDS },
+    ]);
     return this.toAdminResponseShape(transaction);
   }
 
@@ -750,6 +817,11 @@ export class TransactionsService {
       data: { type: 'admin_refunded', transactionId },
     });
 
+    await transaction.populate([
+      { path: 'buyer', select: PARTY_POPULATE_FIELDS },
+      { path: 'seller', select: PARTY_POPULATE_FIELDS },
+      { path: 'listing', select: LISTING_POPULATE_FIELDS },
+    ]);
     return this.toAdminResponseShape(transaction);
   }
 
@@ -906,18 +978,46 @@ export class TransactionsService {
     return transaction;
   }
 
+  // Requires buyer/seller/listing already populated on the query/document
+  // that produced `transaction` — every caller populates before reaching
+  // here (see the callers above). rolePlayed is derived from which field
+  // we're shaping (buyer vs seller), not stored anywhere. Null-safe: a ref
+  // can populate to null for a stale/orphaned document (this dev DB still
+  // has pre-fix test data with string-typed ref fields — see CLAUDE.md's
+  // ObjectId schema bug note), and that shouldn't 500 the whole response.
+  private shapeParty(
+    user: PopulatedParty | null,
+    rolePlayed: 'buyer' | 'seller',
+  ): Record<string, unknown> | null {
+    if (!user) return null;
+    return {
+      id: user._id.toString(),
+      name: user.name,
+      email: user.email,
+      status: user.accountStatus,
+      rolePlayed,
+      slug: user.slug,
+      company: user.company,
+    };
+  }
+
   private toResponseShape(
     transaction: TransactionDocument,
     requesterId: string,
   ) {
-    const obj = transaction.toObject();
-    const isBuyer = transaction.buyer.toString() === requesterId;
+    const buyer = transaction.buyer as unknown as PopulatedParty | null;
+    const seller = transaction.seller as unknown as PopulatedParty | null;
+    const isBuyer = buyer?._id.toString() === requesterId;
     const showCode =
       isBuyer &&
       [
         TransactionStatus.ESCROW_ACTIVE,
         TransactionStatus.AWAITING_INSPECTION,
       ].includes(transaction.status);
+
+    const obj = transaction.toObject() as unknown as Record<string, unknown>;
+    obj.buyer = this.shapeParty(buyer, 'buyer');
+    obj.seller = this.shapeParty(seller, 'seller');
     if (!showCode) {
       delete obj.confirmationCode;
     }
@@ -1069,8 +1169,18 @@ export class TransactionsService {
     }));
   }
 
+  // Requires buyer/seller/listing already populated — same contract as
+  // toResponseShape() above.
   private toAdminResponseShape(transaction: TransactionDocument) {
-    const obj = transaction.toObject();
+    const obj = transaction.toObject() as unknown as Record<string, unknown>;
+    obj.buyer = this.shapeParty(
+      transaction.buyer as unknown as PopulatedParty | null,
+      'buyer',
+    );
+    obj.seller = this.shapeParty(
+      transaction.seller as unknown as PopulatedParty | null,
+      'seller',
+    );
     delete obj.confirmationCode;
     return obj;
   }

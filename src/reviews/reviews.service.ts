@@ -21,6 +21,27 @@ import { TrustScoreService } from '../trust-score/trust-score.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 
+const REVIEWER_POPULATE_FIELDS = 'name email slug company accountStatus image';
+const REVIEW_LISTING_POPULATE_FIELDS = 'title images slug createdAt';
+
+interface PopulatedReviewer {
+  _id: Types.ObjectId;
+  name: string;
+  email: string;
+  slug?: string;
+  company?: string;
+  accountStatus: string;
+  image?: string;
+}
+
+interface PopulatedReviewListing {
+  _id: Types.ObjectId;
+  title: string;
+  images: string[];
+  slug?: string;
+  createdAt: Date;
+}
+
 @Injectable()
 export class ReviewsService {
   constructor(
@@ -91,9 +112,11 @@ export class ReviewsService {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
 
-    const [results, total] = await Promise.all([
+    const [found, total] = await Promise.all([
       this.reviewModel
         .find({ reviewee: userId })
+        .populate('reviewer', REVIEWER_POPULATE_FIELDS)
+        .populate('listing', REVIEW_LISTING_POPULATE_FIELDS)
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
@@ -101,14 +124,24 @@ export class ReviewsService {
       this.reviewModel.countDocuments({ reviewee: userId }),
     ]);
 
-    return { results, total, page, limit };
+    return {
+      results: found.map((r) => this.shapeReview(r)),
+      total,
+      page,
+      limit,
+    };
   }
 
   // Both reviews left on a transaction (buyer's and seller's, whichever
   // exist) — only visible to the two parties on that transaction.
   async listForTransaction(transactionId: string, requesterId: string) {
     await this.transactionsService.findForUser(transactionId, requesterId);
-    return this.reviewModel.find({ transaction: transactionId }).exec();
+    const found = await this.reviewModel
+      .find({ transaction: transactionId })
+      .populate('reviewer', REVIEWER_POPULATE_FIELDS)
+      .populate('listing', REVIEW_LISTING_POPULATE_FIELDS)
+      .exec();
+    return found.map((r) => this.shapeReview(r));
   }
 
   async adminRemove(reviewId: string, adminId: string): Promise<void> {
@@ -138,24 +171,29 @@ export class ReviewsService {
     limit: number,
     status?: ReviewStatus,
   ): Promise<{
-    results: ReviewDocument[];
+    results: Record<string, unknown>[];
     total: number;
     page: number;
     limit: number;
   }> {
     const filter = status ? { status } : {};
-    const [results, total] = await Promise.all([
+    const [found, total] = await Promise.all([
       this.reviewModel
         .find(filter)
-        .populate('reviewer', 'name email')
-        .populate('listing', 'title slug')
+        .populate('reviewer', REVIEWER_POPULATE_FIELDS)
+        .populate('listing', REVIEW_LISTING_POPULATE_FIELDS)
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
         .exec(),
       this.reviewModel.countDocuments(filter),
     ]);
-    return { results, total, page, limit };
+    return {
+      results: found.map((r) => this.shapeReview(r)),
+      total,
+      page,
+      limit,
+    };
   }
 
   async adminFlag(reviewId: string, adminId: string): Promise<ReviewDocument> {
@@ -232,5 +270,33 @@ export class ReviewsService {
 
     // avgRating feeds the trust score formula — recalculate after it changes.
     await this.trustScoreService.recalculate(userId);
+  }
+
+  // Requires reviewer + listing already populated on the query that fetched
+  // `review`. role reuses the review's own stored role field (buyer/seller
+  // on that transaction) rather than inventing a per-User role — there
+  // isn't one.
+  private shapeReview(review: ReviewDocument): Record<string, unknown> {
+    const obj = review.toObject() as unknown as Record<string, unknown>;
+    const reviewer = review.reviewer as unknown as PopulatedReviewer;
+    obj.reviewer = {
+      id: reviewer._id.toString(),
+      name: reviewer.name,
+      email: reviewer.email,
+      slug: reviewer.slug,
+      role: review.role,
+      company: reviewer.company,
+      status: reviewer.accountStatus,
+      image: reviewer.image,
+    };
+    const listing = review.listing as unknown as PopulatedReviewListing;
+    obj.listing = {
+      id: listing._id.toString(),
+      title: listing.title,
+      mainImage: listing.images?.[0],
+      slug: listing.slug,
+      createdAt: listing.createdAt,
+    };
+    return obj;
   }
 }

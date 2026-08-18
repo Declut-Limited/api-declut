@@ -3888,9 +3888,55 @@
                     }
                   ]
                 },
-                "description": "entityType is free-text (e.g. transaction/listing/review/report/article/campaign) — omit for everything."
+                "description": "entityType is now a fixed enum: transaction, listing, review, report, article, campaign — omit for everything."
               },
-              "response": []
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const data = pm.response.json();",
+                      "if (data && data.data && data.data.results && data.data.results[0]) {",
+                      "    pm.collectionVariables.set(\"activityLogId\", data.data.results[0][\"_id\"]);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "{id}",
+              "description": "",
+              "item": [
+                {
+                  "name": "Get activity log by ID",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/activity-log/{{activityLogId}}",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "activity-log",
+                        "{{activityLogId}}"
+                      ]
+                    },
+                    "description": ""
+                  },
+                  "response": []
+                }
+              ]
             }
           ]
         },
@@ -4114,10 +4160,10 @@
                         "sub-admins"
                       ]
                     },
-                    "description": "Every module defaults to {view:false,write:false,delete:false} unless overridden — a new sub-admin starts with zero access.",
+                    "description": "Every module defaults to {view:false,write:false,delete:false} unless overridden. title is a free-text job label, not a role — the only account roles are User and Admin; permissions are what actually distinguish one admin from another.",
                     "body": {
                       "mode": "raw",
-                      "raw": "{\n  \"email\": \"amaka.okafor@declut.com\",\n  \"name\": \"Amaka Okafor\",\n  \"password\": \"SubAdminPass2026!\",\n  \"role\": \"Support Lead\",\n  \"company\": \"Declut\",\n  \"permissions\": {\n    \"users\": {\n      \"view\": true,\n      \"write\": true,\n      \"delete\": false\n    },\n    \"listings\": {\n      \"view\": true,\n      \"write\": true,\n      \"delete\": false\n    },\n    \"reviews\": {\n      \"view\": true,\n      \"write\": true,\n      \"delete\": true\n    }\n  }\n}",
+                      "raw": "{\n  \"email\": \"amaka.okafor@declut.com\",\n  \"name\": \"Amaka Okafor\",\n  \"password\": \"SubAdminPass2026!\",\n  \"title\": \"Support Lead\",\n  \"company\": \"Declut\",\n  \"permissions\": {\n    \"users\": {\n      \"view\": true,\n      \"write\": true,\n      \"delete\": false\n    },\n    \"listings\": {\n      \"view\": true,\n      \"write\": true,\n      \"delete\": false\n    },\n    \"reviews\": {\n      \"view\": true,\n      \"write\": true,\n      \"delete\": true\n    }\n  }\n}",
                       "options": {
                         "raw": {
                           "language": "json"
@@ -4125,7 +4171,75 @@
                       }
                     }
                   },
-                  "response": []
+                  "response": [],
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "const data = pm.response.json();",
+                          "if (data && data.data && data.data[\"id\"]) {",
+                          "    pm.collectionVariables.set(\"subAdminId\", data.data[\"id\"]);",
+                          "}"
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": "{subAdminId}",
+                  "description": "",
+                  "item": [
+                    {
+                      "name": "permissions",
+                      "description": "",
+                      "item": [
+                        {
+                          "name": "Update admin permissions",
+                          "request": {
+                            "method": "PATCH",
+                            "header": [
+                              {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminAccessToken}}",
+                                "type": "text"
+                              },
+                              {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                              }
+                            ],
+                            "url": {
+                              "raw": "{{baseUrl}}/admin/auth/sub-admins/{{subAdminId}}/permissions",
+                              "host": [
+                                "{{baseUrl}}"
+                              ],
+                              "path": [
+                                "admin",
+                                "auth",
+                                "sub-admins",
+                                "{{subAdminId}}",
+                                "permissions"
+                              ]
+                            },
+                            "description": "Partial patch — a module/action left out keeps its current value, it isn't reset to false. Separate from Create sub-admin, which does default omitted flags to false.",
+                            "body": {
+                              "mode": "raw",
+                              "raw": "{\n  \"permissions\": {\n    \"listings\": {\n      \"write\": true\n    },\n    \"reviews\": {\n      \"delete\": true\n    }\n  }\n}",
+                              "options": {
+                                "raw": {
+                                  "language": "json"
+                                }
+                              }
+                            }
+                          },
+                          "response": []
+                        }
+                      ]
+                    }
+                  ]
                 }
               ]
             },
@@ -4208,39 +4322,46 @@
               "description": "",
               "item": [
                 {
-                  "name": "Admin reset password",
-                  "request": {
-                    "method": "POST",
-                    "header": [
-                      {
-                        "key": "Content-Type",
-                        "value": "application/json",
-                        "type": "text"
-                      }
-                    ],
-                    "url": {
-                      "raw": "{{baseUrl}}/admin/auth/reset-password",
-                      "host": [
-                        "{{baseUrl}}"
-                      ],
-                      "path": [
-                        "admin",
-                        "auth",
-                        "reset-password"
-                      ]
-                    },
-                    "description": "token is the raw value from the emailed reset link (paste into adminResetToken).",
-                    "body": {
-                      "mode": "raw",
-                      "raw": "{\n  \"token\": \"{{adminResetToken}}\",\n  \"newPassword\": \"NewSecurePass2026!\"\n}",
-                      "options": {
-                        "raw": {
-                          "language": "json"
+                  "name": "{adminResetToken}",
+                  "description": "",
+                  "item": [
+                    {
+                      "name": "Admin reset password",
+                      "request": {
+                        "method": "POST",
+                        "header": [
+                          {
+                            "key": "Content-Type",
+                            "value": "application/json",
+                            "type": "text"
+                          }
+                        ],
+                        "url": {
+                          "raw": "{{baseUrl}}/admin/auth/reset-password/{{adminResetToken}}",
+                          "host": [
+                            "{{baseUrl}}"
+                          ],
+                          "path": [
+                            "admin",
+                            "auth",
+                            "reset-password",
+                            "{{adminResetToken}}"
+                          ]
+                        },
+                        "description": "token now travels as a URL param, matching the emailed reset link's own shape.",
+                        "body": {
+                          "mode": "raw",
+                          "raw": "{\n  \"newPassword\": \"NewSecurePass2026!\"\n}",
+                          "options": {
+                            "raw": {
+                              "language": "json"
+                            }
+                          }
                         }
-                      }
+                      },
+                      "response": []
                     }
-                  },
-                  "response": []
+                  ]
                 }
               ]
             },
@@ -4427,6 +4548,16 @@
     },
     {
       "key": "campaignId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "subAdminId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "activityLogId",
       "value": "",
       "type": "string"
     }

@@ -46,11 +46,17 @@ export class Admin {
   @Prop()
   passwordResetExpires?: Date;
 
-  // Free-text title (e.g. "Operations Manager") — not a named role that maps
-  // to a fixed permission bundle. Access control is entirely the
-  // `permissions` map below.
+  // The only two account roles in this system are User and Admin — two
+  // separate collections. There is no third role and no field named `role`
+  // anywhere: naming this `title` instead of `role` is deliberate, so
+  // nothing on an Admin document can be misread as a second role tier.
+  // It's a free-text job title (e.g. "Operations Manager") for display
+  // only — access control never branches on it. Every admin's actual
+  // access is entirely the `permissions` map below — two admins with the
+  // same `title` can have completely different permissions, and that's the
+  // intended shape (permission-based, not role-based access control).
   @Prop({ trim: true })
-  role?: string;
+  title?: string;
 
   @Prop({ trim: true })
   company?: string;

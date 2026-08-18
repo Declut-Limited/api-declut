@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { AuditLogService } from './audit-log.service';
 import { ListActivityLogDto } from './dto/list-activity-log.dto';
 import { AdminJwtAuthGuard } from '../admin-auth/guards/admin-jwt-auth.guard';
@@ -18,5 +18,11 @@ export class AuditLogController {
       dto.limit ?? 20,
       dto.entityType,
     );
+  }
+
+  @Get(':id')
+  @RequirePermission('activity', 'view')
+  findById(@Param('id') id: string) {
+    return this.auditLogService.findById(id);
   }
 }

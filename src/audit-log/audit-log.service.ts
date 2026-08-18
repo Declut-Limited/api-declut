@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, isValidObjectId } from 'mongoose';
 import { AuditLog, AuditLogDocument } from './schemas/audit-log.schema';
 import { getAuditIpAddress } from './audit-log-context';
 
@@ -60,5 +60,16 @@ export class AuditLogService {
       this.auditLogModel.countDocuments(filter),
     ]);
     return { results, total, page, limit };
+  }
+
+  async findById(id: string): Promise<AuditLogDocument> {
+    if (!isValidObjectId(id)) {
+      throw new NotFoundException('Activity log entry not found');
+    }
+    const entry = await this.auditLogModel.findById(id).exec();
+    if (!entry) {
+      throw new NotFoundException('Activity log entry not found');
+    }
+    return entry;
   }
 }

@@ -111,6 +111,15 @@ export class User {
   @Prop({ unique: true, sparse: true })
   slug?: string;
 
+  // Added to satisfy the Listing.seller/Review.reviewer populate contracts —
+  // no onboarding flow sets these yet (no business-seller signup step, no
+  // avatar upload endpoint), so both sit undefined for every user today.
+  @Prop({ trim: true })
+  company?: string;
+
+  @Prop()
+  image?: string;
+
   // Cached, recalculated on trigger events — see Trust Score / Reviews specs.
   @Prop({ default: 0 })
   trustScore: number;

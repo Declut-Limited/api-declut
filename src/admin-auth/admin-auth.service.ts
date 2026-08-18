@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -17,6 +18,7 @@ import { AdminRefreshTokenDto } from './dto/admin-refresh-token.dto';
 import { AdminForgotPasswordDto } from './dto/admin-forgot-password.dto';
 import { AdminResetPasswordDto } from './dto/admin-reset-password.dto';
 import { AdminChangePasswordDto } from './dto/admin-change-password.dto';
+import { UpdateAdminPermissionsDto } from './dto/update-admin-permissions.dto';
 import { AdminRefreshTokenPayload } from './interfaces/admin-jwt-payload.interface';
 import {
   hashRefreshToken,
@@ -40,7 +42,7 @@ export interface AdminProfile {
   id: string;
   email: string;
   name: string;
-  role?: string;
+  title?: string;
   company?: string;
   permissions: AdminPermissions;
   createdBy?: string;
@@ -94,11 +96,39 @@ export class AdminAuthService {
       email: dto.email.toLowerCase(),
       name: dto.name,
       password,
-      role: dto.role,
+      title: dto.title,
       company: dto.company,
       permissions: buildPermissions(dto.permissions),
       createdBy: creatorAdminId,
     });
+
+    return this.toProfile(admin);
+  }
+
+  // Separate from createSubAdmin() deliberately — this is a partial patch
+  // (a module/action left out of the request body keeps its current value),
+  // whereas creation defaults every omitted flag to false. Same guard as
+  // sub-admin creation (any authenticated admin, no extra RBAC check) —
+  // consistent with the existing flat trust model at this layer, not a new
+  // hole: an admin could already grant itself full access indirectly by
+  // creating a brand new full-permission sub-admin.
+  async updatePermissions(
+    adminId: string,
+    dto: UpdateAdminPermissionsDto,
+  ): Promise<AdminProfile> {
+    const admin = await this.adminModel.findById(adminId).exec();
+    if (!admin) {
+      throw new NotFoundException('Admin not found');
+    }
+
+    const merged: AdminPermissions = { ...admin.permissions };
+    for (const moduleKey of ADMIN_PERMISSION_MODULES) {
+      const patch = dto.permissions[moduleKey];
+      if (!patch) continue;
+      merged[moduleKey] = { ...merged[moduleKey], ...patch };
+    }
+    admin.permissions = merged;
+    await admin.save();
 
     return this.toProfile(admin);
   }
@@ -210,9 +240,10 @@ export class AdminAuthService {
   }
 
   async resetPassword(
+    token: string,
     dto: AdminResetPasswordDto,
   ): Promise<{ message: string }> {
-    const admin = await this.findByResetToken(dto.token);
+    const admin = await this.findByResetToken(token);
     if (!admin) {
       throw new UnauthorizedException(
         'This reset link has expired or is no longer valid — request a new one',
@@ -335,7 +366,7 @@ export class AdminAuthService {
       id: admin._id.toString(),
       email: admin.email,
       name: admin.name,
-      role: admin.role,
+      title: admin.title,
       company: admin.company,
       permissions: admin.permissions,
       createdBy: admin.createdBy?.toString(),

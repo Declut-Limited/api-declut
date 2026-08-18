@@ -3,6 +3,20 @@ import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 
 export type AuditLogDocument = HydratedDocument<AuditLog>;
 
+// The entityType values actually in use across every AuditLogService.record()
+// call site, as of this writing — kept here for query-param validation
+// (ListActivityLogDto) only. The schema field itself stays a plain string,
+// not an enum, so a future module can start writing a new entityType
+// without a schema migration; this list just needs a new member alongside it.
+export enum AuditEntityType {
+  TRANSACTION = 'transaction',
+  LISTING = 'listing',
+  REVIEW = 'review',
+  REPORT = 'report',
+  ARTICLE = 'article',
+  CAMPAIGN = 'campaign',
+}
+
 // Append-only, cross-domain — one row per notable event on any entity
 // (transaction, listing, report, ...). entityId has no ref: it points at a
 // different collection depending on entityType, and every reader already

@@ -11,9 +11,11 @@ import { ListReportsDto } from './dto/list-reports.dto';
 import { CounterService } from '../common/counter/counter.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 
+// Proposed field sets, not explicitly pinned down beyond "populated" —
+// flag back if these need adjusting once a real UI consumes them.
 const POPULATE_FIELDS = {
-  listing: 'title slug',
-  user: 'name email',
+  listing: 'title slug images',
+  user: 'name slug email',
 };
 
 @Injectable()
@@ -53,7 +55,7 @@ export class ReportsService {
   }
 
   async list(dto: ListReportsDto): Promise<{
-    results: ReportDocument[];
+    results: Record<string, unknown>[];
     total: number;
     page: number;
     limit: number;
@@ -62,7 +64,7 @@ export class ReportsService {
     const limit = dto.limit ?? 20;
     const filter = dto.status ? { status: dto.status } : {};
 
-    const [results, total] = await Promise.all([
+    const [found, total] = await Promise.all([
       this.reportModel
         .find(filter)
         .populate('listing', POPULATE_FIELDS.listing)
@@ -74,10 +76,15 @@ export class ReportsService {
       this.reportModel.countDocuments(filter),
     ]);
 
-    return { results, total, page, limit };
+    return {
+      results: found.map((r) => this.shapeReport(r)),
+      total,
+      page,
+      limit,
+    };
   }
 
-  async findBySlug(slug: string): Promise<ReportDocument> {
+  async findBySlug(slug: string): Promise<Record<string, unknown>> {
     const report = await this.reportModel
       .findOne({ slug })
       .populate('listing', POPULATE_FIELDS.listing)
@@ -86,7 +93,7 @@ export class ReportsService {
     if (!report) {
       throw new NotFoundException('Report not found');
     }
-    return report;
+    return this.shapeReport(report);
   }
 
   async updateStatus(
@@ -112,5 +119,18 @@ export class ReportsService {
     });
 
     return report;
+  }
+
+  // Requires listing/user already populated on the query that fetched
+  // `report`. mainImage is derived (Listing has no single-image field, just
+  // an images array) — not a Mongoose populate concern by itself.
+  private shapeReport(report: ReportDocument): Record<string, unknown> {
+    const obj = report.toObject() as unknown as Record<string, unknown>;
+    if (obj.listing && typeof obj.listing === 'object') {
+      const listing = obj.listing as { images?: string[] };
+      const { images, ...rest } = listing;
+      obj.listing = { ...rest, mainImage: images?.[0] };
+    }
+    return obj;
   }
 }
