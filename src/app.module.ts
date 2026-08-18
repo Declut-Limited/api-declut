@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
@@ -22,6 +22,11 @@ import { TrustScoreModule } from './trust-score/trust-score.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AdminModule } from './admin/admin.module';
 import { SettingsModule } from './settings/settings.module';
+import { CategoriesModule } from './categories/categories.module';
+import { ReportsModule } from './reports/reports.module';
+import { ContentModule } from './content/content.module';
+import { NotificationCampaignsModule } from './notification-campaigns/notification-campaigns.module';
+import { AuditContextMiddleware } from './common/middleware/audit-context.middleware';
 
 @Module({
   imports: [
@@ -69,6 +74,10 @@ import { SettingsModule } from './settings/settings.module';
     NotificationsModule,
     AdminModule,
     SettingsModule,
+    CategoriesModule,
+    ReportsModule,
+    ContentModule,
+    NotificationCampaignsModule,
   ],
   providers: [
     // APP_GUARD/APP_FILTER/APP_INTERCEPTOR are Nest's tokens for registering
@@ -81,4 +90,8 @@ import { SettingsModule } from './settings/settings.module';
     { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(AuditContextMiddleware).forRoutes('*');
+  }
+}

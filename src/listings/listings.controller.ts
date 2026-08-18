@@ -37,8 +37,10 @@ export class ListingsController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.listingsService.findById(id);
+  async findOne(@Param('id') id: string) {
+    const listing = await this.listingsService.findById(id);
+    this.listingsService.incrementViews(id);
+    return listing;
   }
 
   @Post()

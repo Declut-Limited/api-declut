@@ -9,6 +9,8 @@ import { ReviewsModule } from '../reviews/reviews.module';
 import { TrustScoreModule } from '../trust-score/trust-score.module';
 import { AdminAuthModule } from '../admin-auth/admin-auth.module';
 import { SettingsModule } from '../settings/settings.module';
+import { KycModule } from '../kyc/kyc.module';
+import { EmailModule } from '../email/email.module';
 
 @Module({
   imports: [
@@ -20,6 +22,8 @@ import { SettingsModule } from '../settings/settings.module';
     TrustScoreModule,
     AdminAuthModule,
     SettingsModule,
+    KycModule,
+    EmailModule,
   ],
   controllers: [AdminController],
   providers: [AdminService],

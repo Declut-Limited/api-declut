@@ -21,11 +21,14 @@ export class FavoritesService {
     // Idempotent: favoriting an already-favorited listing is a no-op, not
     // an error — upsert on the unique (user, listing) index handles races
     // (e.g. a double-tap) without a duplicate-key error reaching the client.
-    await this.favoriteModel.updateOne(
+    const result = await this.favoriteModel.updateOne(
       { user: userId, listing: listingId },
       { $setOnInsert: { user: userId, listing: listingId } },
       { upsert: true },
     );
+    if (result.upsertedCount > 0) {
+      await this.listingsService.incrementSaves(listingId);
+    }
 
     return { favorited: true };
   }
@@ -37,7 +40,13 @@ export class FavoritesService {
     if (!isValidObjectId(listingId)) {
       throw new NotFoundException('Listing not found');
     }
-    await this.favoriteModel.deleteOne({ user: userId, listing: listingId });
+    const result = await this.favoriteModel.deleteOne({
+      user: userId,
+      listing: listingId,
+    });
+    if (result.deletedCount > 0) {
+      await this.listingsService.decrementSaves(listingId);
+    }
     return { favorited: false };
   }
 

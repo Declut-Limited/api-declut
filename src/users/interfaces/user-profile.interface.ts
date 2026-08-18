@@ -1,4 +1,4 @@
-import { AuthProvider, KycStatus } from '../schemas/user.schema';
+import { AccountStatus, AuthProvider, KycStatus } from '../schemas/user.schema';
 
 // Full profile — only ever returned to the user themselves.
 export interface PrivateUserProfile {
@@ -10,6 +10,8 @@ export interface PrivateUserProfile {
   emailVerified: boolean;
   kycStatus: KycStatus;
   kyc: { verifiedNIN: boolean; livenessChecked: boolean };
+  accountStatus: AccountStatus;
+  slug?: string;
   trustScore: number;
   avgRating: number;
   reviewCount: number;

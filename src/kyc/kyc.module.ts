@@ -27,5 +27,6 @@ import { NotificationsModule } from '../notifications/notifications.module';
     // Vendor swap = change this one binding, nothing else in the module.
     { provide: KYC_PROVIDER, useClass: QoreIdProvider },
   ],
+  exports: [KycService],
 })
 export class KycModule {}

@@ -44,7 +44,11 @@ export const envValidationSchema = Joi.object({
   JWT_ADMIN_REFRESH_EXPIRY: Joi.string()
     .pattern(/^[0-9]+(ms|s|m|h|d|w|y)$/)
     .default('30d'),
-  JWT_ADMIN_PASSWORD_RESET_SECRET: Joi.string().min(32).required(),
+
+  // Base URL of the (separate) admin frontend — used only to build the
+  // clickable link in the password-reset email, e.g.
+  // {ADMIN_APP_URL}/reset-password/{rawToken}.
+  ADMIN_APP_URL: Joi.string().allow('').optional(),
 
   EMAIL_FROM: Joi.string().allow('').optional(),
   EMAIL_FROM_NAME: Joi.string().default('Declut'),

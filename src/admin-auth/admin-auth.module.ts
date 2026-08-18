@@ -5,6 +5,7 @@ import { Admin, AdminSchema } from './schemas/admin.schema';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminAuthController } from './admin-auth.controller';
 import { AdminJwtAuthGuard } from './guards/admin-jwt-auth.guard';
+import { PermissionsGuard } from './guards/permissions.guard';
 import { EmailModule } from '../email/email.module';
 
 @Module({
@@ -16,7 +17,7 @@ import { EmailModule } from '../email/email.module';
     EmailModule,
   ],
   controllers: [AdminAuthController],
-  providers: [AdminAuthService, AdminJwtAuthGuard],
-  exports: [AdminAuthService, AdminJwtAuthGuard],
+  providers: [AdminAuthService, AdminJwtAuthGuard, PermissionsGuard],
+  exports: [AdminAuthService, AdminJwtAuthGuard, PermissionsGuard],
 })
 export class AdminAuthModule {}

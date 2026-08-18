@@ -10,14 +10,13 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { Model, isValidObjectId } from 'mongoose';
+import { Model, Types, isValidObjectId } from 'mongoose';
 import { randomInt, randomUUID } from 'crypto';
 import {
   Transaction,
   TransactionDocument,
   TransactionStatus,
 } from './schemas/transaction.schema';
-import { AuditLog, AuditLogDocument } from './schemas/audit-log.schema';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { ConfirmCodeDto } from './dto/confirm-code.dto';
 import { ListingsService } from '../listings/listings.service';
@@ -28,6 +27,8 @@ import { PaystackService } from '../payments/paystack.service';
 import { TrustScoreService } from '../trust-score/trust-score.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SettingsService } from '../settings/settings.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { CounterService } from '../common/counter/counter.service';
 
 interface PaystackWebhookPayload {
   event: string;
@@ -41,7 +42,6 @@ export class TransactionsService {
   constructor(
     @InjectModel(Transaction.name)
     private transactionModel: Model<TransactionDocument>,
-    @InjectModel(AuditLog.name) private auditLogModel: Model<AuditLogDocument>,
     private readonly listingsService: ListingsService,
     private readonly offersService: OffersService,
     private readonly usersService: UsersService,
@@ -49,6 +49,8 @@ export class TransactionsService {
     private readonly trustScoreService: TrustScoreService,
     private readonly notificationsService: NotificationsService,
     private readonly settingsService: SettingsService,
+    private readonly auditLogService: AuditLogService,
+    private readonly counterService: CounterService,
   ) {}
 
   async create(buyerId: string, dto: CreateTransactionDto) {
@@ -121,13 +123,21 @@ export class TransactionsService {
     // throws (Paystack down, bad request, whatever), there's nothing to
     // clean up. Creating the Transaction row first and populating it after
     // would leave an orphaned pending_payment record with no checkout URL
-    // ever handed to the buyer if this call failed.
+    // ever handed to the buyer if this call failed. The human-readable
+    // reference's counter increment is deferred until after this call for
+    // the same reason — no point burning a sequence number on an attempt
+    // that never becomes a real transaction.
     const init = await this.paystackService.initializeTransaction({
       email: buyer.email,
       amountKobo: Math.round(amount * 100),
       reference,
       subaccountCode,
     });
+
+    const year = new Date().getFullYear();
+    const humanReference = `TXN-${year}-${String(
+      await this.counterService.next(`transaction-${year}`),
+    ).padStart(5, '0')}`;
 
     const transaction = await this.transactionModel.create({
       listing: dto.listingId,
@@ -138,6 +148,7 @@ export class TransactionsService {
       commissionPercentage,
       status: TransactionStatus.PENDING_PAYMENT,
       paystackReference: reference,
+      reference: humanReference,
     });
 
     await this.audit(
@@ -209,9 +220,14 @@ export class TransactionsService {
       return;
     }
 
+    const { escrowStalledThresholdDays } = await this.settingsService.get();
     const oldStatus = transaction.status;
     transaction.status = TransactionStatus.ESCROW_ACTIVE;
     transaction.escrowActiveAt = new Date();
+    transaction.inspectionDeadlineAt = new Date(
+      transaction.escrowActiveAt.getTime() +
+        escrowStalledThresholdDays * 24 * 60 * 60 * 1000,
+    );
     transaction.confirmationCode = this.generateConfirmationCode();
     await transaction.save();
 
@@ -296,6 +312,7 @@ export class TransactionsService {
     transaction.sellerPayoutAmount = sellerPayoutAmount;
     transaction.confirmationCode = undefined;
     await transaction.save();
+    await this.listingsService.markSold(transaction.listing.toString());
 
     await this.audit(
       transactionId,
@@ -385,8 +402,14 @@ export class TransactionsService {
   // asking, same "only ever returned to the buyer" invariant as
   // toResponseShape(), since an admin resolving a dispute needs the
   // transaction's state, not the buyer's private code.
-  async adminList(page: number, limit: number, status?: TransactionStatus) {
-    const filter = status ? { status } : {};
+  // `statuses` (plural) rather than a single status so AdminService's
+  // tab-vs-status filtering (see admin.service.ts) can pass either an exact
+  // single-status match or a grouped set of statuses (e.g. the "active" tab
+  // spanning pending_payment/escrow_active/awaiting_inspection) through the
+  // same query path.
+  async adminList(page: number, limit: number, statuses?: TransactionStatus[]) {
+    const filter =
+      statuses && statuses.length ? { status: { $in: statuses } } : {};
     const [results, total] = await Promise.all([
       this.transactionModel
         .find(filter)
@@ -407,6 +430,202 @@ export class TransactionsService {
   async adminFindById(transactionId: string) {
     const transaction = await this.findRaw(transactionId);
     return this.toAdminResponseShape(transaction);
+  }
+
+  // Rich admin detail view: populated buyer/seller/listing, a computed
+  // progress-stage timeline, the virtual escrow view (still just a read
+  // over Transaction fields — no separate Escrow collection), and the
+  // generalized AuditLog as the event timeline.
+  async adminFindByIdDetailed(transactionId: string) {
+    const transaction = await this.findRaw(transactionId);
+    const [buyer, seller, listing, settings, timeline] = await Promise.all([
+      this.usersService.findById(transaction.buyer.toString()),
+      this.usersService.findById(transaction.seller.toString()),
+      this.listingsService.adminFindById(transaction.listing.toString()),
+      this.settingsService.get(),
+      this.auditLogService.findForEntity('transaction', transactionId, 20),
+    ]);
+
+    const status = transaction.status;
+    const isTerminalBranch = [
+      TransactionStatus.STALLED,
+      TransactionStatus.DISPUTED,
+      TransactionStatus.REFUNDED,
+      TransactionStatus.CANCELLED,
+    ].includes(status);
+
+    const stages = [
+      {
+        key: 'payment_initiated',
+        completed: true,
+        at: (transaction as unknown as { createdAt: Date }).createdAt,
+      },
+      {
+        key: 'escrow_active',
+        completed: Boolean(transaction.escrowActiveAt),
+        at: transaction.escrowActiveAt,
+      },
+      {
+        key: 'completed',
+        completed: status === TransactionStatus.COMPLETED,
+        at:
+          status === TransactionStatus.COMPLETED
+            ? (transaction as unknown as { updatedAt: Date }).updatedAt
+            : undefined,
+      },
+    ];
+    if (isTerminalBranch) {
+      stages.push({
+        key: status,
+        completed: true,
+        at: (transaction as unknown as { updatedAt: Date }).updatedAt,
+      });
+    }
+
+    const commissionAmount =
+      transaction.commissionAmount ??
+      Math.round(
+        ((transaction.amount * transaction.commissionPercentage) / 100) * 100,
+      ) / 100;
+
+    return {
+      reference: transaction.reference,
+      status,
+      amount: transaction.amount,
+      buyer: buyer
+        ? { id: buyer._id.toString(), name: buyer.name, email: buyer.email }
+        : null,
+      seller: seller
+        ? { id: seller._id.toString(), name: seller.name, email: seller.email }
+        : null,
+      listing: {
+        id: listing._id.toString(),
+        title: listing.title,
+        slug: listing.slug,
+      },
+      stages,
+      payment: {
+        paystackReference: transaction.paystackReference,
+        platformFeePercentage: transaction.commissionPercentage,
+        platformFeeAmount: commissionAmount,
+        sellerPayoutAmount:
+          transaction.sellerPayoutAmount ??
+          Math.round((transaction.amount - commissionAmount) * 100) / 100,
+        // Honesty flag, same spirit as the QoreID/Paystack notes elsewhere:
+        // Paystack's own processing fee isn't captured anywhere in this
+        // codebase (only the platform commission is), so this is reported
+        // as unknown rather than guessed.
+        processingFee: null,
+      },
+      escrow: {
+        active: [
+          TransactionStatus.ESCROW_ACTIVE,
+          TransactionStatus.AWAITING_INSPECTION,
+        ].includes(status),
+        heldSince: transaction.escrowActiveAt,
+        stalledThresholdDays: settings.escrowStalledThresholdDays,
+        inspectionDeadlineAt: transaction.inspectionDeadlineAt,
+      },
+      timeline,
+    };
+  }
+
+  // Used by the admin Users detail view's "Insights" panel.
+  async getUserTransactionInsights(userId: string): Promise<{
+    sales: { total: number; completed: number };
+    purchases: { total: number; amountSpent: number };
+  }> {
+    const uid = new Types.ObjectId(userId);
+    const [salesRows, purchaseRows] = await Promise.all([
+      this.transactionModel.aggregate<{
+        _id: null;
+        total: number;
+        completed: number;
+      }>([
+        { $match: { seller: uid } },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: 1 },
+            completed: {
+              $sum: {
+                $cond: [
+                  { $eq: ['$status', TransactionStatus.COMPLETED] },
+                  1,
+                  0,
+                ],
+              },
+            },
+          },
+        },
+      ]),
+      this.transactionModel.aggregate<{
+        _id: null;
+        total: number;
+        amountSpent: number;
+      }>([
+        { $match: { buyer: uid } },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: 1 },
+            amountSpent: {
+              $sum: {
+                $cond: [
+                  { $eq: ['$status', TransactionStatus.COMPLETED] },
+                  '$amount',
+                  0,
+                ],
+              },
+            },
+          },
+        },
+      ]),
+    ]);
+
+    return {
+      sales: {
+        total: salesRows[0]?.total ?? 0,
+        completed: salesRows[0]?.completed ?? 0,
+      },
+      purchases: {
+        total: purchaseRows[0]?.total ?? 0,
+        amountSpent: purchaseRows[0]?.amountSpent ?? 0,
+      },
+    };
+  }
+
+  // Used by the admin Users detail view's "recent transactions" panel.
+  async getRecentForUser(
+    userId: string,
+    limit = 3,
+  ): Promise<
+    Array<{
+      transactionId: string;
+      role: 'buyer' | 'seller';
+      direction: 'inflow' | 'outflow';
+      amount: number;
+      status: TransactionStatus;
+      createdAt: Date;
+    }>
+  > {
+    const transactions = await this.transactionModel
+      .find({ $or: [{ buyer: userId }, { seller: userId }] })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .exec();
+
+    return transactions.map((t) => {
+      const isBuyer = t.buyer.toString() === userId;
+      return {
+        transactionId: t._id.toString(),
+        role: isBuyer ? 'buyer' : 'seller',
+        direction: isBuyer ? 'outflow' : 'inflow',
+        amount: t.amount,
+        status: t.status,
+        createdAt: (t as unknown as { createdAt: Date }).createdAt,
+      };
+    });
   }
 
   // Money moves automatically only on the unambiguous "correct code
@@ -455,6 +674,7 @@ export class TransactionsService {
     transaction.sellerPayoutAmount = sellerPayoutAmount;
     transaction.confirmationCode = undefined;
     await transaction.save();
+    await this.listingsService.markSold(transaction.listing.toString());
 
     await this.audit(
       transactionId,
@@ -664,8 +884,9 @@ export class TransactionsService {
     newState: string,
     metadata?: Record<string, unknown>,
   ): Promise<void> {
-    await this.auditLogModel.create({
-      transaction: transactionId,
+    await this.auditLogService.record({
+      entityType: 'transaction',
+      entityId: transactionId,
       event,
       actor,
       oldState,
@@ -701,6 +922,151 @@ export class TransactionsService {
       delete obj.confirmationCode;
     }
     return obj;
+  }
+
+  // Backs the admin Dashboard "insights" cards. `since` narrows the
+  // transaction-volume/revenue figures to a period; disputed/stalled counts
+  // are always a live, un-scoped snapshot rather than "how many became
+  // disputed in this period" — a judgment call, since what an admin
+  // actually wants from those two numbers is "how much needs my attention
+  // right now," not a historical rate. See AdminService.getDashboardInsights().
+  async getDashboardInsights(since?: Date): Promise<{
+    totalTransactions: number;
+    completedTransactions: number;
+    totalRevenue: number;
+    avgOrderValue: number;
+    disputedTransactions: number;
+    stalledTransactions: number;
+  }> {
+    const periodFilter = since ? { createdAt: { $gte: since } } : {};
+
+    const [periodRows, liveRows] = await Promise.all([
+      this.transactionModel.aggregate<{
+        _id: null;
+        totalTransactions: number;
+        completedTransactions: number;
+        totalRevenue: number;
+        completedAmountSum: number;
+      }>([
+        { $match: periodFilter },
+        {
+          $group: {
+            _id: null,
+            totalTransactions: { $sum: 1 },
+            completedTransactions: {
+              $sum: {
+                $cond: [
+                  { $eq: ['$status', TransactionStatus.COMPLETED] },
+                  1,
+                  0,
+                ],
+              },
+            },
+            totalRevenue: {
+              $sum: {
+                $cond: [
+                  { $eq: ['$status', TransactionStatus.COMPLETED] },
+                  '$commissionAmount',
+                  0,
+                ],
+              },
+            },
+            completedAmountSum: {
+              $sum: {
+                $cond: [
+                  { $eq: ['$status', TransactionStatus.COMPLETED] },
+                  '$amount',
+                  0,
+                ],
+              },
+            },
+          },
+        },
+      ]),
+      this.transactionModel.aggregate<{
+        _id: TransactionStatus;
+        count: number;
+      }>([
+        {
+          $match: {
+            status: {
+              $in: [TransactionStatus.DISPUTED, TransactionStatus.STALLED],
+            },
+          },
+        },
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]),
+    ]);
+
+    const p = periodRows[0];
+    const disputedTransactions =
+      liveRows.find((r) => r._id === TransactionStatus.DISPUTED)?.count ?? 0;
+    const stalledTransactions =
+      liveRows.find((r) => r._id === TransactionStatus.STALLED)?.count ?? 0;
+
+    return {
+      totalTransactions: p?.totalTransactions ?? 0,
+      completedTransactions: p?.completedTransactions ?? 0,
+      totalRevenue: Math.round((p?.totalRevenue ?? 0) * 100) / 100,
+      avgOrderValue:
+        p && p.completedTransactions > 0
+          ? Math.round((p.completedAmountSum / p.completedTransactions) * 100) /
+            100
+          : 0,
+      disputedTransactions,
+      stalledTransactions,
+    };
+  }
+
+  // Backs the admin Dashboard revenue-trends chart — monthly commission
+  // revenue for the last `monthsBack` months, zero-filled so a month with
+  // no completed transactions still appears as a point rather than a gap.
+  // Honesty flag: buckets by `updatedAt` on a completed transaction as a
+  // proxy for "when it completed" — there's no dedicated completedAt field,
+  // but confirmCode()/adminRelease() both set status to COMPLETED
+  // immediately before the save that stamps updatedAt, so in practice the
+  // two are the same instant for every transaction that reaches this state.
+  async getMonthlyRevenue(
+    monthsBack: number,
+  ): Promise<Array<{ year: number; month: number; revenue: number }>> {
+    const now = new Date();
+    const buckets: { year: number; month: number }[] = [];
+    for (let i = monthsBack - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      buckets.push({ year: d.getFullYear(), month: d.getMonth() + 1 });
+    }
+    const since = new Date(buckets[0].year, buckets[0].month - 1, 1);
+
+    const rows = await this.transactionModel.aggregate<{
+      _id: { year: number; month: number };
+      revenue: number;
+    }>([
+      {
+        $match: {
+          status: TransactionStatus.COMPLETED,
+          updatedAt: { $gte: since },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            year: { $year: '$updatedAt' },
+            month: { $month: '$updatedAt' },
+          },
+          revenue: { $sum: '$commissionAmount' },
+        },
+      },
+    ]);
+    const revenueMap = new Map(
+      rows.map((r) => [`${r._id.year}-${r._id.month}`, r.revenue]),
+    );
+
+    return buckets.map((b) => ({
+      year: b.year,
+      month: b.month,
+      revenue:
+        Math.round((revenueMap.get(`${b.year}-${b.month}`) ?? 0) * 100) / 100,
+    }));
   }
 
   private toAdminResponseShape(transaction: TransactionDocument) {

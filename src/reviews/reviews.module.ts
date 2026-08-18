@@ -7,6 +7,7 @@ import { TransactionsModule } from '../transactions/transactions.module';
 import { UsersModule } from '../users/users.module';
 import { TrustScoreModule } from '../trust-score/trust-score.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { AuditLogModule } from '../audit-log/audit-log.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     UsersModule,
     TrustScoreModule,
     NotificationsModule,
+    AuditLogModule,
   ],
   controllers: [ReviewsController],
   providers: [ReviewsService],

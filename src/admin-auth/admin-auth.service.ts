@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   Injectable,
   UnauthorizedException,
@@ -8,7 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { JwtService } from '@nestjs/jwt';
 import { Model } from 'mongoose';
-import { randomUUID } from 'crypto';
+import { randomBytes, randomUUID, createHash } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import type { StringValue } from 'ms';
 import { Admin, AdminDocument } from './schemas/admin.schema';
@@ -16,17 +15,21 @@ import { AdminLoginDto } from './dto/admin-login.dto';
 import { CreateSubAdminDto } from './dto/create-sub-admin.dto';
 import { AdminRefreshTokenDto } from './dto/admin-refresh-token.dto';
 import { AdminForgotPasswordDto } from './dto/admin-forgot-password.dto';
-import { AdminResendOtpDto } from './dto/admin-resend-otp.dto';
-import { AdminVerifyOtpDto } from './dto/admin-verify-otp.dto';
 import { AdminResetPasswordDto } from './dto/admin-reset-password.dto';
 import { AdminChangePasswordDto } from './dto/admin-change-password.dto';
 import { AdminRefreshTokenPayload } from './interfaces/admin-jwt-payload.interface';
-import { PasswordResetTokenService } from '../auth/password-reset-token.service';
 import {
   hashRefreshToken,
   refreshTokenMatches,
 } from '../auth/refresh-token-hash.util';
 import { EmailService } from '../email/email.service';
+import { escapeRegex } from '../common/utils/regex.util';
+import {
+  ADMIN_PERMISSION_MODULES,
+  AdminModulePermissions,
+  AdminPermissionModule,
+  AdminPermissions,
+} from './interfaces/admin-permissions.interface';
 
 export interface AdminTokenPair {
   accessToken: string;
@@ -37,19 +40,24 @@ export interface AdminProfile {
   id: string;
   email: string;
   name: string;
+  role?: string;
+  company?: string;
+  permissions: AdminPermissions;
   createdBy?: string;
   createdAt: Date;
 }
 
-// Mirrors AuthService (login/refresh/logout, stateless forgot-password/OTP)
-// but on the separate Admin collection with its own JWT secrets.
+const PASSWORD_RESET_EXPIRY_MINUTES = 10;
+
+// Mirrors AuthService for login/refresh/logout. Password reset is
+// deliberately NOT the regular-user's stateless-JWT/OTP flow — see
+// forgotPassword() below.
 @Injectable()
 export class AdminAuthService {
   constructor(
     @InjectModel(Admin.name) private adminModel: Model<AdminDocument>,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
-    private readonly passwordResetTokens: PasswordResetTokenService,
     private readonly emailService: EmailService,
   ) {}
 
@@ -86,6 +94,9 @@ export class AdminAuthService {
       email: dto.email.toLowerCase(),
       name: dto.name,
       password,
+      role: dto.role,
+      company: dto.company,
+      permissions: buildPermissions(dto.permissions),
       createdBy: creatorAdminId,
     });
 
@@ -98,6 +109,24 @@ export class AdminAuthService {
       throw new UnauthorizedException('Admin not found');
     }
     return this.toProfile(admin);
+  }
+
+  // Used by PermissionsGuard — routed through here rather than injecting
+  // the Admin model directly into the guard, so the guard's only
+  // constructor deps are Reflector + this already-exported service.
+  findById(adminId: string): Promise<AdminDocument | null> {
+    return this.adminModel.findById(adminId).exec();
+  }
+
+  // Used by the admin Users federated list — Admins have no equivalent of
+  // accountStatus, so status filters only ever narrow the User side.
+  searchAdmins(search?: string): Promise<AdminDocument[]> {
+    const query: Record<string, unknown> = {};
+    if (search) {
+      const re = new RegExp(escapeRegex(search), 'i');
+      query.$or = [{ name: re }, { email: re }];
+    }
+    return this.adminModel.find(query).sort({ createdAt: -1 }).exec();
   }
 
   async refresh(dto: AdminRefreshTokenDto): Promise<AdminTokenPair> {
@@ -131,141 +160,92 @@ export class AdminAuthService {
       .exec();
   }
 
-  private static readonly INERT_SUBJECT = '000000000000000000000000';
-
+  // Link-based reset, not the regular-user OTP flow: generate a random raw
+  // token, store only its SHA-256 hash + a short expiry, email the raw
+  // token as a link. Same anti-enumeration posture as before, but simpler
+  // — since nothing is returned to the client here (only sent by email),
+  // a non-match can just do nothing at all rather than needing a fake
+  // token to keep the response shape identical.
   async forgotPassword(
     dto: AdminForgotPasswordDto,
-  ): Promise<{ otpToken: string; message: string }> {
-    const admin = await this.adminModel
-      .findOne({ email: dto.email.toLowerCase() })
-      .select('+password')
-      .exec();
+  ): Promise<{ message: string }> {
     const message =
-      'If that email is registered, a verification code has been sent.';
+      'If that email is registered, a password reset link has been sent.';
 
+    const admin = await this.adminModel.findOne({
+      email: dto.email.toLowerCase(),
+    });
     if (!admin) {
-      const otpToken = await this.passwordResetTokens.signOtpToken({
-        sub: AdminAuthService.INERT_SUBJECT,
-        otp: this.passwordResetTokens.generateOtp(),
-        secret: this.passwordResetSecret(),
-        expiresIn: this.otpExpiry(),
-        saltRounds: this.saltRounds(),
-      });
-      return { otpToken, message };
+      return { message };
     }
 
-    const otp = this.passwordResetTokens.generateOtp();
-    const otpToken = await this.passwordResetTokens.signOtpToken({
-      sub: admin._id.toString(),
-      otp,
-      secret: this.passwordResetSecret(),
-      expiresIn: this.otpExpiry(),
-      saltRounds: this.saltRounds(),
-    });
-
-    await this.emailService.sendOtpEmail(
-      admin.email,
-      admin.name,
-      otp,
-      this.otpExpiryMinutes(),
+    const rawToken = randomBytes(32).toString('hex');
+    const hashedToken = createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(
+      Date.now() + PASSWORD_RESET_EXPIRY_MINUTES * 60_000,
     );
 
-    return { otpToken, message };
+    await this.adminModel
+      .updateOne(
+        { _id: admin._id },
+        { passwordResetToken: hashedToken, passwordResetExpires: expiresAt },
+      )
+      .exec();
+
+    const appUrl = this.config.get<string>('ADMIN_APP_URL', '');
+    const resetLink = `${appUrl}/reset-password/${rawToken}`;
+    await this.emailService.sendEmail({
+      to: admin.email,
+      toName: admin.name,
+      subject: 'Reset your Declut admin password',
+      html: `<p>Hi ${admin.name},</p><p>Click the link below to reset your password. This link expires in ${PASSWORD_RESET_EXPIRY_MINUTES} minutes.</p><p><a href="${resetLink}">${resetLink}</a></p><p>If you didn't request this, you can safely ignore this email.</p>`,
+    });
+
+    return { message };
   }
 
-  async resendOtp(
-    dto: AdminResendOtpDto,
-  ): Promise<{ otpToken: string; message: string }> {
-    const { sub } = await this.passwordResetTokens.decodeOtpToken(
-      dto.otpToken,
-      this.passwordResetSecret(),
-    );
-    const message =
-      'If that email is registered, a new verification code has been sent.';
-
-    if (sub === AdminAuthService.INERT_SUBJECT) {
-      const otpToken = await this.passwordResetTokens.signOtpToken({
-        sub: AdminAuthService.INERT_SUBJECT,
-        otp: this.passwordResetTokens.generateOtp(),
-        secret: this.passwordResetSecret(),
-        expiresIn: this.otpExpiry(),
-        saltRounds: this.saltRounds(),
-      });
-      return { otpToken, message };
-    }
-
-    const admin = await this.adminModel.findById(sub).exec();
-    if (!admin) {
-      throw new BadRequestException('Invalid or expired token');
-    }
-
-    const otp = this.passwordResetTokens.generateOtp();
-    const otpToken = await this.passwordResetTokens.signOtpToken({
-      sub: admin._id.toString(),
-      otp,
-      secret: this.passwordResetSecret(),
-      expiresIn: this.otpExpiry(),
-      saltRounds: this.saltRounds(),
-    });
-
-    await this.emailService.sendOtpEmail(
-      admin.email,
-      admin.name,
-      otp,
-      this.otpExpiryMinutes(),
-    );
-
-    return { otpToken, message };
-  }
-
-  async verifyOtp(dto: AdminVerifyOtpDto): Promise<{ resetToken: string }> {
-    const { sub } = await this.passwordResetTokens.verifyOtp(
-      dto.otpToken,
-      dto.otp,
-      this.passwordResetSecret(),
-    );
-
-    const admin = await this.adminModel
-      .findById(sub)
-      .select('+password')
-      .exec();
-    if (!admin) {
-      throw new UnauthorizedException('Invalid or expired code');
-    }
-
-    const resetToken = await this.passwordResetTokens.signResetToken({
-      sub: admin._id.toString(),
-      passwordHash: admin.password,
-      secret: this.passwordResetSecret(),
-      expiresIn: this.resetTokenExpiry(),
-    });
-
-    return { resetToken };
+  async verifyResetToken(token: string): Promise<{ valid: boolean }> {
+    const admin = await this.findByResetToken(token);
+    return { valid: !!admin };
   }
 
   async resetPassword(
     dto: AdminResetPasswordDto,
   ): Promise<{ message: string }> {
-    const unverified = this.jwtService.decode<{ sub?: string }>(dto.resetToken);
-    const admin = unverified?.sub
-      ? await this.adminModel
-          .findById(unverified.sub)
-          .select('+password')
-          .exec()
-      : null;
-
-    await this.passwordResetTokens.verifyResetToken(
-      dto.resetToken,
-      admin?.password,
-      this.passwordResetSecret(),
-    );
+    const admin = await this.findByResetToken(dto.token);
+    if (!admin) {
+      throw new UnauthorizedException(
+        'This reset link has expired or is no longer valid — request a new one',
+      );
+    }
 
     const password = await bcrypt.hash(dto.newPassword, this.saltRounds());
     await this.adminModel
-      .updateOne({ _id: admin!._id }, { password, $unset: { refreshToken: 1 } })
+      .updateOne(
+        { _id: admin._id },
+        {
+          password,
+          $unset: {
+            refreshToken: 1,
+            passwordResetToken: 1,
+            passwordResetExpires: 1,
+          },
+        },
+      )
       .exec();
 
     return { message: 'Password reset successfully. Please log in again.' };
+  }
+
+  private findByResetToken(rawToken: string): Promise<AdminDocument | null> {
+    const hashedToken = createHash('sha256').update(rawToken).digest('hex');
+    return this.adminModel
+      .findOne({
+        passwordResetToken: hashedToken,
+        passwordResetExpires: { $gt: new Date() },
+      })
+      .select('+passwordResetToken')
+      .exec();
   }
 
   async changePassword(
@@ -355,6 +335,9 @@ export class AdminAuthService {
       id: admin._id.toString(),
       email: admin.email,
       name: admin.name,
+      role: admin.role,
+      company: admin.company,
+      permissions: admin.permissions,
       createdBy: admin.createdBy?.toString(),
       createdAt: (admin as unknown as { createdAt: Date }).createdAt,
     };
@@ -363,20 +346,24 @@ export class AdminAuthService {
   private saltRounds(): number {
     return this.config.get<number>('BCRYPT_SALT_ROUNDS', 12);
   }
+}
 
-  private passwordResetSecret(): string {
-    return this.config.get<string>('JWT_ADMIN_PASSWORD_RESET_SECRET') as string;
-  }
-
-  private otpExpiry(): string {
-    return `${this.otpExpiryMinutes()}m`;
-  }
-
-  private otpExpiryMinutes(): number {
-    return this.config.get<number>('OTP_EXPIRY_MINUTES', 10);
-  }
-
-  private resetTokenExpiry(): string {
-    return `${this.config.get<number>('PASSWORD_RESET_TOKEN_EXPIRY_MINUTES', 15)}m`;
-  }
+// Every module defaults to false — an invited admin starts with zero access
+// until explicitly granted, never silently over-privileged. Only the known
+// 9 module keys are ever stored, regardless of what the caller sends.
+function buildPermissions(
+  input?: Partial<
+    Record<AdminPermissionModule, Partial<AdminModulePermissions>>
+  >,
+): AdminPermissions {
+  return Object.fromEntries(
+    ADMIN_PERMISSION_MODULES.map((moduleKey) => [
+      moduleKey,
+      {
+        view: Boolean(input?.[moduleKey]?.view),
+        write: Boolean(input?.[moduleKey]?.write),
+        delete: Boolean(input?.[moduleKey]?.delete),
+      },
+    ]),
+  ) as AdminPermissions;
 }

@@ -5,12 +5,18 @@ import { ListingsService } from './listings.service';
 import { ListingsController } from './listings.controller';
 import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 import { SettingsModule } from '../settings/settings.module';
+import { CategoriesModule } from '../categories/categories.module';
+import { CounterModule } from '../common/counter/counter.module';
+import { AuditLogModule } from '../audit-log/audit-log.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Listing.name, schema: ListingSchema }]),
     CloudinaryModule,
     SettingsModule,
+    CategoriesModule,
+    CounterModule,
+    AuditLogModule,
   ],
   controllers: [ListingsController],
   providers: [ListingsService],

@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument } from 'mongoose';
+import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 
 export type UserDocument = HydratedDocument<User>;
 
@@ -13,6 +13,15 @@ export enum KycStatus {
   PENDING = 'pending',
   VERIFIED = 'verified',
   REJECTED = 'rejected',
+}
+
+// 'pending' = not yet completed email verification (distinct from
+// kycStatus, which tracks identity verification separately). Flips to
+// 'active' the moment emailVerified becomes true.
+export enum AccountStatus {
+  ACTIVE = 'active',
+  SUSPENDED = 'suspended',
+  PENDING = 'pending',
 }
 
 @Schema({ _id: false })
@@ -31,6 +40,27 @@ class KycInfo {
 
   @Prop({ default: false })
   livenessChecked: boolean;
+}
+
+@Schema({ _id: false })
+class Suspension {
+  @Prop({ required: true })
+  reason: string;
+
+  @Prop({ required: true })
+  durationDays: number;
+
+  @Prop({ required: true })
+  outcome: string;
+
+  @Prop()
+  notes?: string;
+
+  @Prop({ required: true })
+  suspendedAt: Date;
+
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Admin', required: true })
+  suspendedBy: Types.ObjectId;
 }
 
 // Single user type — can both buy and sell. "buyer"/"seller" elsewhere in
@@ -70,6 +100,16 @@ export class User {
 
   @Prop({ type: RefreshTokenInfo, select: false })
   refreshToken?: RefreshTokenInfo;
+
+  @Prop({ type: String, enum: AccountStatus, default: AccountStatus.PENDING })
+  accountStatus: AccountStatus;
+
+  @Prop({ type: Suspension })
+  suspension?: Suspension;
+
+  // USR-#### — assigned once at creation via CounterService.
+  @Prop({ unique: true, sparse: true })
+  slug?: string;
 
   // Cached, recalculated on trigger events — see Trust Score / Reviews specs.
   @Prop({ default: 0 })

@@ -1,7 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, isValidObjectId } from 'mongoose';
+import { Model, Types, isValidObjectId } from 'mongoose';
 import {
+  AccountStatus,
   AuthProvider,
   KycStatus,
   User,
@@ -12,10 +13,15 @@ import {
   PrivateUserProfile,
   PublicUserProfile,
 } from './interfaces/user-profile.interface';
+import { CounterService } from '../common/counter/counter.service';
+import { escapeRegex } from '../common/utils/regex.util';
 
 @Injectable()
 export class UsersService {
-  constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
+  constructor(
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
+    private readonly counterService: CounterService,
+  ) {}
 
   findByEmail(email: string): Promise<UserDocument | null> {
     return this.userModel.findOne({ email: email.toLowerCase() }).exec();
@@ -61,12 +67,13 @@ export class UsersService {
     return this.userModel.findById(id).select('+refreshToken').exec();
   }
 
-  createEmailUser(params: {
+  async createEmailUser(params: {
     email: string;
     name: string;
     phone: string;
     password: string;
   }): Promise<UserDocument> {
+    const slug = await this.counterService.nextSlug('user', 'USR', 4);
     return this.userModel.create({
       email: params.email.toLowerCase(),
       name: params.name,
@@ -74,21 +81,27 @@ export class UsersService {
       password: params.password,
       authProvider: AuthProvider.EMAIL_PHONE,
       emailVerified: false,
+      accountStatus: AccountStatus.PENDING,
+      slug,
     });
   }
 
-  createGoogleUser(params: {
+  async createGoogleUser(params: {
     email: string;
     name: string;
     googleId: string;
   }): Promise<UserDocument> {
+    const slug = await this.counterService.nextSlug('user', 'USR', 4);
     return this.userModel.create({
       email: params.email.toLowerCase(),
       name: params.name,
       googleId: params.googleId,
       authProvider: AuthProvider.GOOGLE,
-      // Google already verified the email — no signup-OTP step needed.
+      // Google already verified the email — no signup-OTP step, and no
+      // 'pending' account gap either since there's nothing left to wait on.
       emailVerified: true,
+      accountStatus: AccountStatus.ACTIVE,
+      slug,
     });
   }
 
@@ -153,9 +166,83 @@ export class UsersService {
   }
 
   async setEmailVerified(userId: string): Promise<void> {
+    // Also completes onboarding: pending -> active. Only touches accountStatus
+    // when it's still pending, so this can never accidentally reactivate a
+    // suspended account.
+    await this.userModel
+      .updateOne(
+        { _id: userId, accountStatus: AccountStatus.PENDING },
+        { accountStatus: AccountStatus.ACTIVE },
+      )
+      .exec();
     await this.userModel
       .updateOne({ _id: userId }, { emailVerified: true })
       .exec();
+  }
+
+  async suspend(
+    userId: string,
+    adminId: string,
+    params: {
+      reason: string;
+      durationDays: number;
+      outcome: string;
+      notes?: string;
+    },
+  ): Promise<UserDocument> {
+    const user = await this.userModel.findById(userId).exec();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    user.accountStatus = AccountStatus.SUSPENDED;
+    user.suspension = {
+      reason: params.reason,
+      durationDays: params.durationDays,
+      outcome: params.outcome,
+      notes: params.notes,
+      suspendedAt: new Date(),
+      suspendedBy: new Types.ObjectId(adminId),
+    };
+    await user.save();
+    return user;
+  }
+
+  async reactivate(userId: string): Promise<UserDocument> {
+    const user = await this.userModel.findById(userId).exec();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    user.accountStatus = AccountStatus.ACTIVE;
+    user.suspension = undefined;
+    await user.save();
+    return user;
+  }
+
+  // Unpaginated — the federated admin users list merges this with matching
+  // Admin documents before paginating the combined set.
+  adminSearchUsers(filters: {
+    status?: AccountStatus;
+    search?: string;
+  }): Promise<UserDocument[]> {
+    const query: Record<string, unknown> = {};
+    if (filters.status) query.accountStatus = filters.status;
+    if (filters.search) {
+      const re = new RegExp(escapeRegex(filters.search), 'i');
+      query.$or = [{ name: re }, { email: re }];
+    }
+    return this.userModel.find(query).sort({ createdAt: -1 }).exec();
+  }
+
+  findByIdOrSlug(idOrSlug: string): Promise<UserDocument | null> {
+    return isValidObjectId(idOrSlug)
+      ? this.userModel.findById(idOrSlug).exec()
+      : this.userModel.findOne({ slug: idOrSlug }).exec();
+  }
+
+  // Backs the admin Dashboard "new users" insight card.
+  countNewInPeriod(since?: Date): Promise<number> {
+    const filter = since ? { createdAt: { $gte: since } } : {};
+    return this.userModel.countDocuments(filter).exec();
   }
 
   async setPaystackSubaccountCode(userId: string, code: string): Promise<void> {
@@ -208,32 +295,6 @@ export class UsersService {
       .exec();
   }
 
-  async adminListUsers(
-    page: number,
-    limit: number,
-  ): Promise<{
-    results: PrivateUserProfile[];
-    total: number;
-    page: number;
-    limit: number;
-  }> {
-    const [users, total] = await Promise.all([
-      this.userModel
-        .find({})
-        .sort({ createdAt: -1 })
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .exec(),
-      this.userModel.countDocuments({}),
-    ]);
-    return {
-      results: users.map((u) => this.toPrivateProfile(u)),
-      total,
-      page,
-      limit,
-    };
-  }
-
   private toPrivateProfile(user: UserDocument): PrivateUserProfile {
     return {
       id: user._id.toString(),
@@ -244,6 +305,8 @@ export class UsersService {
       emailVerified: user.emailVerified,
       kycStatus: user.kycStatus,
       kyc: user.kyc,
+      accountStatus: user.accountStatus,
+      slug: user.slug,
       trustScore: user.trustScore,
       avgRating: user.avgRating,
       reviewCount: user.reviewCount,

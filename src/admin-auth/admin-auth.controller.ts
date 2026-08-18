@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Param,
   Patch,
   Post,
   UseGuards,
@@ -14,8 +15,6 @@ import { AdminLoginDto } from './dto/admin-login.dto';
 import { CreateSubAdminDto } from './dto/create-sub-admin.dto';
 import { AdminRefreshTokenDto } from './dto/admin-refresh-token.dto';
 import { AdminForgotPasswordDto } from './dto/admin-forgot-password.dto';
-import { AdminResendOtpDto } from './dto/admin-resend-otp.dto';
-import { AdminVerifyOtpDto } from './dto/admin-verify-otp.dto';
 import { AdminResetPasswordDto } from './dto/admin-reset-password.dto';
 import { AdminChangePasswordDto } from './dto/admin-change-password.dto';
 import { AdminJwtAuthGuard } from './guards/admin-jwt-auth.guard';
@@ -23,7 +22,7 @@ import { CurrentAdmin } from './decorators/current-admin.decorator';
 import type { AdminAccessTokenPayload } from './interfaces/admin-jwt-payload.interface';
 
 const AUTH_THROTTLE = { default: { limit: 10, ttl: 60_000 } };
-const OTP_THROTTLE = { default: { limit: 5, ttl: 60_000 } };
+const RESET_THROTTLE = { default: { limit: 5, ttl: 60_000 } };
 
 @Controller('admin/auth')
 export class AdminAuthController {
@@ -50,28 +49,20 @@ export class AdminAuthController {
     return { loggedOut: true };
   }
 
-  @Throttle(OTP_THROTTLE)
+  @Throttle(RESET_THROTTLE)
   @HttpCode(HttpStatus.OK)
   @Post('forgot-password')
   forgotPassword(@Body() dto: AdminForgotPasswordDto) {
     return this.adminAuthService.forgotPassword(dto);
   }
 
-  @Throttle(OTP_THROTTLE)
-  @HttpCode(HttpStatus.OK)
-  @Post('resend-otp')
-  resendOtp(@Body() dto: AdminResendOtpDto) {
-    return this.adminAuthService.resendOtp(dto);
+  @Throttle(RESET_THROTTLE)
+  @Get('verify-reset-token/:token')
+  verifyResetToken(@Param('token') token: string) {
+    return this.adminAuthService.verifyResetToken(token);
   }
 
-  @Throttle(OTP_THROTTLE)
-  @HttpCode(HttpStatus.OK)
-  @Post('verify-otp')
-  verifyOtp(@Body() dto: AdminVerifyOtpDto) {
-    return this.adminAuthService.verifyOtp(dto);
-  }
-
-  @Throttle(OTP_THROTTLE)
+  @Throttle(RESET_THROTTLE)
   @HttpCode(HttpStatus.OK)
   @Post('reset-password')
   resetPassword(@Body() dto: AdminResetPasswordDto) {
@@ -94,9 +85,9 @@ export class AdminAuthController {
     return this.adminAuthService.changePassword(admin.sub, dto);
   }
 
-  // Any authenticated admin can create another admin — flat permissions,
-  // no RBAC tiers, per CLAUDE.md's existing "user/admin only, not the
-  // PRD's full RBAC matrix" scope decision.
+  // Any authenticated admin can create another admin — the permissions the
+  // new admin gets are whatever's in the request body (see RBAC), not
+  // inherited from the creator.
   @UseGuards(AdminJwtAuthGuard)
   @Post('sub-admins')
   createSubAdmin(

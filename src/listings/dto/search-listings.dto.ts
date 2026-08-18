@@ -2,18 +2,19 @@ import { Type } from 'class-transformer';
 import {
   IsEnum,
   IsInt,
+  IsMongoId,
   IsNumber,
   IsOptional,
   IsString,
   Max,
   Min,
 } from 'class-validator';
-import { ListingCategory, ListingCondition } from '../schemas/listing.schema';
+import { ListingCondition } from '../schemas/listing.schema';
 
 export class SearchListingsDto {
   @IsOptional()
-  @IsEnum(ListingCategory)
-  category?: ListingCategory;
+  @IsMongoId()
+  category?: string;
 
   @IsOptional()
   @IsEnum(ListingCondition)

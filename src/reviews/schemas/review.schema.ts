@@ -8,6 +8,15 @@ export enum ReviewerRole {
   SELLER = 'seller',
 }
 
+// visible: default. flagged: an admin has flagged it for attention.
+// resolved: an admin reviewed the flag and chose to keep the review as-is —
+// lighter-weight than the existing hard-delete moderation action.
+export enum ReviewStatus {
+  VISIBLE = 'visible',
+  FLAGGED = 'flagged',
+  RESOLVED = 'resolved',
+}
+
 @Schema({ timestamps: { createdAt: true, updatedAt: false } })
 export class Review {
   @Prop({
@@ -43,6 +52,9 @@ export class Review {
 
   @Prop({ trim: true, maxlength: 1000 })
   comment?: string;
+
+  @Prop({ type: String, enum: ReviewStatus, default: ReviewStatus.VISIBLE })
+  status: ReviewStatus;
 
   createdAt: Date;
 }

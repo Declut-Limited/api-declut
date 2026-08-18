@@ -3,7 +3,10 @@ import {
   ArrayMinSize,
   IsArray,
   IsEnum,
+  IsInt,
+  IsMongoId,
   IsNumber,
+  IsOptional,
   IsString,
   IsUrl,
   Max,
@@ -13,7 +16,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ListingCategory, ListingCondition } from '../schemas/listing.schema';
+import { ListingCondition } from '../schemas/listing.schema';
 
 class LocationDto {
   @IsNumber()
@@ -27,6 +30,23 @@ class LocationDto {
   lng: number;
 }
 
+class SpecsDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  brand?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  quantity?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  sku?: string;
+}
+
 export class CreateListingDto {
   @IsString()
   @MinLength(3)
@@ -38,8 +58,8 @@ export class CreateListingDto {
   @MaxLength(2000)
   description: string;
 
-  @IsEnum(ListingCategory)
-  category: ListingCategory;
+  @IsMongoId()
+  category: string;
 
   @IsEnum(ListingCondition)
   condition: ListingCondition;
@@ -62,4 +82,9 @@ export class CreateListingDto {
   @MinLength(3)
   @MaxLength(200)
   locationLabel: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SpecsDto)
+  specs?: SpecsDto;
 }

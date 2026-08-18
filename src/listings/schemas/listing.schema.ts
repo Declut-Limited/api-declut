@@ -3,20 +3,6 @@ import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 
 export type ListingDocument = HydratedDocument<Listing>;
 
-// Not specified in CLAUDE.md — reasonable defaults for a pre-owned household
-// items marketplace, flagged as a judgment call to revisit if you want a
-// different taxonomy.
-export enum ListingCategory {
-  FURNITURE = 'furniture',
-  ELECTRONICS = 'electronics',
-  APPLIANCES = 'appliances',
-  KITCHENWARE = 'kitchenware',
-  CLOTHING = 'clothing',
-  DECOR = 'decor',
-  BOOKS = 'books',
-  OTHER = 'other',
-}
-
 export enum ListingCondition {
   NEW = 'new',
   LIKE_NEW = 'like_new',
@@ -29,6 +15,8 @@ export enum ListingStatus {
   ACTIVE = 'active',
   ARCHIVED = 'archived',
   DELETED = 'deleted',
+  FLAGGED = 'flagged',
+  SOLD = 'sold',
 }
 
 @Schema({ _id: false })
@@ -39,6 +27,27 @@ class GeoPoint {
   // [lng, lat] — GeoJSON order, not [lat, lng].
   @Prop({ type: [Number], required: true })
   coordinates: [number, number];
+}
+
+@Schema({ _id: false })
+class PriceHistoryEntry {
+  @Prop({ required: true })
+  price: number;
+
+  @Prop({ required: true })
+  changedAt: Date;
+}
+
+@Schema({ _id: false })
+class ListingSpecs {
+  @Prop()
+  brand?: string;
+
+  @Prop()
+  quantity?: number;
+
+  @Prop()
+  sku?: string;
 }
 
 /**
@@ -63,8 +72,15 @@ export class Listing {
   @Prop({ required: true, trim: true, maxlength: 2000 })
   description: string;
 
-  @Prop({ type: String, enum: ListingCategory, required: true })
-  category: ListingCategory;
+  // References Category (src/categories) — was a fixed string enum until
+  // the Categories module made it admin-managed.
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'Category',
+    required: true,
+    index: true,
+  })
+  category: Types.ObjectId;
 
   @Prop({ type: String, enum: ListingCondition, required: true })
   condition: ListingCondition;
@@ -90,6 +106,25 @@ export class Listing {
 
   @Prop({ type: String, enum: ListingStatus, default: ListingStatus.ACTIVE })
   status: ListingStatus;
+
+  // LST-#### — assigned once at creation via CounterService.
+  @Prop({ unique: true, sparse: true })
+  slug?: string;
+
+  @Prop({ default: 0 })
+  views: number;
+
+  // Kept in sync from FavoritesService.add()/remove() — the trigger point
+  // for "someone saved this listing" already exists there.
+  @Prop({ default: 0 })
+  saves: number;
+
+  @Prop({ type: [PriceHistoryEntry], default: [] })
+  priceHistory: PriceHistoryEntry[];
+
+  // condition (above) stays top-level, not duplicated in here.
+  @Prop({ type: ListingSpecs })
+  specs?: ListingSpecs;
 
   createdAt: Date;
   updatedAt: Date;

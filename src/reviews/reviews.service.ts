@@ -6,7 +6,12 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, isValidObjectId } from 'mongoose';
-import { Review, ReviewDocument, ReviewerRole } from './schemas/review.schema';
+import {
+  Review,
+  ReviewDocument,
+  ReviewerRole,
+  ReviewStatus,
+} from './schemas/review.schema';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { ListReviewsDto } from './dto/list-reviews.dto';
 import { TransactionsService } from '../transactions/transactions.service';
@@ -14,6 +19,7 @@ import { TransactionStatus } from '../transactions/schemas/transaction.schema';
 import { UsersService } from '../users/users.service';
 import { TrustScoreService } from '../trust-score/trust-score.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 @Injectable()
 export class ReviewsService {
@@ -23,6 +29,7 @@ export class ReviewsService {
     private readonly usersService: UsersService,
     private readonly trustScoreService: TrustScoreService,
     private readonly notificationsService: NotificationsService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   async create(reviewerId: string, dto: CreateReviewDto) {
@@ -104,10 +111,7 @@ export class ReviewsService {
     return this.reviewModel.find({ transaction: transactionId }).exec();
   }
 
-  // Not wired to a controller route yet — exported for the Admin module
-  // (moderation) to call once it's built, same deferral pattern as
-  // UsersService.setKycStatus.
-  async adminRemove(reviewId: string): Promise<void> {
+  async adminRemove(reviewId: string, adminId: string): Promise<void> {
     if (!isValidObjectId(reviewId)) {
       throw new NotFoundException('Review not found');
     }
@@ -118,6 +122,88 @@ export class ReviewsService {
     const revieweeId = review.reviewee.toString();
     await review.deleteOne();
     await this.recalculate(revieweeId);
+    await this.auditLogService.record({
+      entityType: 'review',
+      entityId: reviewId,
+      event: 'review.removed',
+      actor: adminId,
+      oldState: review.status,
+    });
+  }
+
+  // Admin moderation list — populates reviewer and listing so an admin can
+  // see who wrote what about which item without a follow-up lookup.
+  async adminList(
+    page: number,
+    limit: number,
+    status?: ReviewStatus,
+  ): Promise<{
+    results: ReviewDocument[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const filter = status ? { status } : {};
+    const [results, total] = await Promise.all([
+      this.reviewModel
+        .find(filter)
+        .populate('reviewer', 'name email')
+        .populate('listing', 'title slug')
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .exec(),
+      this.reviewModel.countDocuments(filter),
+    ]);
+    return { results, total, page, limit };
+  }
+
+  async adminFlag(reviewId: string, adminId: string): Promise<ReviewDocument> {
+    const review = await this.findByIdOrThrow(reviewId);
+    const oldState = review.status;
+    review.status = ReviewStatus.FLAGGED;
+    await review.save();
+    await this.auditLogService.record({
+      entityType: 'review',
+      entityId: reviewId,
+      event: 'review.flagged',
+      actor: adminId,
+      oldState,
+      newState: review.status,
+    });
+    return review;
+  }
+
+  // Lighter-weight than adminRemove() — keeps the review, just marks the
+  // flag as handled rather than deleting it outright.
+  async adminResolve(
+    reviewId: string,
+    adminId: string,
+  ): Promise<ReviewDocument> {
+    const review = await this.findByIdOrThrow(reviewId);
+    const oldState = review.status;
+    review.status = ReviewStatus.RESOLVED;
+    await review.save();
+    await this.auditLogService.record({
+      entityType: 'review',
+      entityId: reviewId,
+      event: 'review.resolved',
+      actor: adminId,
+      oldState,
+      newState: review.status,
+    });
+    return review;
+  }
+
+  private async findByIdOrThrow(reviewId: string): Promise<ReviewDocument> {
+    if (!isValidObjectId(reviewId)) {
+      throw new NotFoundException('Review not found');
+    }
+    const review = await this.reviewModel.findById(reviewId);
+    if (!review) {
+      throw new NotFoundException('Review not found');
+    }
+    return review;
   }
 
   private async recalculate(userId: string): Promise<void> {
