@@ -4,13 +4,14 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as nodemailer from 'nodemailer';
+import type { Transporter } from 'nodemailer';
 
 /**
- * Brevo's transactional email REST API (`POST /v3/smtp/email`, `api-key`
- * header) — well-documented and stable, same confidence level as
- * PaystackService's core endpoints. Same lazy-config pattern as
- * Cloudinary/Paystack/QoreID: throws a clear 500 if BREVO_API_KEY isn't set
- * rather than failing at app boot, EXCEPT unlike FcmService's push
+ * Sends through Brevo's SMTP relay via nodemailer, rather than Brevo's REST
+ * API — same provider/account, different transport. Same lazy-config
+ * pattern as Cloudinary/Paystack/QoreID: throws a clear 500 if SMTP_* isn't
+ * set rather than failing at app boot, EXCEPT unlike FcmService's push
  * notifications, email delivery here is the critical path (forgot-password
  * literally cannot work without it reaching the user), so this throws
  * rather than silently no-op'ing.
@@ -18,9 +19,32 @@ import { ConfigService } from '@nestjs/config';
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
-  private readonly baseUrl = 'https://api.brevo.com/v3';
+  private transporter: Transporter | null = null;
 
   constructor(private readonly config: ConfigService) {}
+
+  private getTransporter(): Transporter {
+    if (this.transporter) return this.transporter;
+
+    const host = this.config.get<string>('SMTP_HOST');
+    const port = this.config.get<number>('SMTP_PORT');
+    const user = this.config.get<string>('SMTP_USER');
+    const pass = this.config.get<string>('SMTP_PASSWORD');
+
+    if (!host || !port || !user || !pass) {
+      throw new InternalServerErrorException(
+        'Email delivery is not configured on this server yet',
+      );
+    }
+
+    this.transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure: port === 465, // 587 uses STARTTLS, not implicit TLS
+      auth: { user, pass },
+    });
+    return this.transporter;
+  }
 
   async sendEmail(params: {
     to: string;
@@ -28,34 +52,26 @@ export class EmailService {
     subject: string;
     html: string;
   }): Promise<void> {
-    const apiKey = this.config.get<string>('BREVO_API_KEY');
     const fromEmail = this.config.get<string>('EMAIL_FROM');
     const fromName = this.config.get<string>('EMAIL_FROM_NAME', 'Declut');
 
-    if (!apiKey || !fromEmail) {
+    if (!fromEmail) {
       throw new InternalServerErrorException(
         'Email delivery is not configured on this server yet',
       );
     }
 
-    const response = await fetch(`${this.baseUrl}/smtp/email`, {
-      method: 'POST',
-      headers: {
-        'api-key': apiKey,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({
-        sender: { email: fromEmail, name: fromName },
-        to: [{ email: params.to, name: params.toName }],
-        subject: params.subject,
-        htmlContent: params.html,
-      }),
-    });
+    const transporter = this.getTransporter();
 
-    if (!response.ok) {
-      const body = await response.text();
-      this.logger.error(`Brevo send failed: ${response.status} ${body}`);
+    try {
+      await transporter.sendMail({
+        from: `"${fromName}" <${fromEmail}>`,
+        to: params.toName ? `"${params.toName}" <${params.to}>` : params.to,
+        subject: params.subject,
+        html: params.html,
+      });
+    } catch (err) {
+      this.logger.error(`SMTP send failed: ${(err as Error).message}`);
       throw new InternalServerErrorException('Failed to send email');
     }
   }

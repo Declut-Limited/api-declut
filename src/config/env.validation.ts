@@ -81,5 +81,10 @@ export const envValidationSchema = Joi.object({
   CLOUDINARY_API_KEY: Joi.string().allow('').optional(),
   CLOUDINARY_API_SECRET: Joi.string().allow('').optional(),
 
-  BREVO_API_KEY: Joi.string().allow('').optional(),
+  // Brevo's SMTP relay, sent via nodemailer rather than Brevo's REST API —
+  // same provider/account, different transport.
+  SMTP_HOST: Joi.string().allow('').optional(),
+  SMTP_PORT: Joi.number().optional(),
+  SMTP_USER: Joi.string().allow('').optional(),
+  SMTP_PASSWORD: Joi.string().allow('').optional(),
 });

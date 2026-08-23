@@ -7,7 +7,10 @@ export class AdminResetPasswordDto {
   @MinLength(8)
   @MaxLength(64)
   @Matches(/^(?=.*[A-Za-z])(?=.*\d).+$/, {
-    message: 'newPassword must contain at least one letter and one number',
+    message: 'password must contain at least one letter and one number',
   })
-  newPassword: string;
+  password: string;
+
+  @IsString()
+  passwordConfirm: string;
 }

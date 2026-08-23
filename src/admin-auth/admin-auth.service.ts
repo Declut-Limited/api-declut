@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -192,21 +193,23 @@ export class AdminAuthService {
 
   // Link-based reset, not the regular-user OTP flow: generate a random raw
   // token, store only its SHA-256 hash + a short expiry, email the raw
-  // token as a link. Same anti-enumeration posture as before, but simpler
-  // — since nothing is returned to the client here (only sent by email),
-  // a non-match can just do nothing at all rather than needing a fake
-  // token to keep the response shape identical.
+  // token as a link. Deliberately NOT anti-enumeration, unlike the
+  // regular-User flow: Admin accounts are never self-registered (only
+  // created by another admin via createSubAdmin), so there's no public
+  // signup surface an attacker could probe — and a generic "if that email
+  // is registered..." response just left a real admin unable to tell
+  // whether their own reset email actually went out. Explicit instruction:
+  // verify the email exists first, then send and report honestly either way.
   async forgotPassword(
     dto: AdminForgotPasswordDto,
   ): Promise<{ message: string }> {
-    const message =
-      'If that email is registered, a password reset link has been sent.';
-
     const admin = await this.adminModel.findOne({
       email: dto.email.toLowerCase(),
     });
     if (!admin) {
-      return { message };
+      throw new NotFoundException(
+        'No admin account found with that email address',
+      );
     }
 
     const rawToken = randomBytes(32).toString('hex');
@@ -231,7 +234,7 @@ export class AdminAuthService {
       html: `<p>Hi ${admin.name},</p><p>Click the link below to reset your password. This link expires in ${PASSWORD_RESET_EXPIRY_MINUTES} minutes.</p><p><a href="${resetLink}">${resetLink}</a></p><p>If you didn't request this, you can safely ignore this email.</p>`,
     });
 
-    return { message };
+    return { message: `Password reset link sent to ${admin.email}` };
   }
 
   async verifyResetToken(token: string): Promise<{ valid: boolean }> {
@@ -249,8 +252,11 @@ export class AdminAuthService {
         'This reset link has expired or is no longer valid — request a new one',
       );
     }
+    if (dto.password !== dto.passwordConfirm) {
+      throw new BadRequestException('Passwords do not match');
+    }
 
-    const password = await bcrypt.hash(dto.newPassword, this.saltRounds());
+    const password = await bcrypt.hash(dto.password, this.saltRounds());
     await this.adminModel
       .updateOne(
         { _id: admin._id },
