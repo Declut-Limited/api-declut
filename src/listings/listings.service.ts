@@ -21,7 +21,7 @@ import { escapeRegex } from '../common/utils/regex.util';
 
 const CATEGORY_POPULATE_FIELDS = 'title slug';
 const SELLER_POPULATE_FIELDS =
-  'name phone accountStatus company avgRating createdAt';
+  'name phone accountStatus company avgRating createdAt slug';
 
 interface PopulatedSeller {
   _id: Types.ObjectId;
@@ -31,6 +31,7 @@ interface PopulatedSeller {
   company?: string;
   avgRating: number;
   createdAt: Date;
+  slug?: string;
 }
 
 @Injectable()
@@ -541,7 +542,7 @@ export class ListingsService {
         .exec(),
       this.listingModel.countDocuments(filter),
     ]);
-    const results = await this.attachSellerSummaries(found);
+    const results = await this.attachSellerSummaries(found, true);
     return { results, total, page, limit };
   }
 
@@ -563,10 +564,12 @@ export class ListingsService {
   private shapeSellerSummary(
     seller: PopulatedSeller | null,
     listingsCount: number,
+    includeSlug = false,
   ): Record<string, unknown> | null {
     if (!seller) return null;
     return {
       id: seller._id.toString(),
+      ...(includeSlug && { slug: seller.slug }),
       name: seller.name,
       contact: seller.phone,
       role: 'Seller',
@@ -580,11 +583,14 @@ export class ListingsService {
 
   private async attachSellerSummaries(
     listings: ListingDocument[],
+    includeSlug = false,
   ): Promise<Record<string, unknown>[]> {
     const sellerIds = [
       ...new Set(
         listings
-          .map((l) => (l.seller as unknown as PopulatedSeller | null)?._id.toString())
+          .map((l) =>
+            (l.seller as unknown as PopulatedSeller | null)?._id.toString(),
+          )
           .filter((id): id is string => !!id),
       ),
     ];
@@ -595,6 +601,7 @@ export class ListingsService {
       obj.seller = this.shapeSellerSummary(
         seller,
         seller ? (counts.get(seller._id.toString())?.total ?? 0) : 0,
+        includeSlug,
       );
       return obj;
     });

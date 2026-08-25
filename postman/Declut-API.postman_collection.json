@@ -770,52 +770,62 @@
                 {
                   "key": "keyword",
                   "value": "sofa",
-                  "disabled": false
+                  "disabled": false,
+                  "description": "Free-text match against title/description (Mongo text search)."
                 },
                 {
                   "key": "category",
                   "value": "furniture",
-                  "disabled": false
+                  "disabled": false,
+                  "description": "Category id to filter by."
                 },
                 {
                   "key": "condition",
                   "value": "good",
-                  "disabled": false
+                  "disabled": false,
+                  "description": "Listing condition — new, like_new, good, fair, or poor."
                 },
                 {
                   "key": "minPrice",
                   "value": "5000",
-                  "disabled": false
+                  "disabled": false,
+                  "description": "Minimum price, >= 0."
                 },
                 {
                   "key": "maxPrice",
                   "value": "50000",
-                  "disabled": false
+                  "disabled": false,
+                  "description": "Maximum price, >= 0."
                 },
                 {
                   "key": "lat",
                   "value": "6.5244",
-                  "disabled": false
+                  "disabled": false,
+                  "description": "Latitude for radius search, -90 to 90 — requires lng."
                 },
                 {
                   "key": "lng",
                   "value": "3.3792",
-                  "disabled": false
+                  "disabled": false,
+                  "description": "Longitude for radius search, -180 to 180 — requires lat."
                 },
                 {
                   "key": "radiusKm",
                   "value": "15",
-                  "disabled": false
+                  "disabled": false,
+                  "description": "Search radius in km, > 0.1 — defaults to the admin-configured defaultSearchRadiusKm when lat/lng are given but this is omitted."
                 },
                 {
                   "key": "page",
                   "value": "1",
-                  "disabled": false
+                  "disabled": false,
+                  "description": "Page number, >= 1. Default 1."
                 },
                 {
                   "key": "limit",
                   "value": "20",
-                  "disabled": false
+                  "disabled": false,
+                  "description": "Results per page, 1-50. Default 20."
                 }
               ]
             },
@@ -1048,12 +1058,14 @@
                 {
                   "key": "page",
                   "value": "1",
-                  "disabled": false
+                  "disabled": false,
+                  "description": "Page number, >= 1. Default 1."
                 },
                 {
                   "key": "limit",
                   "value": "20",
-                  "disabled": false
+                  "disabled": false,
+                  "description": "Results per page, 1-50. Default 20."
                 }
               ]
             },
@@ -1273,12 +1285,14 @@
                 {
                   "key": "page",
                   "value": "1",
-                  "disabled": false
+                  "disabled": false,
+                  "description": "Page number, >= 1. Default 1."
                 },
                 {
                   "key": "limit",
                   "value": "20",
-                  "disabled": false
+                  "disabled": false,
+                  "description": "Results per page, 1-50. Default 20."
                 }
               ]
             },
@@ -1564,12 +1578,14 @@
                 {
                   "key": "page",
                   "value": "1",
-                  "disabled": false
+                  "disabled": false,
+                  "description": "Page number, >= 1. Default 1."
                 },
                 {
                   "key": "limit",
                   "value": "20",
-                  "disabled": false
+                  "disabled": false,
+                  "description": "Results per page, 1-50. Default 20."
                 }
               ]
             },
@@ -1814,12 +1830,14 @@
                         {
                           "key": "page",
                           "value": "1",
-                          "disabled": false
+                          "disabled": false,
+                          "description": "Page number, >= 1. Default 1."
                         },
                         {
                           "key": "limit",
                           "value": "20",
-                          "disabled": false
+                          "disabled": false,
+                          "description": "Results per page, 1-50. Default 20."
                         }
                       ]
                     },
@@ -1997,7 +2015,8 @@
                         {
                           "key": "period",
                           "value": "month",
-                          "disabled": false
+                          "disabled": false,
+                          "description": "today, week, month, year, or all. Default month."
                         }
                       ]
                     },
@@ -2036,7 +2055,8 @@
                         {
                           "key": "period",
                           "value": "yearly",
-                          "disabled": false
+                          "disabled": false,
+                          "description": "yearly (12 monthly buckets) or quarterly (3 monthly buckets). Default yearly."
                         }
                       ]
                     },
@@ -2076,22 +2096,26 @@
                     {
                       "key": "page",
                       "value": "1",
-                      "disabled": false
+                      "disabled": false,
+                      "description": "Page number, >= 1. Default 1."
                     },
                     {
                       "key": "limit",
                       "value": "20",
-                      "disabled": false
+                      "disabled": false,
+                      "description": "Results per page, 1-100. Default 20."
                     },
                     {
                       "key": "status",
                       "value": "active",
-                      "disabled": true
+                      "disabled": true,
+                      "description": "active, suspended, or pending — Users only; Admins have no accountStatus and are excluded by this filter."
                     },
                     {
                       "key": "search",
                       "value": "amaka",
-                      "disabled": true
+                      "disabled": true,
+                      "description": "Matches name or email (case-insensitive)."
                     }
                   ]
                 },
@@ -2320,22 +2344,26 @@
                     {
                       "key": "page",
                       "value": "1",
-                      "disabled": false
+                      "disabled": false,
+                      "description": "Page number, >= 1. Default 1."
                     },
                     {
                       "key": "limit",
                       "value": "20",
-                      "disabled": false
+                      "disabled": false,
+                      "description": "Results per page, 1-100. Default 20."
                     },
                     {
                       "key": "status",
                       "value": "all",
-                      "disabled": false
+                      "disabled": false,
+                      "description": "active, archived, deleted, flagged, sold, or all. Omitting this (or passing all) returns every status."
                     },
                     {
                       "key": "search",
                       "value": "sofa",
-                      "disabled": true
+                      "disabled": true,
+                      "description": "Matches listing title (case-insensitive)."
                     }
                   ]
                 },
@@ -2409,12 +2437,14 @@
                             {
                               "key": "page",
                               "value": "1",
-                              "disabled": false
+                              "disabled": false,
+                              "description": "Page number, >= 1. Default 1."
                             },
                             {
                               "key": "limit",
                               "value": "20",
-                              "disabled": false
+                              "disabled": false,
+                              "description": "Results per page, 1-100. Default 20."
                             }
                           ]
                         },
@@ -2568,22 +2598,26 @@
                     {
                       "key": "page",
                       "value": "1",
-                      "disabled": false
+                      "disabled": false,
+                      "description": "Page number, >= 1. Default 1."
                     },
                     {
                       "key": "limit",
                       "value": "20",
-                      "disabled": false
+                      "disabled": false,
+                      "description": "Results per page, 1-100. Default 20."
                     },
                     {
                       "key": "status",
                       "value": "disputed",
-                      "disabled": true
+                      "disabled": true,
+                      "description": "Exact status — pending_payment, escrow_active, awaiting_inspection, completed, stalled, disputed, refunded, or cancelled. Overrides tab when both are given."
                     },
                     {
                       "key": "tab",
                       "value": "active",
-                      "disabled": true
+                      "disabled": true,
+                      "description": "Grouped tab filter — all, active, completed, disputed, stalled, or refunded (refunded also folds in cancelled). Ignored if status is given."
                     }
                   ]
                 },
@@ -2733,12 +2767,14 @@
                     {
                       "key": "page",
                       "value": "1",
-                      "disabled": false
+                      "disabled": false,
+                      "description": "Page number, >= 1. Default 1."
                     },
                     {
                       "key": "limit",
                       "value": "20",
-                      "disabled": false
+                      "disabled": false,
+                      "description": "Results per page, 1-100. Default 20."
                     }
                   ]
                 },
@@ -2776,17 +2812,20 @@
                     {
                       "key": "page",
                       "value": "1",
-                      "disabled": false
+                      "disabled": false,
+                      "description": "Page number, >= 1. Default 1."
                     },
                     {
                       "key": "limit",
                       "value": "20",
-                      "disabled": false
+                      "disabled": false,
+                      "description": "Results per page, 1-100. Default 20."
                     },
                     {
                       "key": "status",
                       "value": "flagged",
-                      "disabled": true
+                      "disabled": true,
+                      "description": "visible, flagged, or resolved."
                     }
                   ]
                 },
@@ -3147,17 +3186,20 @@
                     {
                       "key": "page",
                       "value": "1",
-                      "disabled": false
+                      "disabled": false,
+                      "description": "Page number, >= 1. Default 1."
                     },
                     {
                       "key": "limit",
                       "value": "20",
-                      "disabled": false
+                      "disabled": false,
+                      "description": "Results per page, 1-100. Default 20."
                     },
                     {
                       "key": "status",
                       "value": "new",
-                      "disabled": true
+                      "disabled": true,
+                      "description": "new, investigating, or resolved."
                     }
                   ]
                 },
@@ -3336,17 +3378,20 @@
                     {
                       "key": "page",
                       "value": "1",
-                      "disabled": false
+                      "disabled": false,
+                      "description": "Page number, >= 1. Default 1."
                     },
                     {
                       "key": "limit",
                       "value": "20",
-                      "disabled": false
+                      "disabled": false,
+                      "description": "Results per page, 1-100. Default 20."
                     },
                     {
                       "key": "status",
                       "value": "draft",
-                      "disabled": true
+                      "disabled": true,
+                      "description": "draft, published, or retired."
                     }
                   ]
                 },
@@ -3610,17 +3655,20 @@
                     {
                       "key": "page",
                       "value": "1",
-                      "disabled": false
+                      "disabled": false,
+                      "description": "Page number, >= 1. Default 1."
                     },
                     {
                       "key": "limit",
                       "value": "20",
-                      "disabled": false
+                      "disabled": false,
+                      "description": "Results per page, 1-100. Default 20."
                     },
                     {
                       "key": "status",
                       "value": "draft",
-                      "disabled": true
+                      "disabled": true,
+                      "description": "draft or sent."
                     }
                   ]
                 },
@@ -3874,17 +3922,20 @@
                     {
                       "key": "page",
                       "value": "1",
-                      "disabled": false
+                      "disabled": false,
+                      "description": "Page number, >= 1. Default 1."
                     },
                     {
                       "key": "limit",
                       "value": "20",
-                      "disabled": false
+                      "disabled": false,
+                      "description": "Results per page, 1-100. Default 20."
                     },
                     {
                       "key": "entityType",
                       "value": "listing",
-                      "disabled": true
+                      "disabled": true,
+                      "description": "transaction, listing, review, report, article, or campaign."
                     }
                   ]
                 },
