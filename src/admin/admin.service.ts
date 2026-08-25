@@ -167,6 +167,12 @@ export class AdminService {
           status: user.accountStatus,
           createdAt: (user as unknown as { createdAt: Date }).createdAt,
           rating: user.avgRating.toFixed(1),
+          reviewCount: user.reviewCount,
+          trustScore: user.trustScore,
+          authProvider: user.authProvider,
+          emailVerified: user.emailVerified,
+          kycStatus: user.kycStatus,
+          kyc: user.kyc,
           verification: latestKyc
             ? {
                 status: latestKyc.status,
@@ -196,8 +202,8 @@ export class AdminService {
           company: admin.company,
           createdAt: (admin as unknown as { createdAt: Date }).createdAt,
           email: admin.email,
+          permissions: admin.permissions,
         },
-        permissions: admin.permissions,
       };
     }
 
