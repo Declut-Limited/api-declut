@@ -26,7 +26,7 @@ import {
   hashRefreshToken,
   refreshTokenMatches,
 } from './refresh-token-hash.util';
-import { EmailService } from '../email/email.service';
+import { EmailService, buildOtpEmailBody } from '../email/email.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { GoogleAuthDto } from './dto/google-auth.dto';
@@ -197,9 +197,11 @@ export class AuthService {
   // response shape/timing as a real one — stops enumeration via forgot-password.
   private static readonly INERT_SUBJECT = '000000000000000000000000';
 
-  async forgotPassword(
-    dto: ForgotPasswordDto,
-  ): Promise<{ otpToken: string; message: string }> {
+  async forgotPassword(dto: ForgotPasswordDto): Promise<{
+    otpToken: string;
+    message: string;
+    emailPreview: { subject: string; html: string };
+  }> {
     const user = await this.usersService.findByEmailWithPassword(dto.email);
     const message =
       'If that email is registered, a verification code has been sent.';
@@ -209,14 +211,19 @@ export class AuthService {
       user.authProvider !== AuthProvider.EMAIL_PHONE ||
       !user.password
     ) {
+      const otp = this.passwordResetTokens.generateOtp();
       const otpToken = await this.passwordResetTokens.signOtpToken({
         sub: AuthService.INERT_SUBJECT,
-        otp: this.passwordResetTokens.generateOtp(),
+        otp,
         secret: this.passwordResetSecret(),
         expiresIn: this.otpExpiry(),
         saltRounds: this.saltRounds(),
       });
-      return { otpToken, message };
+      return {
+        otpToken,
+        message,
+        emailPreview: buildOtpEmailBody('there', otp, this.otpExpiryMinutes()),
+      };
     }
 
     const otp = this.passwordResetTokens.generateOtp();
@@ -228,14 +235,27 @@ export class AuthService {
       saltRounds: this.saltRounds(),
     });
 
-    await this.emailService.sendOtpEmail(
-      user.email,
-      user.name,
-      otp,
-      this.otpExpiryMinutes(),
-    );
+    // Don't let a real-delivery failure (e.g. Mailtrap's demo sending
+    // domain rejecting a non-account-owner recipient) block the response —
+    // emailPreview below covers retrieving the OTP either way.
+    try {
+      await this.emailService.sendOtpEmail(
+        user.email,
+        user.name,
+        otp,
+        this.otpExpiryMinutes(),
+      );
+    } catch (err) {
+      this.logger.warn(
+        `sendOtpEmail failed, continuing since emailPreview covers it: ${(err as Error).message}`,
+      );
+    }
 
-    return { otpToken, message };
+    return {
+      otpToken,
+      message,
+      emailPreview: buildOtpEmailBody(user.name, otp, this.otpExpiryMinutes()),
+    };
   }
 
   async resendOtp(

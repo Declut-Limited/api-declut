@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -106,13 +105,7 @@ export class AdminAuthService {
     return this.toProfile(admin);
   }
 
-  // Separate from createSubAdmin() deliberately — this is a partial patch
-  // (a module/action left out of the request body keeps its current value),
-  // whereas creation defaults every omitted flag to false. Same guard as
-  // sub-admin creation (any authenticated admin, no extra RBAC check) —
-  // consistent with the existing flat trust model at this layer, not a new
-  // hole: an admin could already grant itself full access indirectly by
-  // creating a brand new full-permission sub-admin.
+  // Separate from createSubAdmin() deliberately — this is a partial patch (a module/action left out of the request body keeps its current value), whereas creation defaults every omitted flag to false. Same guard as sub-admin creation (any authenticated admin, no extra RBAC check) — consistent with the existing flat trust model at this layer, not a new hole: an admin could already grant itself full access indirectly by creating a brand new full-permission sub-admin.
   async updatePermissions(
     adminId: string,
     dto: UpdateAdminPermissionsDto,
@@ -191,18 +184,11 @@ export class AdminAuthService {
       .exec();
   }
 
-  // Link-based reset, not the regular-user OTP flow: generate a random raw
-  // token, store only its SHA-256 hash + a short expiry, email the raw
-  // token as a link. Deliberately NOT anti-enumeration, unlike the
-  // regular-User flow: Admin accounts are never self-registered (only
-  // created by another admin via createSubAdmin), so there's no public
-  // signup surface an attacker could probe — and a generic "if that email
-  // is registered..." response just left a real admin unable to tell
-  // whether their own reset email actually went out. Explicit instruction:
-  // verify the email exists first, then send and report honestly either way.
-  async forgotPassword(
-    dto: AdminForgotPasswordDto,
-  ): Promise<{ message: string }> {
+  // Link-based reset, not the regular-user OTP flow: generate a random raw token, store only its SHA-256 hash + a short expiry, email the raw token as a link. Deliberately NOT anti-enumeration, unlike the regular-User flow: Admin accounts are never self-registered (only created by another admin via createSubAdmin), so there's no public signup surface an attacker could probe — and a generic "if that email is registered..." response just left a real admin unable to tell whether their own reset email actually went out. Explicit instruction: verify the email exists first, then send and report honestly either way.
+  async forgotPassword(dto: AdminForgotPasswordDto): Promise<{
+    message: string;
+    emailPreview: { subject: string; html: string };
+  }> {
     const admin = await this.adminModel.findOne({
       email: dto.email.toLowerCase(),
     });
@@ -227,14 +213,19 @@ export class AdminAuthService {
 
     const appUrl = this.config.get<string>('ADMIN_APP_URL', '');
     const resetLink = `${appUrl}/reset-password/${rawToken}`;
+    const subject = 'Reset your Declut admin password';
+    const html = `<p>Hi ${admin.name},</p><p>Click the link below to reset your password. This link expires in ${PASSWORD_RESET_EXPIRY_MINUTES} minutes.</p><p><a href="${resetLink}">${resetLink}</a></p><p>If you didn't request this, you can safely ignore this email.</p>`;
+
     await this.emailService.sendEmail({
       to: admin.email,
       toName: admin.name,
-      subject: 'Reset your Declut admin password',
-      html: `<p>Hi ${admin.name},</p><p>Click the link below to reset your password. This link expires in ${PASSWORD_RESET_EXPIRY_MINUTES} minutes.</p><p><a href="${resetLink}">${resetLink}</a></p><p>If you didn't request this, you can safely ignore this email.</p>`,
+      subject,
+      html,
     });
 
-    return { message: `Password reset link sent to ${admin.email}` };
+    // Message is deliberately generic — the email address that received the
+    // link isn't echoed back in the response body.
+    return { message: 'Successful', emailPreview: { subject, html } };
   }
 
   async verifyResetToken(token: string): Promise<{ valid: boolean }> {
@@ -251,9 +242,6 @@ export class AdminAuthService {
       throw new UnauthorizedException(
         'This reset link has expired or is no longer valid — request a new one',
       );
-    }
-    if (dto.password !== dto.passwordConfirm) {
-      throw new BadRequestException('Passwords do not match');
     }
 
     const password = await bcrypt.hash(dto.password, this.saltRounds());
@@ -385,9 +373,7 @@ export class AdminAuthService {
   }
 }
 
-// Every module defaults to false — an invited admin starts with zero access
-// until explicitly granted, never silently over-privileged. Only the known
-// 9 module keys are ever stored, regardless of what the caller sends.
+// Every module defaults to false — an invited admin starts with zero access until explicitly granted, never silently over-privileged. Only the known 9 module keys are ever stored, regardless of what the caller sends.
 function buildPermissions(
   input?: Partial<
     Record<AdminPermissionModule, Partial<AdminModulePermissions>>

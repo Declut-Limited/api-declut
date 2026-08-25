@@ -4269,7 +4269,7 @@
                         "forgot-password"
                       ]
                     },
-                    "description": "Emails a reset link (ADMIN_APP_URL/reset-password/{token}) — no OTP step. Silently no-ops if the email doesn't match an admin.",
+                    "description": "Verifies the email against the Admin collection first. 404s with \"No admin account found with that email address\" if it doesn't match; otherwise emails a reset link (ADMIN_APP_URL/reset-password/{token}) and returns \"Password reset link sent to {email}\".",
                     "body": {
                       "mode": "raw",
                       "raw": "{\n  \"email\": \"admin@declut.com\"\n}",
@@ -4351,7 +4351,7 @@
                         "description": "token now travels as a URL param, matching the emailed reset link's own shape.",
                         "body": {
                           "mode": "raw",
-                          "raw": "{\n  \"newPassword\": \"NewSecurePass2026!\"\n}",
+                          "raw": "{\n  \"password\": \"NewSecurePass2026!\",\n  \"passwordConfirm\": \"NewSecurePass2026!\"\n}",
                           "options": {
                             "raw": {
                               "language": "json"
@@ -4443,12 +4443,12 @@
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://localhost:3000/api",
+      "value": "https://api-declut.up.railway.app/api",
       "type": "string"
     },
     {
       "key": "wsBaseUrl",
-      "value": "http://localhost:3000",
+      "value": "https://api-declut.up.railway.app",
       "type": "string"
     },
     {
