@@ -12,13 +12,14 @@ import { randomBytes, randomUUID, createHash } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import type { StringValue } from 'ms';
 import { Admin, AdminDocument } from './schemas/admin.schema';
+import { Role, RoleDocument } from '../roles/schemas/role.schema';
 import { AdminLoginDto } from './dto/admin-login.dto';
 import { CreateSubAdminDto } from './dto/create-sub-admin.dto';
 import { AdminRefreshTokenDto } from './dto/admin-refresh-token.dto';
 import { AdminForgotPasswordDto } from './dto/admin-forgot-password.dto';
 import { AdminResetPasswordDto } from './dto/admin-reset-password.dto';
 import { AdminChangePasswordDto } from './dto/admin-change-password.dto';
-import { UpdateAdminPermissionsDto } from './dto/update-admin-permissions.dto';
+import { UpdateAdminRoleDto } from './dto/update-admin-role.dto';
 import { AdminRefreshTokenPayload } from './interfaces/admin-jwt-payload.interface';
 import {
   hashRefreshToken,
@@ -26,12 +27,7 @@ import {
 } from '../auth/refresh-token-hash.util';
 import { EmailService } from '../email/email.service';
 import { escapeRegex } from '../common/utils/regex.util';
-import {
-  ADMIN_PERMISSION_MODULES,
-  AdminModulePermissions,
-  AdminPermissionModule,
-  AdminPermissions,
-} from './interfaces/admin-permissions.interface';
+import { AdminPermissions } from './interfaces/admin-permissions.interface';
 
 export interface AdminTokenPair {
   accessToken: string;
@@ -44,12 +40,13 @@ export interface AdminProfile {
   name: string;
   title?: string;
   company?: string;
-  permissions: AdminPermissions;
+  role: { id: string; name: string; permissions: AdminPermissions } | null;
   createdBy?: string;
   createdAt: Date;
 }
 
 const PASSWORD_RESET_EXPIRY_MINUTES = 10;
+const ROLE_POPULATE_FIELDS = 'name permissions';
 
 // Mirrors AuthService for login/refresh/logout. Password reset is
 // deliberately NOT the regular-user's stateless-JWT/OTP flow — see
@@ -58,6 +55,7 @@ const PASSWORD_RESET_EXPIRY_MINUTES = 10;
 export class AdminAuthService {
   constructor(
     @InjectModel(Admin.name) private adminModel: Model<AdminDocument>,
+    @InjectModel(Role.name) private roleModel: Model<RoleDocument>,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
     private readonly emailService: EmailService,
@@ -90,6 +88,10 @@ export class AdminAuthService {
     if (existing) {
       throw new ConflictException('An admin with this email already exists');
     }
+    const role = await this.roleModel.findById(dto.roleId).exec();
+    if (!role) {
+      throw new NotFoundException('Role not found');
+    }
 
     const password = await bcrypt.hash(dto.password, this.saltRounds());
     const admin = await this.adminModel.create({
@@ -98,48 +100,61 @@ export class AdminAuthService {
       password,
       title: dto.title,
       company: dto.company,
-      permissions: buildPermissions(dto.permissions),
+      role: dto.roleId,
       createdBy: creatorAdminId,
     });
+    await admin.populate('role', ROLE_POPULATE_FIELDS);
 
     return this.toProfile(admin);
   }
 
-  // Separate from createSubAdmin() deliberately — this is a partial patch (a module/action left out of the request body keeps its current value), whereas creation defaults every omitted flag to false. Same guard as sub-admin creation (any authenticated admin, no extra RBAC check) — consistent with the existing flat trust model at this layer, not a new hole: an admin could already grant itself full access indirectly by creating a brand new full-permission sub-admin.
-  async updatePermissions(
+  // Replaces the old per-admin permissions-edit endpoint — reassigns which Role this admin points at. Same guard as sub-admin creation (any authenticated admin, no extra RBAC check) — consistent with the existing flat trust model at this layer, not a new hole: an admin could already grant itself full access indirectly by creating a brand new full-permission sub-admin.
+  async updateRole(
     adminId: string,
-    dto: UpdateAdminPermissionsDto,
+    dto: UpdateAdminRoleDto,
   ): Promise<AdminProfile> {
     const admin = await this.adminModel.findById(adminId).exec();
     if (!admin) {
       throw new NotFoundException('Admin not found');
     }
-
-    const merged: AdminPermissions = { ...admin.permissions };
-    for (const moduleKey of ADMIN_PERMISSION_MODULES) {
-      const patch = dto.permissions[moduleKey];
-      if (!patch) continue;
-      merged[moduleKey] = { ...merged[moduleKey], ...patch };
+    const role = await this.roleModel.findById(dto.roleId).exec();
+    if (!role) {
+      throw new NotFoundException('Role not found');
     }
-    admin.permissions = merged;
+
+    admin.role = role._id;
     await admin.save();
+    await admin.populate('role', ROLE_POPULATE_FIELDS);
 
     return this.toProfile(admin);
   }
 
+  // Backs RolesService.findAll()/remove() — how many admins are currently assigned to a role, computed live rather than cached (see the Role schema comment).
+  countByRole(roleId: string): Promise<number> {
+    return this.adminModel.countDocuments({ role: roleId }).exec();
+  }
+
   async getProfile(adminId: string): Promise<AdminProfile> {
-    const admin = await this.adminModel.findById(adminId).exec();
+    const admin = await this.adminModel
+      .findById(adminId)
+      .populate('role', ROLE_POPULATE_FIELDS)
+      .exec();
     if (!admin) {
       throw new UnauthorizedException('Admin not found');
     }
     return this.toProfile(admin);
   }
 
-  // Used by PermissionsGuard — routed through here rather than injecting
-  // the Admin model directly into the guard, so the guard's only
-  // constructor deps are Reflector + this already-exported service.
+  // Used by PermissionsGuard (needs role.permissions populated to check
+  // access) — routed through here rather than injecting the Admin model
+  // directly into the guard, so the guard's only constructor deps are
+  // Reflector + this already-exported service. Also used for display by
+  // AdminService, which benefits from the same populate.
   findById(adminId: string): Promise<AdminDocument | null> {
-    return this.adminModel.findById(adminId).exec();
+    return this.adminModel
+      .findById(adminId)
+      .populate('role', ROLE_POPULATE_FIELDS)
+      .exec();
   }
 
   // Used by the admin Users federated list — Admins have no equivalent of
@@ -355,14 +370,28 @@ export class AdminAuthService {
     return { accessToken, refreshToken };
   }
 
+  // Requires admin.role already populated (ROLE_POPULATE_FIELDS) by the caller.
   private toProfile(admin: AdminDocument): AdminProfile {
+    const role = admin.role as unknown as
+      | {
+          _id: { toString(): string };
+          name: string;
+          permissions: AdminPermissions;
+        }
+      | undefined;
     return {
       id: admin._id.toString(),
       email: admin.email,
       name: admin.name,
       title: admin.title,
       company: admin.company,
-      permissions: admin.permissions,
+      role: role
+        ? {
+            id: role._id.toString(),
+            name: role.name,
+            permissions: role.permissions,
+          }
+        : null,
       createdBy: admin.createdBy?.toString(),
       createdAt: (admin as unknown as { createdAt: Date }).createdAt,
     };
@@ -371,22 +400,4 @@ export class AdminAuthService {
   private saltRounds(): number {
     return this.config.get<number>('BCRYPT_SALT_ROUNDS', 12);
   }
-}
-
-// Every module defaults to false — an invited admin starts with zero access until explicitly granted, never silently over-privileged. Only the known 9 module keys are ever stored, regardless of what the caller sends.
-function buildPermissions(
-  input?: Partial<
-    Record<AdminPermissionModule, Partial<AdminModulePermissions>>
-  >,
-): AdminPermissions {
-  return Object.fromEntries(
-    ADMIN_PERMISSION_MODULES.map((moduleKey) => [
-      moduleKey,
-      {
-        view: Boolean(input?.[moduleKey]?.view),
-        write: Boolean(input?.[moduleKey]?.write),
-        delete: Boolean(input?.[moduleKey]?.delete),
-      },
-    ]),
-  ) as AdminPermissions;
 }

@@ -191,19 +191,33 @@ export class AdminService {
 
     const admin = await this.adminAuthService.findById(id);
     if (admin) {
+      // `role` here is the literal account type (matches 'User' above) —
+      // NOT the same thing as `assignedRole`, which is the actual Role
+      // document (see src/roles/) this admin's access comes from. title is
+      // still just a free-text job label, unrelated to either.
+      const assignedRole = admin.role as unknown as
+        | {
+            _id: { toString(): string };
+            name: string;
+            permissions: unknown;
+          }
+        | undefined;
       return {
         type: 'admin' as const,
         details: {
-          // Literal, like 'User' above — the only two account roles.
-          // title is the free-text job title; permissions (below) are what
-          // actually distinguish one admin from another.
           role: 'Admin',
           title: admin.title,
           status: 'active',
           company: admin.company,
           createdAt: (admin as unknown as { createdAt: Date }).createdAt,
           email: admin.email,
-          permissions: admin.permissions,
+          assignedRole: assignedRole
+            ? {
+                id: assignedRole._id.toString(),
+                name: assignedRole.name,
+                permissions: assignedRole.permissions,
+              }
+            : null,
         },
       };
     }

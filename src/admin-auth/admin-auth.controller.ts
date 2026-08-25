@@ -17,7 +17,7 @@ import { AdminRefreshTokenDto } from './dto/admin-refresh-token.dto';
 import { AdminForgotPasswordDto } from './dto/admin-forgot-password.dto';
 import { AdminResetPasswordDto } from './dto/admin-reset-password.dto';
 import { AdminChangePasswordDto } from './dto/admin-change-password.dto';
-import { UpdateAdminPermissionsDto } from './dto/update-admin-permissions.dto';
+import { UpdateAdminRoleDto } from './dto/update-admin-role.dto';
 import { AdminJwtAuthGuard } from './guards/admin-jwt-auth.guard';
 import { CurrentAdmin } from './decorators/current-admin.decorator';
 import type { AdminAccessTokenPayload } from './interfaces/admin-jwt-payload.interface';
@@ -89,9 +89,9 @@ export class AdminAuthController {
     return this.adminAuthService.changePassword(admin.sub, dto);
   }
 
-  // Any authenticated admin can create another admin — the permissions the
-  // new admin gets are whatever's in the request body (see RBAC), not
-  // inherited from the creator.
+  // Any authenticated admin can create another admin — the Role the new
+  // admin gets is whatever roleId's in the request body, not inherited
+  // from the creator.
   @UseGuards(AdminJwtAuthGuard)
   @Post('sub-admins')
   createSubAdmin(
@@ -101,15 +101,10 @@ export class AdminAuthController {
     return this.adminAuthService.createSubAdmin(admin.sub, dto);
   }
 
-  // Partial patch of an existing admin's permissions — separate from
-  // creation since it merges into what's already there instead of
-  // resetting every omitted module/action to false.
+  // Reassigns which Role an existing admin is attached to — access itself lives on the Role (see src/roles/), not here.
   @UseGuards(AdminJwtAuthGuard)
-  @Patch('sub-admins/:id/permissions')
-  updatePermissions(
-    @Param('id') id: string,
-    @Body() dto: UpdateAdminPermissionsDto,
-  ) {
-    return this.adminAuthService.updatePermissions(id, dto);
+  @Patch('sub-admins/:id/role')
+  updateRole(@Param('id') id: string, @Body() dto: UpdateAdminRoleDto) {
+    return this.adminAuthService.updateRole(id, dto);
   }
 }

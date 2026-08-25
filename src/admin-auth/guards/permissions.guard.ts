@@ -12,12 +12,15 @@ import {
   RequiredPermission,
 } from '../decorators/require-permission.decorator';
 import { AuthenticatedAdminRequest } from './admin-jwt-auth.guard';
+import { AdminPermissions } from '../interfaces/admin-permissions.interface';
 
 // Runs after AdminJwtAuthGuard. Looks the admin up fresh on every request
 // rather than trusting permissions baked into the JWT — this codebase
 // already hit the staleness problem once with a role claim (see CLAUDE.md);
 // a revoked permission should take effect immediately, not after the
-// access token expires.
+// access token expires. Access now comes from the admin's populated Role,
+// not a field on Admin itself — reassigning or editing a Role takes effect
+// on the admin's very next request, same immediacy guarantee as before.
 @Injectable()
 export class PermissionsGuard implements CanActivate {
   constructor(
@@ -42,7 +45,9 @@ export class PermissionsGuard implements CanActivate {
       throw new UnauthorizedException('Admin not found');
     }
 
-    const allowed = admin.permissions?.[required.module]?.[required.action];
+    const role = admin.role as unknown as
+      { permissions: AdminPermissions } | undefined;
+    const allowed = role?.permissions?.[required.module]?.[required.action];
     if (!allowed) {
       throw new ForbiddenException(
         `Missing ${required.action} permission for ${required.module}`,

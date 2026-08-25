@@ -1,7 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
-import { ADMIN_PERMISSION_MODULES } from '../interfaces/admin-permissions.interface';
-import type { AdminPermissions } from '../interfaces/admin-permissions.interface';
 
 export type AdminDocument = HydratedDocument<Admin>;
 
@@ -12,15 +10,6 @@ class RefreshTokenInfo {
 
   @Prop({ required: true })
   expiresAt: Date;
-}
-
-function defaultPermissions(): AdminPermissions {
-  return Object.fromEntries(
-    ADMIN_PERMISSION_MODULES.map((m) => [
-      m,
-      { view: false, write: false, delete: false },
-    ]),
-  ) as AdminPermissions;
 }
 
 // Separate collection from User — an admin is never a User document.
@@ -46,25 +35,25 @@ export class Admin {
   @Prop()
   passwordResetExpires?: Date;
 
-  // The only two account roles in this system are User and Admin — two
-  // separate collections. There is no third role and no field named `role`
-  // anywhere: naming this `title` instead of `role` is deliberate, so
-  // nothing on an Admin document can be misread as a second role tier.
-  // It's a free-text job title (e.g. "Operations Manager") for display
-  // only — access control never branches on it. Every admin's actual
-  // access is entirely the `permissions` map below — two admins with the
-  // same `title` can have completely different permissions, and that's the
-  // intended shape (permission-based, not role-based access control).
+  // The only two ACCOUNT types in this system are User and Admin — two
+  // separate collections, unrelated to `role` below. `title` is a
+  // free-text job title (e.g. "Operations Manager") for display only —
+  // access control never branches on it.
   @Prop({ trim: true })
   title?: string;
 
   @Prop({ trim: true })
   company?: string;
 
-  @Prop({ type: Object, default: defaultPermissions })
-  permissions: AdminPermissions;
+  // Reverses the earlier "permission-based, not role-based" design
+  // (explicit instruction): an admin's actual access is now entirely
+  // whatever Role it's assigned — see src/roles/. No permissions object
+  // lives on Admin anymore; PermissionsGuard populates this and checks
+  // role.permissions fresh on every request.
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Role' })
+  role?: Types.ObjectId;
 
-  // Provenance only — permissions (above) are the real access control.
+  // Provenance only, unrelated to access control.
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Admin' })
   createdBy?: Types.ObjectId;
 

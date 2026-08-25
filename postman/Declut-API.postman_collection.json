@@ -4319,10 +4319,10 @@
                         "sub-admins"
                       ]
                     },
-                    "description": "Every module defaults to {view:false,write:false,delete:false} unless overridden. title is a free-text job label, not a role — the only account roles are User and Admin; permissions are what actually distinguish one admin from another.",
+                    "description": "Every admin must be assigned a Role at creation (roleId) — access comes entirely from that Role's permissions, not from anything on the admin itself. title is a free-text job label, not a role.",
                     "body": {
                       "mode": "raw",
-                      "raw": "{\n  \"email\": \"amaka.okafor@declut.com\",\n  \"name\": \"Amaka Okafor\",\n  \"password\": \"SubAdminPass2026!\",\n  \"title\": \"Support Lead\",\n  \"company\": \"Declut\",\n  \"permissions\": {\n    \"users\": {\n      \"view\": true,\n      \"write\": true,\n      \"delete\": false\n    },\n    \"listings\": {\n      \"view\": true,\n      \"write\": true,\n      \"delete\": false\n    },\n    \"reviews\": {\n      \"view\": true,\n      \"write\": true,\n      \"delete\": true\n    }\n  }\n}",
+                      "raw": "{\n  \"email\": \"amaka.okafor@declut.com\",\n  \"name\": \"Amaka Okafor\",\n  \"password\": \"SubAdminPass2026!\",\n  \"title\": \"Support Lead\",\n  \"company\": \"Declut\",\n  \"roleId\": \"{{roleId}}\"\n}",
                       "options": {
                         "raw": {
                           "language": "json"
@@ -4351,11 +4351,11 @@
                   "description": "",
                   "item": [
                     {
-                      "name": "permissions",
+                      "name": "role",
                       "description": "",
                       "item": [
                         {
-                          "name": "Update admin permissions",
+                          "name": "Update admin role",
                           "request": {
                             "method": "PATCH",
                             "header": [
@@ -4371,7 +4371,7 @@
                               }
                             ],
                             "url": {
-                              "raw": "{{baseUrl}}/admin/auth/sub-admins/{{subAdminId}}/permissions",
+                              "raw": "{{baseUrl}}/admin/auth/sub-admins/{{subAdminId}}/role",
                               "host": [
                                 "{{baseUrl}}"
                               ],
@@ -4380,13 +4380,13 @@
                                 "auth",
                                 "sub-admins",
                                 "{{subAdminId}}",
-                                "permissions"
+                                "role"
                               ]
                             },
-                            "description": "Partial patch — a module/action left out keeps its current value, it isn't reset to false. Separate from Create sub-admin, which does default omitted flags to false.",
+                            "description": "Reassigns which Role this admin is attached to — access itself lives on the Role (see the roles folder), not on the admin. Replaces the old per-admin permissions-edit endpoint.",
                             "body": {
                               "mode": "raw",
-                              "raw": "{\n  \"permissions\": {\n    \"listings\": {\n      \"write\": true\n    },\n    \"reviews\": {\n      \"delete\": true\n    }\n  }\n}",
+                              "raw": "{\n  \"roleId\": \"{{roleId}}\"\n}",
                               "options": {
                                 "raw": {
                                   "language": "json"
@@ -4571,6 +4571,162 @@
               ]
             }
           ]
+        },
+        {
+          "name": "roles",
+          "description": "",
+          "item": [
+            {
+              "name": "Create role",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/roles",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "roles"
+                  ]
+                },
+                "description": "A named, reusable bundle of privileges — every module defaults to {view:false,write:false,delete:false} unless overridden. name must be unique.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Support Lead\",\n  \"permissions\": {\n    \"users\": {\n      \"view\": true,\n      \"write\": true,\n      \"delete\": false\n    },\n    \"listings\": {\n      \"view\": true,\n      \"write\": true,\n      \"delete\": false\n    },\n    \"reviews\": {\n      \"view\": true,\n      \"write\": true,\n      \"delete\": true\n    }\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const data = pm.response.json();",
+                      "if (data && data.data && data.data[\"_id\"]) {",
+                      "    pm.collectionVariables.set(\"roleId\", data.data[\"_id\"]);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "List roles",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/roles",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "roles"
+                  ]
+                },
+                "description": "Every role, newest first. userCount is computed live (how many admins currently point at each role), not stored."
+              },
+              "response": []
+            },
+            {
+              "name": "{roleId}",
+              "description": "",
+              "item": [
+                {
+                  "name": "Update role",
+                  "request": {
+                    "method": "PATCH",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/roles/{{roleId}}",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "roles",
+                        "{{roleId}}"
+                      ]
+                    },
+                    "description": "Partial patch — a module/action left out of permissions keeps its current value, it isn't reset to false. name is optional too.",
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"permissions\": {\n    \"reports\": {\n      \"view\": true\n    }\n  }\n}",
+                      "options": {
+                        "raw": {
+                          "language": "json"
+                        }
+                      }
+                    }
+                  },
+                  "response": []
+                },
+                {
+                  "name": "Delete role",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/roles/{{roleId}}",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "roles",
+                        "{{roleId}}"
+                      ]
+                    },
+                    "description": "Blocked with 409 if any admin is still assigned to this role — reassign them first (PATCH .../sub-admins/{id}/role)."
+                  },
+                  "response": []
+                }
+              ]
+            }
+          ]
         }
       ]
     },
@@ -4717,6 +4873,11 @@
     },
     {
       "key": "activityLogId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "roleId",
       "value": "",
       "type": "string"
     }

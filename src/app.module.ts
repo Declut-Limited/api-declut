@@ -26,6 +26,7 @@ import { CategoriesModule } from './categories/categories.module';
 import { ReportsModule } from './reports/reports.module';
 import { ContentModule } from './content/content.module';
 import { NotificationCampaignsModule } from './notification-campaigns/notification-campaigns.module';
+import { RolesModule } from './roles/roles.module';
 import { AuditContextMiddleware } from './common/middleware/audit-context.middleware';
 
 @Module({
@@ -78,6 +79,7 @@ import { AuditContextMiddleware } from './common/middleware/audit-context.middle
     ReportsModule,
     ContentModule,
     NotificationCampaignsModule,
+    RolesModule,
   ],
   providers: [
     // APP_GUARD/APP_FILTER/APP_INTERCEPTOR are Nest's tokens for registering
