@@ -13,6 +13,7 @@ import { UpdateAppSettingsDto } from '../settings/dto/update-app-settings.dto';
 import { AdminAuthService } from '../admin-auth/admin-auth.service';
 import type { AdminDocument } from '../admin-auth/schemas/admin.schema';
 import { EmailService } from '../email/email.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import {
   AdminListListingsDto,
   AdminListReviewsDto,
@@ -50,6 +51,7 @@ export class AdminService {
     private readonly adminAuthService: AdminAuthService,
     private readonly kycService: KycService,
     private readonly emailService: EmailService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   async listUsers(dto: AdminListUsersDto) {
@@ -530,6 +532,38 @@ export class AdminService {
       },
       trend,
     };
+  }
+
+  getCategoryDistribution() {
+    return this.transactionsService.getCategoryDistribution();
+  }
+
+  // 'system' for non-human-triggered events; otherwise an id in either User or Admin — same federated-lookup shape as getUserOrAdminDetail() above, since AuditLog.actor has no ref (see the schema comment).
+  private async resolveActorName(actor: string): Promise<string> {
+    if (actor === 'system') return 'System';
+    const user = await this.usersService.findById(actor);
+    if (user) return user.name;
+    const admin = await this.adminAuthService.findById(actor);
+    if (admin) return admin.name;
+    return 'Unknown';
+  }
+
+  // Backs the admin Dashboard "recent activity" panel — the 3 most recent AuditLog entries, actor resolved to a display name. Scope decision, flagged: returns the structured event (event, entityType, entityId, oldState, newState, metadata) rather than a prebuilt narrative sentence like the mock's "released ₦2,340,000 to Segun Adesina" — building accurate English per event type across every module (and the mock's own "auto-released after inspection window expiry" describes a flow that doesn't exist here; escrow is never auto-released, see CLAUDE.md's Transaction State Machine) is a separate, larger task than "give me the 3 most recent logs".
+  async getRecentActivity() {
+    const { results } = await this.auditLogService.list(1, 3);
+    const entries = await Promise.all(
+      results.map(async (r) => ({
+        actorName: await this.resolveActorName(r.actor),
+        event: r.event,
+        entityType: r.entityType,
+        entityId: r.entityId.toString(),
+        oldState: r.oldState,
+        newState: r.newState,
+        metadata: r.metadata,
+        createdAt: (r as unknown as { createdAt: Date }).createdAt,
+      })),
+    );
+    return { entries };
   }
 }
 

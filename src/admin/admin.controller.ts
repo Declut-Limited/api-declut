@@ -63,6 +63,19 @@ export class AdminController {
     return this.adminService.getListingsPerMonth();
   }
 
+  @Get('dashboard/category-distribution')
+  @RequirePermission('transactions', 'view')
+  getCategoryDistribution() {
+    return this.adminService.getCategoryDistribution();
+  }
+
+  // Reads AuditLog data — 'activity' bucket, matching the standalone Activity Log page's own gate.
+  @Get('dashboard/recent-activity')
+  @RequirePermission('activity', 'view')
+  getRecentActivity() {
+    return this.adminService.getRecentActivity();
+  }
+
   @Get('users')
   @RequirePermission('users', 'view')
   listUsers(@Query() dto: AdminListUsersDto) {

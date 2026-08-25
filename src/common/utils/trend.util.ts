@@ -3,21 +3,18 @@ export interface Trend {
   result: string;
 }
 
-// Percentage-based cards (Revenue, Transaction volume) — `phrase` lets each call site match its own wording ("8.1% increase" vs "12% vs prior period").
+// Percentage-based cards (Revenue, Transaction volume) — `phrase` lets each call site match its own wording ("8.1% increase" vs "12% vs prior period"). `noBaseline` is that same card's own fallback text when prior=0 (no % is computable) — never a generic shared string.
 export function pctTrend(
   current: number,
   prior: number,
   higherIsBetter: boolean,
   phrase: (pct: number, direction: 'increase' | 'decrease') => string,
+  noBaseline: (current: number) => string,
 ): Trend {
   if (prior === 0) {
-    if (current === 0) {
-      return { status: 'productive', result: 'No change vs prior period' };
-    }
-    return {
-      status: higherIsBetter ? 'productive' : 'warning',
-      result: 'New this period',
-    };
+    const status =
+      current === 0 ? 'productive' : higherIsBetter ? 'productive' : 'warning';
+    return { status, result: noBaseline(current) };
   }
   const pct = Math.round((Math.abs(current - prior) / prior) * 1000) / 10;
   const direction: 'increase' | 'decrease' =

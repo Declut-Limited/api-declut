@@ -2002,7 +2002,7 @@
                       }
                     ],
                     "url": {
-                      "raw": "{{baseUrl}}/admin/dashboard/insights?period=month",
+                      "raw": "{{baseUrl}}/admin/dashboard/insights?filter=thisMonth",
                       "host": [
                         "{{baseUrl}}"
                       ],
@@ -2013,14 +2013,26 @@
                       ],
                       "query": [
                         {
-                          "key": "period",
-                          "value": "month",
+                          "key": "filter",
+                          "value": "thisMonth",
                           "disabled": false,
-                          "description": "today, week, month, year, or all. Default month."
+                          "description": "thisMonth, lastMonth, last3Months, thisYear, or custom. Default thisMonth."
+                        },
+                        {
+                          "key": "startDate",
+                          "value": "2026-07-01",
+                          "disabled": true,
+                          "description": "Required only when filter=custom. ISO 8601 date (YYYY-MM-DD)."
+                        },
+                        {
+                          "key": "endDate",
+                          "value": "2026-07-31",
+                          "disabled": true,
+                          "description": "Required only when filter=custom. ISO 8601 date (YYYY-MM-DD) — inclusive of the whole day."
                         }
                       ]
                     },
-                    "description": "period: today|week|month|year|all. 8 cards: newUsers, activeListings, totalTransactions, completedTransactions, totalRevenue, avgOrderValue, disputedTransactions, stalledTransactions."
+                    "description": "filter: thisMonth|lastMonth|last3Months|thisYear|custom (custom requires startDate+endDate). 8 cards: newUsers, activeListings, totalTransactions, completedTransactions, totalRevenue, avgOrderValue, disputedTransactions, stalledTransactions — each {value, extra: {status, result}}, status is \"productive\" or \"warning\"."
                   },
                   "response": []
                 }
@@ -2042,7 +2054,7 @@
                       }
                     ],
                     "url": {
-                      "raw": "{{baseUrl}}/admin/dashboard/revenue-trends?period=yearly",
+                      "raw": "{{baseUrl}}/admin/dashboard/revenue-trends?year=2026",
                       "host": [
                         "{{baseUrl}}"
                       ],
@@ -2053,14 +2065,110 @@
                       ],
                       "query": [
                         {
-                          "key": "period",
-                          "value": "yearly",
+                          "key": "year",
+                          "value": "2026",
                           "disabled": false,
-                          "description": "yearly (12 monthly buckets) or quarterly (3 monthly buckets). Default yearly."
+                          "description": "Calendar year, 2000-2100. Default the current year."
                         }
                       ]
                     },
-                    "description": "period: yearly (12 months) | quarterly (3 months). Zero-filled monthly commission-revenue buckets."
+                    "description": "Always Jan-Dec of the given year, zero-filled. trend[].revenue is commission (platform earnings). insights: twelveMonthGross/bestMonth/avgPerMonth are built from gross transaction amount instead, short-form Naira; totalRemittance (amount minus commission) is full, non-abbreviated Naira."
+                  },
+                  "response": []
+                }
+              ]
+            },
+            {
+              "name": "listings-per-month",
+              "description": "",
+              "item": [
+                {
+                  "name": "Get listings per month",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/dashboard/listings-per-month",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "dashboard",
+                        "listings-per-month"
+                      ]
+                    },
+                    "description": "totalListingsValue: all-time sum of listing.price across every non-deleted listing. trend: last 6 months (5 back + current), zero-filled, summed by listing.price (not a count). extra: \"+{count} this month\" — count of listings created this month, not a percentage."
+                  },
+                  "response": []
+                }
+              ]
+            },
+            {
+              "name": "category-distribution",
+              "description": "",
+              "item": [
+                {
+                  "name": "Get category distribution",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/dashboard/category-distribution",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "dashboard",
+                        "category-distribution"
+                      ]
+                    },
+                    "description": "Top 5 categories by number of COMPLETED transactions. Each entry: category, slug, transactionCount, percentage (share of all completed transactions), amount (gross transaction value, not commission)."
+                  },
+                  "response": []
+                }
+              ]
+            },
+            {
+              "name": "recent-activity",
+              "description": "",
+              "item": [
+                {
+                  "name": "Get recent activity",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/dashboard/recent-activity",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "dashboard",
+                        "recent-activity"
+                      ]
+                    },
+                    "description": "The 3 most recent AuditLog entries, newest first, actor resolved to a display name (or \"System\"). Returns the structured event (event, entityType, entityId, oldState, newState, metadata) — not a prebuilt narrative sentence."
                   },
                   "response": []
                 }

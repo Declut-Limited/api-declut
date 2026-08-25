@@ -1164,6 +1164,7 @@ export class TransactionsService {
           prior.totalTransactions,
           true,
           (pct, dir) => `${pct}% ${dir}`,
+          (value) => `${value} this period`,
         ),
       },
       completedTransactions: {
@@ -1173,6 +1174,7 @@ export class TransactionsService {
           prior.completedTransactions,
           true,
           (pct, dir) => `${pct}% ${dir}`,
+          (value) => `${value} this period`,
         ),
       },
       totalRevenue: {
@@ -1182,6 +1184,7 @@ export class TransactionsService {
           prior.totalRevenue,
           true,
           (pct) => `${pct}% vs prior period`,
+          (value) => `${formatNairaShort(value)} this period`,
         ),
       },
       avgOrderValue: {
@@ -1191,6 +1194,7 @@ export class TransactionsService {
           prior.avgOrderValue,
           true,
           (pct) => `${pct}% vs prior period`,
+          (value) => `${formatNairaShort(value)} this period`,
         ),
       },
       disputedTransactions: {
@@ -1277,6 +1281,72 @@ export class TransactionsService {
         totalRemittance: formatNairaFull(totalRemittance),
       },
     };
+  }
+
+  // Backs the admin Dashboard "category distribution" panel — top 5 categories by number of COMPLETED transactions, each with its share of all completed transactions and total gross amount. Judgment calls, flagged: scoped to completed transactions only (business-volume framing, not every checkout attempt), "amount" is gross transaction value (not commission) — neither pinned down beyond the mock's count/%/₦ columns.
+  async getCategoryDistribution(): Promise<
+    Array<{
+      category: string;
+      slug: string;
+      transactionCount: number;
+      percentage: number;
+      amount: number;
+    }>
+  > {
+    const [rows, totalCompleted] = await Promise.all([
+      this.transactionModel.aggregate<{
+        _id: Types.ObjectId;
+        transactionCount: number;
+        amount: number;
+        category: { title: string; slug: string }[];
+      }>([
+        { $match: { status: TransactionStatus.COMPLETED } },
+        {
+          $lookup: {
+            from: 'listings',
+            localField: 'listing',
+            foreignField: '_id',
+            as: 'listingDoc',
+          },
+        },
+        { $unwind: '$listingDoc' },
+        {
+          $group: {
+            _id: '$listingDoc.category',
+            transactionCount: { $sum: 1 },
+            amount: { $sum: '$amount' },
+          },
+        },
+        { $sort: { transactionCount: -1 } },
+        { $limit: 5 },
+        {
+          $lookup: {
+            from: 'categories',
+            localField: '_id',
+            foreignField: '_id',
+            as: 'category',
+            pipeline: [{ $project: { title: 1, slug: 1 } }],
+          },
+        },
+      ]),
+      this.transactionModel.countDocuments({
+        status: TransactionStatus.COMPLETED,
+      }),
+    ]);
+
+    return rows.map((r) => {
+      const cat = r.category[0];
+      return {
+        category: cat?.title ?? 'Uncategorized',
+        slug: cat?.slug ?? '',
+        transactionCount: r.transactionCount,
+        percentage:
+          totalCompleted > 0
+            ? Math.round((r.transactionCount / totalCompleted) * 1000) / 10
+            : 0,
+        amount: Math.round(r.amount * 100) / 100,
+      };
+    });
   }
 
   // Requires buyer/seller/listing already populated — same contract as
