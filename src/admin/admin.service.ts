@@ -22,9 +22,9 @@ import {
 } from './dto/admin-list.dto';
 import { SuspendUserDto } from './dto/suspend-user.dto';
 import { EmailSellerDto } from './dto/email-seller.dto';
-import type { DashboardInsightsPeriod } from './dto/dashboard.dto';
+import type { DashboardInsightsFilter } from './dto/dashboard.dto';
 import { toCsv } from '../common/utils/csv.util';
-import { countTrend, ALL_TIME_TREND } from '../common/utils/trend.util';
+import { countTrend } from '../common/utils/trend.util';
 
 /**
  * Thin orchestration layer over services that already exist — every method
@@ -391,63 +391,78 @@ export class AdminService {
     return this.settingsService.update(dto);
   }
 
-  // Spans Users + Listings + Transactions — same "genuine exception, lives
-  // here rather than forced into one domain service" reasoning as the Users
-  // federation above. No dedicated 'dashboard' RBAC bucket exists (same
-  // judgment call already made for Offers, grouped under 'transactions' in
-  // the controller) since these two endpoints are overwhelmingly
-  // transaction/revenue data.
-  private static periodStart(
-    period: DashboardInsightsPeriod,
-  ): Date | undefined {
+  // Spans Users + Listings + Transactions — same "genuine exception, lives here rather than forced into one domain service" reasoning as the Users federation above. No dedicated 'dashboard' RBAC bucket exists, same judgment call already made for Offers, grouped under 'transactions' in the controller.
+  // Fixed set of 5 named filters (no more generic today/week/all) — lastMonth/last3Months/thisYear compare against the FULL prior calendar period, not an elapsed-mirrored one, since each is now a discrete, named option rather than an arbitrary rolling window.
+  private static resolveRange(
+    filter: DashboardInsightsFilter,
+    startDate?: string,
+    endDate?: string,
+  ): { since: Date; until: Date; priorSince: Date; priorUntil: Date } {
     const now = new Date();
-    switch (period) {
-      case 'today':
-        return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      case 'week':
-        return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      case 'month':
-        return new Date(now.getFullYear(), now.getMonth(), 1);
-      case 'year':
-        return new Date(now.getFullYear(), 0, 1);
-      case 'all':
-      default:
-        return undefined;
+    switch (filter) {
+      case 'lastMonth': {
+        const since = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const until = new Date(now.getFullYear(), now.getMonth(), 1);
+        const priorSince = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+        return { since, until, priorSince, priorUntil: since };
+      }
+      case 'last3Months': {
+        const since = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+        const priorSince = new Date(now.getFullYear(), now.getMonth() - 6, 1);
+        return { since, until: now, priorSince, priorUntil: since };
+      }
+      case 'thisYear': {
+        const since = new Date(now.getFullYear(), 0, 1);
+        const priorSince = new Date(now.getFullYear() - 1, 0, 1);
+        return { since, until: now, priorSince, priorUntil: since };
+      }
+      case 'custom': {
+        // endDate is a calendar day, made exclusive-upper-bound by +1 day so that day's own data is included.
+        const since = new Date(startDate!);
+        const until = new Date(
+          new Date(endDate!).getTime() + 24 * 60 * 60 * 1000,
+        );
+        const elapsedMs = until.getTime() - since.getTime();
+        return {
+          since,
+          until,
+          priorSince: new Date(since.getTime() - elapsedMs),
+          priorUntil: since,
+        };
+      }
+      case 'thisMonth':
+      default: {
+        const since = new Date(now.getFullYear(), now.getMonth(), 1);
+        const priorSince = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        return { since, until: now, priorSince, priorUntil: since };
+      }
     }
   }
 
-  // Prior period = same elapsed length, immediately before `since` — not a calendar-aligned lookback (judgment call).
-  private static periodRange(period: DashboardInsightsPeriod): {
-    since?: Date;
-    priorSince?: Date;
-    priorUntil?: Date;
-  } {
-    const since = AdminService.periodStart(period);
-    if (!since) return {};
-    const elapsedMs = Date.now() - since.getTime();
-    return {
-      since,
-      priorSince: new Date(since.getTime() - elapsedMs),
-      priorUntil: since,
-    };
-  }
-
-  // "{count} new this week" phrasing for the two plain-count cards below — matches the dashboard mock's style instead of a generic percentage.
-  private static readonly PERIOD_LABELS: Record<
-    DashboardInsightsPeriod,
+  // "{count} {periodLabel}" phrasing for the two plain-count cards — matches the dashboard mock exactly (e.g. "840 this week"), no invented words.
+  private static readonly FILTER_LABELS: Record<
+    DashboardInsightsFilter,
     string
   > = {
-    today: 'today',
-    week: 'this week',
-    month: 'this month',
-    year: 'this year',
-    all: 'all time',
+    thisMonth: 'this month',
+    lastMonth: 'last month',
+    last3Months: 'in the last 3 months',
+    thisYear: 'this year',
+    custom: 'in the selected range',
   };
 
   // 8 cards, each {value, extra: {status, result}} — no chart/donut/activity-feed, explicitly out of scope.
-  async getDashboardInsights(period: DashboardInsightsPeriod = 'month') {
-    const { since, priorSince, priorUntil } = AdminService.periodRange(period);
-    const periodLabel = AdminService.PERIOD_LABELS[period];
+  async getDashboardInsights(
+    filter: DashboardInsightsFilter = 'thisMonth',
+    startDate?: string,
+    endDate?: string,
+  ) {
+    const { since, until, priorSince, priorUntil } = AdminService.resolveRange(
+      filter,
+      startDate,
+      endDate,
+    );
+    const periodLabel = AdminService.FILTER_LABELS[filter];
 
     const [
       newUsers,
@@ -457,37 +472,32 @@ export class AdminService {
       priorNewListings,
       txSummary,
     ] = await Promise.all([
-      this.usersService.countNewInPeriod(since),
-      priorSince
-        ? this.usersService.countNewInPeriod(priorSince, priorUntil)
-        : 0,
+      this.usersService.countNewInPeriod(since, until),
+      this.usersService.countNewInPeriod(priorSince, priorUntil),
       this.listingsService.countActive(),
-      this.listingsService.countCreatedInRange(since),
-      priorSince
-        ? this.listingsService.countCreatedInRange(priorSince, priorUntil)
-        : 0,
+      this.listingsService.countCreatedInRange(since, until),
+      this.listingsService.countCreatedInRange(priorSince, priorUntil),
       this.transactionsService.getDashboardInsights(
         since,
+        until,
         priorSince,
         priorUntil,
       ),
     ]);
 
     return {
-      period,
+      filter,
+      since,
+      until,
       cards: {
         newUsers: {
           value: newUsers,
-          extra: since
-            ? countTrend(newUsers, periodLabel, priorNewUsers, true)
-            : ALL_TIME_TREND,
+          extra: countTrend(newUsers, periodLabel, priorNewUsers, true),
         },
         // activeListings itself is a live total with no period of its own — its trend uses the listing-creation rate instead.
         activeListings: {
           value: activeListings,
-          extra: since
-            ? countTrend(newListings, periodLabel, priorNewListings, true)
-            : ALL_TIME_TREND,
+          extra: countTrend(newListings, periodLabel, priorNewListings, true),
         },
         ...txSummary,
       },
@@ -499,10 +509,31 @@ export class AdminService {
       await this.transactionsService.getRevenueTrends(year);
     return { year, trend, insights };
   }
+
+  // Backs the admin Dashboard "listings per month" chart — 6 months (5 back + current), by listing.price, not a count (per your read of the mock). extra is a plain "+{count} this month" new-listings count, not a trend comparison — matches the mock's single green indicator.
+  async getListingsPerMonth() {
+    const now = new Date();
+    const thisMonthSince = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const [totalListingsValue, trend, newThisMonth] = await Promise.all([
+      this.listingsService.sumTotalValue(),
+      this.listingsService.sumValueByMonth(6),
+      this.listingsService.countCreatedInRange(thisMonthSince),
+    ]);
+
+    return {
+      totalListingsValue,
+      extra: {
+        status:
+          newThisMonth > 0 ? ('productive' as const) : ('warning' as const),
+        result: `+${newThisMonth} this month`,
+      },
+      trend,
+    };
+  }
 }
 
-// Minimal escaping — the admin-composed message gets interpolated into an
-// HTML email body sent to the seller.
+// Minimal escaping — the admin-composed message gets interpolated into an HTML email body sent to the seller.
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')

@@ -18,6 +18,7 @@ import { CategoriesService } from '../categories/categories.service';
 import { CounterService } from '../common/counter/counter.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { escapeRegex } from '../common/utils/regex.util';
+import { MONTH_ABBREVIATIONS } from '../common/utils/date.util';
 
 const CATEGORY_POPULATE_FIELDS = 'title slug';
 const SELLER_POPULATE_FIELDS =
@@ -421,6 +422,61 @@ export class ListingsService {
       ? { createdAt: until ? { $gte: since, $lt: until } : { $gte: since } }
       : {};
     return this.listingModel.countDocuments(filter).exec();
+  }
+
+  // Backs the admin Dashboard "listings per month" chart's all-time total — sum of asking price across every non-deleted listing (judgment call: deleted excluded, everything else counts).
+  async sumTotalValue(): Promise<number> {
+    const rows = await this.listingModel.aggregate<{
+      _id: null;
+      total: number;
+    }>([
+      { $match: { status: { $ne: ListingStatus.DELETED } } },
+      { $group: { _id: null, total: { $sum: '$price' } } },
+    ]);
+    return Math.round((rows[0]?.total ?? 0) * 100) / 100;
+  }
+
+  // Same chart's monthly bars — rolling window of `monthsBack` months up to and including the current one, zero-filled, summed by listing.price (not a count).
+  async sumValueByMonth(
+    monthsBack: number,
+  ): Promise<Array<{ year: number; month: string; value: number }>> {
+    const now = new Date();
+    const buckets: { year: number; month: number }[] = [];
+    for (let i = monthsBack - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      buckets.push({ year: d.getFullYear(), month: d.getMonth() + 1 });
+    }
+    const since = new Date(buckets[0].year, buckets[0].month - 1, 1);
+
+    const rows = await this.listingModel.aggregate<{
+      _id: { year: number; month: number };
+      value: number;
+    }>([
+      {
+        $match: {
+          status: { $ne: ListingStatus.DELETED },
+          createdAt: { $gte: since },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            year: { $year: '$createdAt' },
+            month: { $month: '$createdAt' },
+          },
+          value: { $sum: '$price' },
+        },
+      },
+    ]);
+    const byMonth = new Map(
+      rows.map((r) => [`${r._id.year}-${r._id.month}`, r.value]),
+    );
+
+    return buckets.map((b) => ({
+      year: b.year,
+      month: MONTH_ABBREVIATIONS[b.month - 1],
+      value: Math.round((byMonth.get(`${b.year}-${b.month}`) ?? 0) * 100) / 100,
+    }));
   }
 
   // Used internally as a mutation target (flag/adminRemove) and by

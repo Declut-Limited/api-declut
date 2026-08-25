@@ -43,13 +43,24 @@ export class AdminController {
   @Get('dashboard/insights')
   @RequirePermission('transactions', 'view')
   getDashboardInsights(@Query() dto: DashboardInsightsDto) {
-    return this.adminService.getDashboardInsights(dto.period);
+    return this.adminService.getDashboardInsights(
+      dto.filter,
+      dto.startDate,
+      dto.endDate,
+    );
   }
 
   @Get('dashboard/revenue-trends')
   @RequirePermission('transactions', 'view')
   getRevenueTrends(@Query() dto: RevenueTrendsDto) {
     return this.adminService.getRevenueTrends(dto.year);
+  }
+
+  // Listings data, not transactions — 'listings' bucket, unlike the two dashboard routes above.
+  @Get('dashboard/listings-per-month')
+  @RequirePermission('listings', 'view')
+  getListingsPerMonth() {
+    return this.adminService.getListingsPerMonth();
   }
 
   @Get('users')

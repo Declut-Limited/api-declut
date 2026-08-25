@@ -33,12 +33,8 @@ import {
   formatNairaFull,
   formatNairaShort,
 } from '../common/utils/currency.util';
-import {
-  pctTrend,
-  breachTrend,
-  ALL_TIME_TREND,
-  Trend,
-} from '../common/utils/trend.util';
+import { pctTrend, breachTrend, Trend } from '../common/utils/trend.util';
+import { MONTH_ABBREVIATIONS } from '../common/utils/date.util';
 
 interface PaystackWebhookPayload {
   event: string;
@@ -47,20 +43,6 @@ interface PaystackWebhookPayload {
 
 const PARTY_POPULATE_FIELDS = 'name email accountStatus slug company';
 const LISTING_POPULATE_FIELDS = 'title';
-const MONTH_ABBREVIATIONS = [
-  'jan',
-  'feb',
-  'mar',
-  'apr',
-  'may',
-  'jun',
-  'jul',
-  'aug',
-  'sep',
-  'oct',
-  'nov',
-  'dec',
-];
 const MONTH_NAMES = [
   'January',
   'February',
@@ -1147,11 +1129,12 @@ export class TransactionsService {
     };
   }
 
-  // Backs 6 of the admin Dashboard's 8 "insights" cards — each returned as {value, extra}. disputedTransactions/stalledTransactions.value stay a live, un-scoped snapshot ("how much needs my attention right now"); their .extra is a real SLA-breach count, not a trend. See AdminService.getDashboardInsights() for the other 2 cards and the period/prior-period math.
+  // Backs 6 of the admin Dashboard's 8 "insights" cards — each returned as {value, extra}. disputedTransactions/stalledTransactions.value stay a live, un-scoped snapshot ("how much needs my attention right now"); their .extra is a real SLA-breach count, not a trend. See AdminService.getDashboardInsights() for the other 2 cards and the filter/prior-period math (every filter now has concrete since/until/priorSince/priorUntil bounds).
   async getDashboardInsights(
-    since?: Date,
-    priorSince?: Date,
-    priorUntil?: Date,
+    since: Date,
+    until: Date,
+    priorSince: Date,
+    priorUntil: Date,
   ): Promise<{
     totalTransactions: { value: number; extra: Trend };
     completedTransactions: { value: number; extra: Trend };
@@ -1160,10 +1143,8 @@ export class TransactionsService {
     disputedTransactions: { value: number; extra: Trend };
     stalledTransactions: { value: number; extra: Trend };
   }> {
-    const periodFilter = since ? { createdAt: { $gte: since } } : {};
-    const priorFilter = priorSince
-      ? { createdAt: { $gte: priorSince, $lt: priorUntil } }
-      : null;
+    const periodFilter = { createdAt: { $gte: since, $lt: until } };
+    const priorFilter = { createdAt: { $gte: priorSince, $lt: priorUntil } };
     const { escrowStalledThresholdDays } = await this.settingsService.get();
     const slaCutoff = new Date(
       Date.now() - escrowStalledThresholdDays * 24 * 60 * 60 * 1000,
@@ -1171,46 +1152,44 @@ export class TransactionsService {
 
     const [current, prior, attention] = await Promise.all([
       this.summarizeTransactions(periodFilter),
-      priorFilter ? this.summarizeTransactions(priorFilter) : null,
+      this.summarizeTransactions(priorFilter),
       this.summarizeAttentionStates(slaCutoff),
     ]);
-
-    const trendOrAllTime = (
-      value: number,
-      priorValue: number,
-      phrase: (pct: number, direction: 'increase' | 'decrease') => string,
-    ) => (since ? pctTrend(value, priorValue, true, phrase) : ALL_TIME_TREND);
 
     return {
       totalTransactions: {
         value: current.totalTransactions,
-        extra: trendOrAllTime(
+        extra: pctTrend(
           current.totalTransactions,
-          prior?.totalTransactions ?? 0,
+          prior.totalTransactions,
+          true,
           (pct, dir) => `${pct}% ${dir}`,
         ),
       },
       completedTransactions: {
         value: current.completedTransactions,
-        extra: trendOrAllTime(
+        extra: pctTrend(
           current.completedTransactions,
-          prior?.completedTransactions ?? 0,
+          prior.completedTransactions,
+          true,
           (pct, dir) => `${pct}% ${dir}`,
         ),
       },
       totalRevenue: {
         value: current.totalRevenue,
-        extra: trendOrAllTime(
+        extra: pctTrend(
           current.totalRevenue,
-          prior?.totalRevenue ?? 0,
+          prior.totalRevenue,
+          true,
           (pct) => `${pct}% vs prior period`,
         ),
       },
       avgOrderValue: {
         value: current.avgOrderValue,
-        extra: trendOrAllTime(
+        extra: pctTrend(
           current.avgOrderValue,
-          prior?.avgOrderValue ?? 0,
+          prior.avgOrderValue,
+          true,
           (pct) => `${pct}% vs prior period`,
         ),
       },

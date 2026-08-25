@@ -29,7 +29,7 @@ export function pctTrend(
   };
 }
 
-// Plain-count cards (new users, new listings) — "{value} new this week" style, no percentage.
+// Plain-count cards (new users, new listings) — "{value} {periodLabel}" (e.g. "840 this week"), matches the mock exactly, no invented words.
 export function countTrend(
   value: number,
   periodLabel: string,
@@ -39,7 +39,7 @@ export function countTrend(
   const improved = higherIsBetter ? value >= prior : value <= prior;
   return {
     status: improved ? 'productive' : 'warning',
-    result: `${value} new ${periodLabel}`,
+    result: `${value} ${periodLabel}`,
   };
 }
 
@@ -50,9 +50,3 @@ export function breachTrend(count: number, label: string): Trend {
     result: `${count} ${label}`,
   };
 }
-
-// period=all has no well-defined "prior period" to compare against.
-export const ALL_TIME_TREND: Trend = {
-  status: 'productive',
-  result: 'All-time total',
-};
