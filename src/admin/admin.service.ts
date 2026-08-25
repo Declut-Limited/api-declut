@@ -164,6 +164,7 @@ export class AdminService {
         },
         details: {
           role: 'User',
+          name: user.name,
           status: user.accountStatus,
           createdAt: (user as unknown as { createdAt: Date }).createdAt,
           rating: user.avgRating.toFixed(1),
@@ -269,6 +270,7 @@ export class AdminService {
       seller: seller
         ? {
             id: seller._id.toString(),
+            slug: seller.slug,
             name: seller.name,
             email: seller.email,
             phone: seller.phone,
