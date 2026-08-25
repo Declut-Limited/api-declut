@@ -49,7 +49,7 @@ export class AdminController {
   @Get('dashboard/revenue-trends')
   @RequirePermission('transactions', 'view')
   getRevenueTrends(@Query() dto: RevenueTrendsDto) {
-    return this.adminService.getRevenueTrends(dto.period);
+    return this.adminService.getRevenueTrends(dto.year);
   }
 
   @Get('users')

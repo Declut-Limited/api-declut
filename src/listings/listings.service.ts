@@ -408,11 +408,19 @@ export class ListingsService {
     );
   }
 
-  // Backs the admin Dashboard "active listings" insight card.
+  // Backs the admin Dashboard "active listings" card — live, unscoped snapshot.
   countActive(): Promise<number> {
     return this.listingModel
       .countDocuments({ status: ListingStatus.ACTIVE })
       .exec();
+  }
+
+  // Trend context for activeListings: new-listing rate, since the live total has no period of its own (judgment call).
+  countCreatedInRange(since?: Date, until?: Date): Promise<number> {
+    const filter = since
+      ? { createdAt: until ? { $gte: since, $lt: until } : { $gte: since } }
+      : {};
+    return this.listingModel.countDocuments(filter).exec();
   }
 
   // Used internally as a mutation target (flag/adminRemove) and by

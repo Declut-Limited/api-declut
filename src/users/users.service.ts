@@ -239,9 +239,11 @@ export class UsersService {
       : this.userModel.findOne({ slug: idOrSlug }).exec();
   }
 
-  // Backs the admin Dashboard "new users" insight card.
-  countNewInPeriod(since?: Date): Promise<number> {
-    const filter = since ? { createdAt: { $gte: since } } : {};
+  // Backs the admin Dashboard "new users" card — `until` is only used for the prior-period comparison.
+  countNewInPeriod(since?: Date, until?: Date): Promise<number> {
+    const filter = since
+      ? { createdAt: until ? { $gte: since, $lt: until } : { $gte: since } }
+      : {};
     return this.userModel.countDocuments(filter).exec();
   }
 

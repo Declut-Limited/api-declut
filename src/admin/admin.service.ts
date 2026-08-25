@@ -22,11 +22,9 @@ import {
 } from './dto/admin-list.dto';
 import { SuspendUserDto } from './dto/suspend-user.dto';
 import { EmailSellerDto } from './dto/email-seller.dto';
-import type {
-  DashboardInsightsPeriod,
-  RevenueTrendPeriod,
-} from './dto/dashboard.dto';
+import type { DashboardInsightsPeriod } from './dto/dashboard.dto';
 import { toCsv } from '../common/utils/csv.util';
+import { countTrend, ALL_TIME_TREND } from '../common/utils/trend.util';
 
 /**
  * Thin orchestration layer over services that already exist — every method
@@ -418,34 +416,88 @@ export class AdminService {
     }
   }
 
-  // 8 cards, per spec: newUsers, activeListings, totalTransactions,
-  // completedTransactions, totalRevenue, avgOrderValue,
-  // disputedTransactions, stalledTransactions. Deliberately does NOT
-  // include a listings-per-month chart, category distribution,
-  // transaction-status donut, or recent-activity feed — explicitly told not
-  // to build (or stub) those.
-  async getDashboardInsights(period: DashboardInsightsPeriod = 'month') {
+  // Prior period = same elapsed length, immediately before `since` — not a calendar-aligned lookback (judgment call).
+  private static periodRange(period: DashboardInsightsPeriod): {
+    since?: Date;
+    priorSince?: Date;
+    priorUntil?: Date;
+  } {
     const since = AdminService.periodStart(period);
-    const [newUsers, activeListings, txSummary] = await Promise.all([
+    if (!since) return {};
+    const elapsedMs = Date.now() - since.getTime();
+    return {
+      since,
+      priorSince: new Date(since.getTime() - elapsedMs),
+      priorUntil: since,
+    };
+  }
+
+  // "{count} new this week" phrasing for the two plain-count cards below — matches the dashboard mock's style instead of a generic percentage.
+  private static readonly PERIOD_LABELS: Record<
+    DashboardInsightsPeriod,
+    string
+  > = {
+    today: 'today',
+    week: 'this week',
+    month: 'this month',
+    year: 'this year',
+    all: 'all time',
+  };
+
+  // 8 cards, each {value, extra: {status, result}} — no chart/donut/activity-feed, explicitly out of scope.
+  async getDashboardInsights(period: DashboardInsightsPeriod = 'month') {
+    const { since, priorSince, priorUntil } = AdminService.periodRange(period);
+    const periodLabel = AdminService.PERIOD_LABELS[period];
+
+    const [
+      newUsers,
+      priorNewUsers,
+      activeListings,
+      newListings,
+      priorNewListings,
+      txSummary,
+    ] = await Promise.all([
       this.usersService.countNewInPeriod(since),
+      priorSince
+        ? this.usersService.countNewInPeriod(priorSince, priorUntil)
+        : 0,
       this.listingsService.countActive(),
-      this.transactionsService.getDashboardInsights(since),
+      this.listingsService.countCreatedInRange(since),
+      priorSince
+        ? this.listingsService.countCreatedInRange(priorSince, priorUntil)
+        : 0,
+      this.transactionsService.getDashboardInsights(
+        since,
+        priorSince,
+        priorUntil,
+      ),
     ]);
 
     return {
       period,
       cards: {
-        newUsers,
-        activeListings,
+        newUsers: {
+          value: newUsers,
+          extra: since
+            ? countTrend(newUsers, periodLabel, priorNewUsers, true)
+            : ALL_TIME_TREND,
+        },
+        // activeListings itself is a live total with no period of its own — its trend uses the listing-creation rate instead.
+        activeListings: {
+          value: activeListings,
+          extra: since
+            ? countTrend(newListings, periodLabel, priorNewListings, true)
+            : ALL_TIME_TREND,
+        },
         ...txSummary,
       },
     };
   }
 
-  async getRevenueTrends(period: RevenueTrendPeriod = 'yearly') {
-    const monthsBack = period === 'yearly' ? 12 : 3;
-    const trend = await this.transactionsService.getMonthlyRevenue(monthsBack);
-    return { period, trend };
+  async getRevenueTrends(year: number = new Date().getFullYear()) {
+    const { trend, insights } =
+      await this.transactionsService.getRevenueTrends(year);
+    return { year, trend, insights };
   }
 }
 

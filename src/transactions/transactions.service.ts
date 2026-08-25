@@ -29,6 +29,16 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { SettingsService } from '../settings/settings.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { CounterService } from '../common/counter/counter.service';
+import {
+  formatNairaFull,
+  formatNairaShort,
+} from '../common/utils/currency.util';
+import {
+  pctTrend,
+  breachTrend,
+  ALL_TIME_TREND,
+  Trend,
+} from '../common/utils/trend.util';
 
 interface PaystackWebhookPayload {
   event: string;
@@ -37,6 +47,34 @@ interface PaystackWebhookPayload {
 
 const PARTY_POPULATE_FIELDS = 'name email accountStatus slug company';
 const LISTING_POPULATE_FIELDS = 'title';
+const MONTH_ABBREVIATIONS = [
+  'jan',
+  'feb',
+  'mar',
+  'apr',
+  'may',
+  'jun',
+  'jul',
+  'aug',
+  'sep',
+  'oct',
+  'nov',
+  'dec',
+];
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
 
 interface PopulatedParty {
   _id: Types.ObjectId;
@@ -1024,149 +1062,242 @@ export class TransactionsService {
     return obj;
   }
 
-  // Backs the admin Dashboard "insights" cards. `since` narrows the
-  // transaction-volume/revenue figures to a period; disputed/stalled counts
-  // are always a live, un-scoped snapshot rather than "how many became
-  // disputed in this period" — a judgment call, since what an admin
-  // actually wants from those two numbers is "how much needs my attention
-  // right now," not a historical rate. See AdminService.getDashboardInsights().
-  async getDashboardInsights(since?: Date): Promise<{
-    totalTransactions: number;
-    completedTransactions: number;
-    totalRevenue: number;
-    avgOrderValue: number;
-    disputedTransactions: number;
-    stalledTransactions: number;
-  }> {
-    const periodFilter = since ? { createdAt: { $gte: since } } : {};
-
-    const [periodRows, liveRows] = await Promise.all([
-      this.transactionModel.aggregate<{
-        _id: null;
-        totalTransactions: number;
-        completedTransactions: number;
-        totalRevenue: number;
-        completedAmountSum: number;
-      }>([
-        { $match: periodFilter },
-        {
-          $group: {
-            _id: null,
-            totalTransactions: { $sum: 1 },
-            completedTransactions: {
-              $sum: {
-                $cond: [
-                  { $eq: ['$status', TransactionStatus.COMPLETED] },
-                  1,
-                  0,
-                ],
-              },
+  // One period's totals — reused for both the current and prior window.
+  private async summarizeTransactions(filter: Record<string, unknown>) {
+    const rows = await this.transactionModel.aggregate<{
+      _id: null;
+      totalTransactions: number;
+      completedTransactions: number;
+      totalRevenue: number;
+      completedAmountSum: number;
+    }>([
+      { $match: filter },
+      {
+        $group: {
+          _id: null,
+          totalTransactions: { $sum: 1 },
+          completedTransactions: {
+            $sum: {
+              $cond: [{ $eq: ['$status', TransactionStatus.COMPLETED] }, 1, 0],
             },
-            totalRevenue: {
-              $sum: {
-                $cond: [
-                  { $eq: ['$status', TransactionStatus.COMPLETED] },
-                  '$commissionAmount',
-                  0,
-                ],
-              },
+          },
+          totalRevenue: {
+            $sum: {
+              $cond: [
+                { $eq: ['$status', TransactionStatus.COMPLETED] },
+                '$commissionAmount',
+                0,
+              ],
             },
-            completedAmountSum: {
-              $sum: {
-                $cond: [
-                  { $eq: ['$status', TransactionStatus.COMPLETED] },
-                  '$amount',
-                  0,
-                ],
-              },
+          },
+          completedAmountSum: {
+            $sum: {
+              $cond: [
+                { $eq: ['$status', TransactionStatus.COMPLETED] },
+                '$amount',
+                0,
+              ],
             },
           },
         },
-      ]),
-      this.transactionModel.aggregate<{
-        _id: TransactionStatus;
-        count: number;
-      }>([
-        {
-          $match: {
-            status: {
-              $in: [TransactionStatus.DISPUTED, TransactionStatus.STALLED],
-            },
-          },
-        },
-        { $group: { _id: '$status', count: { $sum: 1 } } },
-      ]),
+      },
     ]);
-
-    const p = periodRows[0];
-    const disputedTransactions =
-      liveRows.find((r) => r._id === TransactionStatus.DISPUTED)?.count ?? 0;
-    const stalledTransactions =
-      liveRows.find((r) => r._id === TransactionStatus.STALLED)?.count ?? 0;
-
+    const r = rows[0];
     return {
-      totalTransactions: p?.totalTransactions ?? 0,
-      completedTransactions: p?.completedTransactions ?? 0,
-      totalRevenue: Math.round((p?.totalRevenue ?? 0) * 100) / 100,
+      totalTransactions: r?.totalTransactions ?? 0,
+      completedTransactions: r?.completedTransactions ?? 0,
+      totalRevenue: Math.round((r?.totalRevenue ?? 0) * 100) / 100,
       avgOrderValue:
-        p && p.completedTransactions > 0
-          ? Math.round((p.completedAmountSum / p.completedTransactions) * 100) /
+        r && r.completedTransactions > 0
+          ? Math.round((r.completedAmountSum / r.completedTransactions) * 100) /
             100
           : 0,
-      disputedTransactions,
-      stalledTransactions,
     };
   }
 
-  // Backs the admin Dashboard revenue-trends chart — monthly commission
-  // revenue for the last `monthsBack` months, zero-filled so a month with
-  // no completed transactions still appears as a point rather than a gap.
-  // Honesty flag: buckets by `updatedAt` on a completed transaction as a
-  // proxy for "when it completed" — there's no dedicated completedAt field,
-  // but confirmCode()/adminRelease() both set status to COMPLETED
-  // immediately before the save that stamps updatedAt, so in practice the
-  // two are the same instant for every transaction that reaches this state.
-  async getMonthlyRevenue(
-    monthsBack: number,
-  ): Promise<Array<{ year: number; month: number; revenue: number }>> {
-    const now = new Date();
-    const buckets: { year: number; month: number }[] = [];
-    for (let i = monthsBack - 1; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      buckets.push({ year: d.getFullYear(), month: d.getMonth() + 1 });
-    }
-    const since = new Date(buckets[0].year, buckets[0].month - 1, 1);
-
+  // Live count of disputed/stalled transactions, split by whether they've sat untouched past the SLA cutoff — reuses escrowStalledThresholdDays as the SLA proxy (no dedicated "dispute SLA" setting exists yet, judgment call, flagged) via updatedAt (same proxy-timestamp caveat as getRevenueTrends).
+  private async summarizeAttentionStates(slaCutoff: Date) {
     const rows = await this.transactionModel.aggregate<{
-      _id: { year: number; month: number };
-      revenue: number;
+      _id: TransactionStatus;
+      total: number;
+      breaching: number;
     }>([
       {
         $match: {
-          status: TransactionStatus.COMPLETED,
-          updatedAt: { $gte: since },
+          status: {
+            $in: [TransactionStatus.DISPUTED, TransactionStatus.STALLED],
+          },
         },
       },
       {
         $group: {
-          _id: {
-            year: { $year: '$updatedAt' },
-            month: { $month: '$updatedAt' },
+          _id: '$status',
+          total: { $sum: 1 },
+          breaching: {
+            $sum: { $cond: [{ $lte: ['$updatedAt', slaCutoff] }, 1, 0] },
           },
-          revenue: { $sum: '$commissionAmount' },
         },
       },
     ]);
-    const revenueMap = new Map(
-      rows.map((r) => [`${r._id.year}-${r._id.month}`, r.revenue]),
+    const find = (status: TransactionStatus) =>
+      rows.find((r) => r._id === status) ?? { total: 0, breaching: 0 };
+    return {
+      disputed: find(TransactionStatus.DISPUTED),
+      stalled: find(TransactionStatus.STALLED),
+    };
+  }
+
+  // Backs 6 of the admin Dashboard's 8 "insights" cards — each returned as {value, extra}. disputedTransactions/stalledTransactions.value stay a live, un-scoped snapshot ("how much needs my attention right now"); their .extra is a real SLA-breach count, not a trend. See AdminService.getDashboardInsights() for the other 2 cards and the period/prior-period math.
+  async getDashboardInsights(
+    since?: Date,
+    priorSince?: Date,
+    priorUntil?: Date,
+  ): Promise<{
+    totalTransactions: { value: number; extra: Trend };
+    completedTransactions: { value: number; extra: Trend };
+    totalRevenue: { value: number; extra: Trend };
+    avgOrderValue: { value: number; extra: Trend };
+    disputedTransactions: { value: number; extra: Trend };
+    stalledTransactions: { value: number; extra: Trend };
+  }> {
+    const periodFilter = since ? { createdAt: { $gte: since } } : {};
+    const priorFilter = priorSince
+      ? { createdAt: { $gte: priorSince, $lt: priorUntil } }
+      : null;
+    const { escrowStalledThresholdDays } = await this.settingsService.get();
+    const slaCutoff = new Date(
+      Date.now() - escrowStalledThresholdDays * 24 * 60 * 60 * 1000,
     );
 
-    return buckets.map((b) => ({
-      year: b.year,
-      month: b.month,
+    const [current, prior, attention] = await Promise.all([
+      this.summarizeTransactions(periodFilter),
+      priorFilter ? this.summarizeTransactions(priorFilter) : null,
+      this.summarizeAttentionStates(slaCutoff),
+    ]);
+
+    const trendOrAllTime = (
+      value: number,
+      priorValue: number,
+      phrase: (pct: number, direction: 'increase' | 'decrease') => string,
+    ) => (since ? pctTrend(value, priorValue, true, phrase) : ALL_TIME_TREND);
+
+    return {
+      totalTransactions: {
+        value: current.totalTransactions,
+        extra: trendOrAllTime(
+          current.totalTransactions,
+          prior?.totalTransactions ?? 0,
+          (pct, dir) => `${pct}% ${dir}`,
+        ),
+      },
+      completedTransactions: {
+        value: current.completedTransactions,
+        extra: trendOrAllTime(
+          current.completedTransactions,
+          prior?.completedTransactions ?? 0,
+          (pct, dir) => `${pct}% ${dir}`,
+        ),
+      },
+      totalRevenue: {
+        value: current.totalRevenue,
+        extra: trendOrAllTime(
+          current.totalRevenue,
+          prior?.totalRevenue ?? 0,
+          (pct) => `${pct}% vs prior period`,
+        ),
+      },
+      avgOrderValue: {
+        value: current.avgOrderValue,
+        extra: trendOrAllTime(
+          current.avgOrderValue,
+          prior?.avgOrderValue ?? 0,
+          (pct) => `${pct}% vs prior period`,
+        ),
+      },
+      disputedTransactions: {
+        value: attention.disputed.total,
+        extra: breachTrend(attention.disputed.breaching, 'breaching SLA'),
+      },
+      stalledTransactions: {
+        value: attention.stalled.total,
+        extra: breachTrend(attention.stalled.breaching, 'breaching SLA'),
+      },
+    };
+  }
+
+  // Backs the admin Dashboard revenue-trends chart — always Jan-Dec of the
+  // given calendar year, zero-filled. Honesty flag: buckets by `updatedAt`
+  // as a proxy for "when it completed" (no dedicated completedAt field),
+  // but confirmCode()/adminRelease() set status to COMPLETED immediately
+  // before the save that stamps updatedAt, so the two are the same instant.
+  // trend[].revenue is commission (platform earnings), unchanged from
+  // before; insights.twelveMonthGross/bestMonth/avgPerMonth are built from
+  // gross transaction amount instead — a separate figure, not summed from
+  // trend[].revenue. totalRemittance is amount minus commission (what
+  // sellers were actually paid). Judgment call, flagged: this split wasn't
+  // pinned down beyond the screenshot's Gross-Revenue-vs-Commission legend.
+  async getRevenueTrends(year: number): Promise<{
+    trend: Array<{ year: number; month: string; revenue: number }>;
+    insights: {
+      twelveMonthGross: string;
+      bestMonth: string;
+      avgPerMonth: string;
+      totalRemittance: string;
+    };
+  }> {
+    const startOfYear = new Date(year, 0, 1);
+    const startOfNextYear = new Date(year + 1, 0, 1);
+
+    const rows = await this.transactionModel.aggregate<{
+      _id: number;
+      grossAmount: number;
+      commissionAmount: number;
+    }>([
+      {
+        $match: {
+          status: TransactionStatus.COMPLETED,
+          updatedAt: { $gte: startOfYear, $lt: startOfNextYear },
+        },
+      },
+      {
+        $group: {
+          _id: { $month: '$updatedAt' },
+          grossAmount: { $sum: '$amount' },
+          commissionAmount: { $sum: '$commissionAmount' },
+        },
+      },
+    ]);
+    const byMonth = new Map(rows.map((r) => [r._id, r]));
+
+    const trend = MONTH_ABBREVIATIONS.map((month, i) => ({
+      year,
+      month,
       revenue:
-        Math.round((revenueMap.get(`${b.year}-${b.month}`) ?? 0) * 100) / 100,
+        Math.round((byMonth.get(i + 1)?.commissionAmount ?? 0) * 100) / 100,
     }));
+
+    const grossByMonth = MONTH_NAMES.map((name, i) => ({
+      name,
+      gross: byMonth.get(i + 1)?.grossAmount ?? 0,
+    }));
+    const twelveMonthGross = grossByMonth.reduce((sum, m) => sum + m.gross, 0);
+    const bestMonth = grossByMonth.reduce((max, m) =>
+      m.gross > max.gross ? m : max,
+    );
+    const totalRemittance = rows.reduce(
+      (sum, r) => sum + (r.grossAmount - r.commissionAmount),
+      0,
+    );
+
+    return {
+      trend,
+      insights: {
+        twelveMonthGross: formatNairaShort(twelveMonthGross),
+        bestMonth: `${bestMonth.name} - ${formatNairaShort(bestMonth.gross)}`,
+        avgPerMonth: formatNairaShort(twelveMonthGross / 12),
+        totalRemittance: formatNairaFull(totalRemittance),
+      },
+    };
   }
 
   // Requires buyer/seller/listing already populated — same contract as

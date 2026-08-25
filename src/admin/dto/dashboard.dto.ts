@@ -1,4 +1,5 @@
-import { IsIn, IsOptional } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
 
 const INSIGHTS_PERIODS = ['today', 'week', 'month', 'year', 'all'] as const;
 export type DashboardInsightsPeriod = (typeof INSIGHTS_PERIODS)[number];
@@ -9,11 +10,12 @@ export class DashboardInsightsDto {
   period?: DashboardInsightsPeriod;
 }
 
-const REVENUE_TREND_PERIODS = ['yearly', 'quarterly'] as const;
-export type RevenueTrendPeriod = (typeof REVENUE_TREND_PERIODS)[number];
-
+// Always Jan-Dec of this calendar year — defaults to the current year.
 export class RevenueTrendsDto {
   @IsOptional()
-  @IsIn(REVENUE_TREND_PERIODS)
-  period?: RevenueTrendPeriod;
+  @Type(() => Number)
+  @IsInt()
+  @Min(2000)
+  @Max(2100)
+  year?: number;
 }
