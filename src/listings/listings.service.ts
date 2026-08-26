@@ -508,10 +508,12 @@ export class ListingsService {
     return Math.round((rows[0]?.total ?? 0) * 100) / 100;
   }
 
-  // Same chart's monthly bars — rolling window of `monthsBack` months up to and including the current one, zero-filled, summed by listing.price (not a count).
+  // Same chart's monthly bars — rolling window of `monthsBack` months up to and including the current one, zero-filled. totalListing is a count, listingWorth is summed by listing.price.
   async sumValueByMonth(
     monthsBack: number,
-  ): Promise<Array<{ month: string; value: number }>> {
+  ): Promise<
+    Array<{ month: string; totalListing: number; listingWorth: number }>
+  > {
     const now = new Date();
     const buckets: { year: number; month: number }[] = [];
     for (let i = monthsBack - 1; i >= 0; i--) {
@@ -522,7 +524,8 @@ export class ListingsService {
 
     const rows = await this.listingModel.aggregate<{
       _id: { year: number; month: number };
-      value: number;
+      totalListing: number;
+      listingWorth: number;
     }>([
       {
         $match: {
@@ -536,18 +539,26 @@ export class ListingsService {
             year: { $year: '$createdAt' },
             month: { $month: '$createdAt' },
           },
-          value: { $sum: '$price' },
+          totalListing: { $sum: 1 },
+          listingWorth: { $sum: '$price' },
         },
       },
     ]);
     const byMonth = new Map(
-      rows.map((r) => [`${r._id.year}-${r._id.month}`, r.value]),
+      rows.map((r) => [
+        `${r._id.year}-${r._id.month}`,
+        { totalListing: r.totalListing, listingWorth: r.listingWorth },
+      ]),
     );
 
-    return buckets.map((b) => ({
-      month: MONTH_ABBREVIATIONS[b.month - 1],
-      value: Math.round((byMonth.get(`${b.year}-${b.month}`) ?? 0) * 100) / 100,
-    }));
+    return buckets.map((b) => {
+      const bucket = byMonth.get(`${b.year}-${b.month}`);
+      return {
+        month: MONTH_ABBREVIATIONS[b.month - 1],
+        totalListing: bucket?.totalListing ?? 0,
+        listingWorth: Math.round((bucket?.listingWorth ?? 0) * 100) / 100,
+      };
+    });
   }
 
   // Used internally as a mutation target (flag/adminRemove) and by
