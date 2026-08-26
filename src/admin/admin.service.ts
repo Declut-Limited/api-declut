@@ -85,6 +85,7 @@ export class AdminService {
       email: string;
       role: string;
       roleId?: string;
+      roleName?: string;
       listingsCount: number;
       status: string;
       joinedAt: Date;
@@ -102,30 +103,27 @@ export class AdminService {
       joinedAt: (u as unknown as { createdAt: Date }).createdAt,
     }));
 
-    const adminRows: Row[] = admins.map((a) => ({
-      type: 'admin' as const,
-      id: a._id.toString(),
-      name: a.name,
-      email: a.email,
-      slug: a.slug,
-      roleName: a.role?,
+    const adminRows: Row[] = admins.map((a) => {
+      const populatedRole = a.role as unknown as
+        | { _id: { toString(): string }; name: string }
+        | undefined;
 
-      // Literal, like 'User' above — there are only two account roles.
-      // a.title (job title, e.g. "Support Lead") is a display label, never
-      // what's shown in the role column; permissions are what actually
-      // distinguish one admin from another.
-      role: 'Admin',
-      // The assigned Role's id (src/roles/) — this admin's actual RBAC
-      // grants, distinct from the literal 'Admin' account-type above.
-      roleId: a.role?.toString(),
-      listingsCount: 0,
-      status: 'active',
-      joinedAt: (a as unknown as { createdAt: Date }).createdAt,
-    }));
+      return {
+        type: 'admin' as const,
+        id: a._id.toString(),
+        name: a.name,
+        email: a.email,
+        slug: a.slug,
 
-    // Merged then paginated in memory — acceptable at this scale (admin
-    // headcount + marketplace users), but won't scale indefinitely; a
-    // proper federated cursor would be the fix if this list ever gets huge.
+        role: 'Admin',
+        roleId: populatedRole?._id?.toString(),
+        roleName: populatedRole?.name,
+        listingsCount: 0,
+        status: 'active',
+        joinedAt: (a as unknown as { createdAt: Date }).createdAt,
+      };
+    });
+
     const combined = [...userRows, ...adminRows].sort(
       (a, b) => b.joinedAt.getTime() - a.joinedAt.getTime(),
     );
@@ -218,6 +216,7 @@ export class AdminService {
         type: 'admin' as const,
         details: {
           role: 'Admin',
+          slug: admin.slug,
           title: admin.title,
           status: 'active',
           company: admin.company,
