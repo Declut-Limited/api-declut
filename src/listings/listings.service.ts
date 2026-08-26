@@ -20,6 +20,7 @@ import { CounterService } from '../common/counter/counter.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { escapeRegex } from '../common/utils/regex.util';
 import { MONTH_ABBREVIATIONS } from '../common/utils/date.util';
+import { toCsv } from '../common/utils/csv.util';
 
 const CATEGORY_POPULATE_FIELDS = 'title slug';
 const SELLER_POPULATE_FIELDS =
@@ -119,7 +120,44 @@ export class ListingsService {
     dto: UpdateListingDto,
   ): Promise<ListingDocument> {
     const listing = await this.findOwned(id, userId);
+    const changedFields = await this.applyUpdate(listing, dto);
+    if (changedFields.length > 0) {
+      await this.auditLogService.record({
+        entityType: 'listing',
+        entityId: id,
+        event: 'listing.updated',
+        actor: userId,
+        metadata: { fields: changedFields },
+      });
+    }
+    return listing;
+  }
 
+  // Bypasses ownership — an admin can edit any listing. Distinct audit event
+  // (`updated_by_admin`) so the trail shows who actually made the change.
+  async adminUpdate(
+    id: string,
+    adminId: string,
+    dto: UpdateListingDto,
+  ): Promise<ListingDocument> {
+    const listing = await this.adminFindById(id);
+    const changedFields = await this.applyUpdate(listing, dto);
+    if (changedFields.length > 0) {
+      await this.auditLogService.record({
+        entityType: 'listing',
+        entityId: id,
+        event: 'listing.updated_by_admin',
+        actor: adminId,
+        metadata: { fields: changedFields },
+      });
+    }
+    return listing;
+  }
+
+  private async applyUpdate(
+    listing: ListingDocument,
+    dto: UpdateListingDto,
+  ): Promise<string[]> {
     if (dto.category !== undefined) {
       await this.categoriesService.findById(dto.category);
     }
@@ -167,16 +205,7 @@ export class ListingsService {
     }
 
     await listing.save();
-    if (changedFields.length > 0) {
-      await this.auditLogService.record({
-        entityType: 'listing',
-        entityId: id,
-        event: 'listing.updated',
-        actor: userId,
-        metadata: { fields: changedFields },
-      });
-    }
-    return listing;
+    return changedFields;
   }
 
   // Fire-and-forget from the public single-listing GET — never blocks or
@@ -379,6 +408,55 @@ export class ListingsService {
     return { results, total, page, limit };
   }
 
+  // Unpaginated (full matching set) and flattened rather than reusing attachSellerSummaries() — a nested-object CSV cell is unreadable.
+  async exportCsv(status?: ListingStatus, search?: string): Promise<string> {
+    const filter: Record<string, unknown> = status ? { status } : {};
+    if (search) {
+      filter.title = new RegExp(escapeRegex(search), 'i');
+    }
+    const found = await this.listingModel
+      .find(filter)
+      .populate('category', CATEGORY_POPULATE_FIELDS)
+      .populate('seller', SELLER_POPULATE_FIELDS)
+      .sort({ createdAt: -1 })
+      .exec();
+
+    const rows = found.map((l) => {
+      const category = l.category as unknown as { title?: string } | undefined;
+      const seller = l.seller as unknown as
+        { name?: string; phone?: string } | undefined;
+      return {
+        id: l._id.toString(),
+        slug: l.slug ?? '',
+        title: l.title,
+        category: category?.title ?? '',
+        condition: l.condition,
+        price: l.price,
+        status: l.status,
+        sellerName: seller?.name ?? '',
+        sellerPhone: seller?.phone ?? '',
+        views: l.views,
+        saves: l.saves,
+        createdAt: (l as unknown as { createdAt: Date }).createdAt,
+      };
+    });
+
+    return toCsv(rows, [
+      'id',
+      'slug',
+      'title',
+      'category',
+      'condition',
+      'price',
+      'status',
+      'sellerName',
+      'sellerPhone',
+      'views',
+      'saves',
+      'createdAt',
+    ]);
+  }
+
   // Used by the admin Users federated list/detail view — counts all
   // listings regardless of status (a suspended/archived seller's history
   // still matters for the "total listings" figure), plus how many are
@@ -514,8 +592,25 @@ export class ListingsService {
     listing: ListingDocument;
     recentActivity: Awaited<ReturnType<AuditLogService['findForEntity']>>;
   }> {
+    return this.adminFindDetail({ slug });
+  }
+
+  async adminFindByIdDetail(id: string): Promise<{
+    listing: ListingDocument;
+    recentActivity: Awaited<ReturnType<AuditLogService['findForEntity']>>;
+  }> {
+    if (!isValidObjectId(id)) {
+      throw new NotFoundException('Listing not found');
+    }
+    return this.adminFindDetail({ _id: id });
+  }
+
+  private async adminFindDetail(filter: Record<string, unknown>): Promise<{
+    listing: ListingDocument;
+    recentActivity: Awaited<ReturnType<AuditLogService['findForEntity']>>;
+  }> {
     const listing = await this.listingModel
-      .findOne({ slug })
+      .findOne(filter)
       .populate('category', CATEGORY_POPULATE_FIELDS)
       .exec();
     if (!listing) {
@@ -559,6 +654,25 @@ export class ListingsService {
       entityType: 'listing',
       entityId: id,
       event: 'listing.flagged',
+      actor: adminId,
+      oldState,
+      newState: listing.status,
+    });
+    return listing;
+  }
+
+  async unflag(id: string, adminId: string): Promise<ListingDocument> {
+    const listing = await this.adminFindById(id);
+    if (listing.status !== ListingStatus.FLAGGED) {
+      throw new BadRequestException('Only a flagged listing can be unflagged');
+    }
+    const oldState = listing.status;
+    listing.status = ListingStatus.ACTIVE;
+    await listing.save();
+    await this.auditLogService.record({
+      entityType: 'listing',
+      entityId: id,
+      event: 'listing.unflagged',
       actor: adminId,
       oldState,
       newState: listing.status,

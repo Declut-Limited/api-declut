@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { ListingsService } from '../listings/listings.service';
+import { ListingStatus } from '../listings/schemas/listing.schema';
+import type { UpdateListingDto } from '../listings/dto/update-listing.dto';
 import { TransactionsService } from '../transactions/transactions.service';
 import { TransactionStatus } from '../transactions/schemas/transaction.schema';
 import { OffersService } from '../offers/offers.service';
@@ -257,6 +259,21 @@ export class AdminService {
   async getListingBySlug(slug: string) {
     const { listing, recentActivity } =
       await this.listingsService.adminFindBySlug(slug);
+    return this.shapeListingDetail(listing, recentActivity);
+  }
+
+  async getListingById(id: string) {
+    const { listing, recentActivity } =
+      await this.listingsService.adminFindByIdDetail(id);
+    return this.shapeListingDetail(listing, recentActivity);
+  }
+
+  private async shapeListingDetail(
+    listing: Awaited<ReturnType<ListingsService['adminFindBySlug']>>['listing'],
+    recentActivity: Awaited<
+      ReturnType<ListingsService['adminFindBySlug']>
+    >['recentActivity'],
+  ) {
     const sellerId = listing.seller.toString();
     const [seller, listingCounts] = await Promise.all([
       this.usersService.findById(sellerId),
@@ -264,6 +281,8 @@ export class AdminService {
     ]);
 
     return {
+      id: listing._id.toString(),
+      slug: listing.slug,
       images: listing.images.map((url) => ({ url })),
       title: listing.title,
       status: listing.status,
@@ -298,6 +317,14 @@ export class AdminService {
     };
   }
 
+  adminUpdateListing(id: string, adminId: string, dto: UpdateListingDto) {
+    return this.listingsService.adminUpdate(id, adminId, dto);
+  }
+
+  exportListingsCsv(status?: ListingStatus, search?: string) {
+    return this.listingsService.exportCsv(status, search);
+  }
+
   async emailSeller(listingId: string, dto: EmailSellerDto) {
     const listing = await this.listingsService.adminFindById(listingId);
     const seller = await this.usersService.findById(listing.seller.toString());
@@ -315,6 +342,10 @@ export class AdminService {
 
   flagListing(id: string, adminId: string) {
     return this.listingsService.flag(id, adminId);
+  }
+
+  unflagListing(id: string, adminId: string) {
+    return this.listingsService.unflag(id, adminId);
   }
 
   delistListing(id: string, adminId: string) {

@@ -2480,6 +2480,88 @@
               "response": []
             },
             {
+              "name": "export",
+              "item": [
+                {
+                  "name": "Export listings (CSV)",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/listings/export?",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "listings",
+                        "export"
+                      ],
+                      "query": [
+                        {
+                          "key": "status",
+                          "value": "active",
+                          "disabled": true,
+                          "description": "active, archived, deleted, flagged, sold, or all."
+                        },
+                        {
+                          "key": "search",
+                          "value": "sofa",
+                          "disabled": true,
+                          "description": "Matches listing title (case-insensitive)."
+                        }
+                      ]
+                    },
+                    "description": ""
+                  },
+                  "response": []
+                }
+              ]
+            },
+            {
+              "name": "id",
+              "item": [
+                {
+                  "name": "{listingId}",
+                  "item": [
+                    {
+                      "name": "Get listing by ID",
+                      "request": {
+                        "method": "GET",
+                        "header": [
+                          {
+                            "key": "Authorization",
+                            "value": "Bearer {{adminAccessToken}}",
+                            "type": "text"
+                          }
+                        ],
+                        "url": {
+                          "raw": "{{baseUrl}}/admin/listings/id/{{listingId}}",
+                          "host": [
+                            "{{baseUrl}}"
+                          ],
+                          "path": [
+                            "admin",
+                            "listings",
+                            "id",
+                            "{{listingId}}"
+                          ]
+                        },
+                        "description": "Same rich detail shape as Get listing by slug — seller info, specs + condition, price history, last-3 activity log entries."
+                      },
+                      "response": []
+                    }
+                  ]
+                }
+              ]
+            },
+            {
               "name": "{listingSlug}",
               "description": "",
               "item": [
@@ -2568,6 +2650,46 @@
               "name": "{listingId}",
               "description": "",
               "item": [
+                {
+                  "name": "Update listing",
+                  "request": {
+                    "method": "PATCH",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/listings/{{listingId}}",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "listings",
+                        "{{listingId}}"
+                      ]
+                    },
+                    "description": "Bypasses ownership — an admin can edit any listing. All fields optional (partial update), same DTO as the seller-facing edit.",
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"title\": \"Grey 3-Seater Fabric Sofa\",\n  \"price\": 42000\n}",
+                      "options": {
+                        "raw": {
+                          "language": "json"
+                        }
+                      }
+                    }
+                  },
+                  "response": []
+                },
                 {
                   "name": "Remove listing",
                   "request": {
@@ -2669,6 +2791,38 @@
                           ]
                         },
                         "description": "Removes it from public search (same as archived/deleted)."
+                      },
+                      "response": []
+                    }
+                  ]
+                },
+                {
+                  "name": "unflag",
+                  "item": [
+                    {
+                      "name": "Unflag listing",
+                      "request": {
+                        "method": "PATCH",
+                        "header": [
+                          {
+                            "key": "Authorization",
+                            "value": "Bearer {{adminAccessToken}}",
+                            "type": "text"
+                          }
+                        ],
+                        "url": {
+                          "raw": "{{baseUrl}}/admin/listings/{{listingId}}/unflag",
+                          "host": [
+                            "{{baseUrl}}"
+                          ],
+                          "path": [
+                            "admin",
+                            "listings",
+                            "{{listingId}}",
+                            "unflag"
+                          ]
+                        },
+                        "description": "Reverses a flag, back to active. Only a flagged listing can be unflagged."
                       },
                       "response": []
                     }

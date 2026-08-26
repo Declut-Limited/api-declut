@@ -24,6 +24,7 @@ import { SetKycStatusDto } from './dto/set-kyc-status.dto';
 import { AdminRefundDto } from './dto/admin-refund.dto';
 import { SuspendUserDto } from './dto/suspend-user.dto';
 import { EmailSellerDto } from './dto/email-seller.dto';
+import { UpdateListingDto } from '../listings/dto/update-listing.dto';
 import { DashboardInsightsDto, RevenueTrendsDto } from './dto/dashboard.dto';
 import { UpdateAppSettingsDto } from '../settings/dto/update-app-settings.dto';
 import { AdminJwtAuthGuard } from '../admin-auth/guards/admin-jwt-auth.guard';
@@ -126,8 +127,20 @@ export class AdminController {
     return this.adminService.listListings(dto);
   }
 
-  // Must come before 'listings/:slug' — otherwise Nest matches "by-user" as
-  // the slug (same hazard as 'users/export' above).
+  // Must come before 'listings/:slug' — otherwise Nest matches "export"/"by-user"/"id" as the slug (same hazard as 'users/export' above).
+  @Get('listings/export')
+  @RequirePermission('listings', 'view')
+  async exportListings(
+    @Query() dto: AdminListListingsDto,
+    @Res() res: Response,
+  ) {
+    const status = dto.status && dto.status !== 'all' ? dto.status : undefined;
+    const csv = await this.adminService.exportListingsCsv(status, dto.search);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="listings.csv"');
+    res.send(csv);
+  }
+
   @Get('listings/by-user/:idOrSlug')
   @RequirePermission('listings', 'view')
   getListingsByUser(
@@ -139,6 +152,12 @@ export class AdminController {
       dto.page ?? 1,
       dto.limit ?? 20,
     );
+  }
+
+  @Get('listings/id/:id')
+  @RequirePermission('listings', 'view')
+  getListingById(@Param('id') id: string) {
+    return this.adminService.getListingById(id);
   }
 
   @Get('listings/:slug')
@@ -153,6 +172,16 @@ export class AdminController {
     return this.adminService.emailSeller(id, dto);
   }
 
+  @Patch('listings/:id')
+  @RequirePermission('listings', 'write')
+  updateListing(
+    @CurrentAdmin() admin: AdminAccessTokenPayload,
+    @Param('id') id: string,
+    @Body() dto: UpdateListingDto,
+  ) {
+    return this.adminService.adminUpdateListing(id, admin.sub, dto);
+  }
+
   @Patch('listings/:id/flag')
   @RequirePermission('listings', 'write')
   flagListing(
@@ -160,6 +189,15 @@ export class AdminController {
     @Param('id') id: string,
   ) {
     return this.adminService.flagListing(id, admin.sub);
+  }
+
+  @Patch('listings/:id/unflag')
+  @RequirePermission('listings', 'write')
+  unflagListing(
+    @CurrentAdmin() admin: AdminAccessTokenPayload,
+    @Param('id') id: string,
+  ) {
+    return this.adminService.unflagListing(id, admin.sub);
   }
 
   @Patch('listings/:id/delist')
