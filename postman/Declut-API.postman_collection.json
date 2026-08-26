@@ -2104,7 +2104,7 @@
                         "listings-per-month"
                       ]
                     },
-                    "description": "totalListingsValue: all-time sum of listing.price across every non-deleted listing. trend: last 6 months (5 back + current), zero-filled, each { month, value } summed by listing.price (not a count)."
+                    "description": "totalListingsValue: all-time sum of listing.price across every non-deleted listing. trend: last 6 months (5 back + current), zero-filled, each { month, totalListing, listingWorth } — totalListing is a count of listings created that month, listingWorth is that month's summed listing.price."
                   },
                   "response": []
                 }
@@ -2175,7 +2175,7 @@
               ]
             },
             {
-              "name": "transaction-status-breakdown",
+              "name": "transaction-breakdown",
               "item": [
                 {
                   "name": "Get transaction status breakdown",
@@ -2189,14 +2189,14 @@
                       }
                     ],
                     "url": {
-                      "raw": "{{baseUrl}}/admin/dashboard/transaction-status-breakdown",
+                      "raw": "{{baseUrl}}/admin/dashboard/transaction-breakdown",
                       "host": [
                         "{{baseUrl}}"
                       ],
                       "path": [
                         "admin",
                         "dashboard",
-                        "transaction-status-breakdown"
+                        "transaction-breakdown"
                       ]
                     },
                     "description": "All-time donut data. total = completed + awaitingInspection + disputed + cancelled counts (pending_payment/escrow_active/stalled/refunded are excluded — still in-progress or already surfaced elsewhere). Each of the 4 buckets: { count, percentage } (percentage is share of total, one decimal)."

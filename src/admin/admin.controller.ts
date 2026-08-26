@@ -70,7 +70,7 @@ export class AdminController {
     return this.adminService.getCategoryDistribution();
   }
 
-  @Get('dashboard/transaction-status-breakdown')
+  @Get('dashboard/transaction-breakdown')
   @RequirePermission('transactions', 'view')
   getTransactionStatusBreakdown() {
     return this.adminService.getTransactionStatusBreakdown();
