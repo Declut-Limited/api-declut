@@ -105,8 +105,7 @@ export class AdminService {
 
     const adminRows: Row[] = admins.map((a) => {
       const populatedRole = a.role as unknown as
-        | { _id: { toString(): string }; name: string }
-        | undefined;
+        { _id: { toString(): string }; name: string } | undefined;
 
       return {
         type: 'admin' as const,
