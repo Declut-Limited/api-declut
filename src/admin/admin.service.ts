@@ -596,6 +596,10 @@ export class AdminService {
     return this.transactionsService.getCategoryDistribution();
   }
 
+  getTransactionStatusBreakdown() {
+    return this.transactionsService.getStatusBreakdown();
+  }
+
   // 'system' for non-human-triggered events; otherwise an id in either User or Admin — same federated-lookup shape as getUserOrAdminDetail() above, since AuditLog.actor has no ref (see the schema comment).
   private async resolveActorName(actor: string): Promise<string> {
     if (actor === 'system') return 'System';

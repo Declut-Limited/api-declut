@@ -70,6 +70,12 @@ export class AdminController {
     return this.adminService.getCategoryDistribution();
   }
 
+  @Get('dashboard/transaction-status-breakdown')
+  @RequirePermission('transactions', 'view')
+  getTransactionStatusBreakdown() {
+    return this.adminService.getTransactionStatusBreakdown();
+  }
+
   // Reads AuditLog data — 'activity' bucket, matching the standalone Activity Log page's own gate.
   @Get('dashboard/recent-activity')
   @RequirePermission('activity', 'view')

@@ -151,14 +151,7 @@ export class TransactionsService {
     const reference = `declut_${randomUUID()}`;
     const { commissionPercentage } = await this.settingsService.get();
 
-    // Paystack call happens BEFORE the local record is persisted — if this
-    // throws (Paystack down, bad request, whatever), there's nothing to
-    // clean up. Creating the Transaction row first and populating it after
-    // would leave an orphaned pending_payment record with no checkout URL
-    // ever handed to the buyer if this call failed. The human-readable
-    // reference's counter increment is deferred until after this call for
-    // the same reason — no point burning a sequence number on an attempt
-    // that never becomes a real transaction.
+    // Paystack call happens before the local record is persisted (and before the reference counter increments) so a failed call leaves nothing orphaned to clean up.
     const init = await this.paystackService.initializeTransaction({
       email: buyer.email,
       amountKobo: Math.round(amount * 100),
@@ -226,8 +219,7 @@ export class TransactionsService {
       return;
     }
 
-    // Idempotency: a retried webhook for a transaction that's already past
-    // pending_payment is a no-op, not a re-activation.
+    // Idempotency: a retried webhook for a transaction already past pending_payment is a no-op, not a re-activation.
     if (transaction.status !== TransactionStatus.PENDING_PAYMENT) {
       return;
     }
@@ -317,8 +309,7 @@ export class TransactionsService {
 
     const seller = await this.usersService.findById(sellerId);
     if (!seller?.bankCode || !seller.accountNumber || !seller.accountName) {
-      // Shouldn't happen — create() already required these — but a
-      // money-movement step should never assume, always re-check.
+      // Shouldn't happen (create() already required these), but a money-movement step should never assume — always re-check.
       throw new InternalServerErrorException(
         'Seller payout details are missing',
       );
@@ -355,8 +346,7 @@ export class TransactionsService {
       { commissionAmount, sellerPayoutAmount },
     );
 
-    // Completed-transaction count feeds both parties' trust score —
-    // recalculated here rather than live on every profile read.
+    // Completed-transaction count feeds both parties' trust score — recalculated here rather than live on every profile read.
     await Promise.all([
       this.trustScoreService.recalculate(transaction.buyer.toString()),
       this.trustScoreService.recalculate(transaction.seller.toString()),
@@ -409,12 +399,7 @@ export class TransactionsService {
     return this.toResponseShape(transaction, buyerId);
   }
 
-  // Raw — buyer/seller/listing stay unpopulated ObjectIds. Used internally
-  // by ReviewsService.create(), which reads transaction.buyer/.seller/
-  // .listing directly; populating here would corrupt those comparisons and
-  // the new Review's `listing` ref. See findForUserDisplay() for the
-  // populated variant the transactions controller actually returns to a
-  // client.
+  // Raw — buyer/seller/listing stay unpopulated ObjectIds, since ReviewsService.create() reads them directly; see findForUserDisplay() for the populated variant returned to clients.
   async findForUser(transactionId: string, userId: string) {
     const transaction = await this.findRaw(transactionId);
     if (
@@ -454,15 +439,8 @@ export class TransactionsService {
     };
   }
 
-  // Admin-only surface — always strips confirmationCode regardless of who's
-  // asking, same "only ever returned to the buyer" invariant as
-  // toResponseShape(), since an admin resolving a dispute needs the
-  // transaction's state, not the buyer's private code.
-  // `statuses` (plural) rather than a single status so AdminService's
-  // tab-vs-status filtering (see admin.service.ts) can pass either an exact
-  // single-status match or a grouped set of statuses (e.g. the "active" tab
-  // spanning pending_payment/escrow_active/awaiting_inspection) through the
-  // same query path.
+  // Admin-only surface — always strips confirmationCode, same "only ever returned to the buyer" invariant as toResponseShape().
+  // `statuses` (plural) so AdminService's tab-vs-status filtering can pass either a single status or a grouped set (e.g. the "active" tab) through the same query path.
   async adminList(page: number, limit: number, statuses?: TransactionStatus[]) {
     const filter =
       statuses && statuses.length ? { status: { $in: statuses } } : {};
@@ -486,8 +464,7 @@ export class TransactionsService {
     };
   }
 
-  // Currently unused (superseded by adminFindByIdDetailed() below) — kept
-  // populated too so it isn't a landmine if something starts calling it.
+  // Currently unused (superseded by adminFindByIdDetailed() below) — kept populated too so it isn't a landmine if something starts calling it.
   async adminFindById(transactionId: string) {
     const transaction = await this.findRaw(transactionId);
     await transaction.populate([
@@ -498,10 +475,7 @@ export class TransactionsService {
     return this.toAdminResponseShape(transaction);
   }
 
-  // Rich admin detail view: populated buyer/seller/listing, a computed
-  // progress-stage timeline, the virtual escrow view (still just a read
-  // over Transaction fields — no separate Escrow collection), and the
-  // generalized AuditLog as the event timeline.
+  // Rich admin detail view: populated buyer/seller/listing, a computed progress-stage timeline, the virtual escrow view (still just a read over Transaction fields — no separate Escrow collection), and the generalized AuditLog as the event timeline.
   async adminFindByIdDetailed(transactionId: string) {
     const transaction = await this.findRaw(transactionId);
     const [buyer, seller, listing, settings, timeline] = await Promise.all([
@@ -562,10 +536,7 @@ export class TransactionsService {
       amount: transaction.amount,
       buyer: buyer ? this.shapeParty(buyer, 'buyer') : null,
       seller: seller ? this.shapeParty(seller, 'seller') : null,
-      // "defect summary text" from the spec has no home yet — Listing has
-      // no defect/condition-notes field beyond `description`, and nothing
-      // else in this codebase tracks it. Left out rather than guessed;
-      // flag back if that should map to `description` or be a new field.
+      // "defect summary text" from the spec has no home yet — Listing tracks nothing beyond `description` for this, so it's left out rather than guessed.
       listing: {
         id: listing._id.toString(),
         title: listing.title,
@@ -593,10 +564,7 @@ export class TransactionsService {
         sellerPayoutAmount:
           transaction.sellerPayoutAmount ??
           Math.round((transaction.amount - commissionAmount) * 100) / 100,
-        // Honesty flag, same spirit as the QoreID/Paystack notes elsewhere:
-        // Paystack's own processing fee isn't captured anywhere in this
-        // codebase (only the platform commission is), so this is reported
-        // as unknown rather than guessed.
+        // Honesty flag: Paystack's own processing fee isn't captured anywhere in this codebase (only the platform commission is), so this is reported as unknown rather than guessed.
         processingFee: null,
       },
       escrow: {
@@ -710,9 +678,7 @@ export class TransactionsService {
     });
   }
 
-  // Money moves automatically only on the unambiguous "correct code
-  // entered" case (confirmCode()) — everything else requires this explicit
-  // admin action, per CLAUDE.md's transaction state machine step 8.
+  // Money moves automatically only on the unambiguous "correct code entered" case (confirmCode()) — everything else requires this explicit admin action, per CLAUDE.md's transaction state machine step 8.
   async adminRelease(transactionId: string, adminId: string) {
     const transaction = await this.findRaw(transactionId);
     if (
@@ -740,8 +706,7 @@ export class TransactionsService {
     const sellerPayoutAmount =
       Math.round((transaction.amount - commissionAmount) * 100) / 100;
 
-    // Paystack call before the local write — same money-movement ordering
-    // rule as confirmCode()'s release path.
+    // Paystack call before the local write — same money-movement ordering rule as confirmCode()'s release path.
     await this.paystackService.releaseToSeller({
       bankCode: seller.bankCode,
       accountNumber: seller.accountNumber,
@@ -803,8 +768,7 @@ export class TransactionsService {
       );
     }
 
-    // Paystack call before the local write — same ordering rule as
-    // everywhere else money moves in this module.
+    // Paystack call before the local write — same ordering rule as everywhere else money moves in this module.
     await this.paystackService.refund(transaction.paystackReference);
 
     const oldStatus = transaction.status;
@@ -845,9 +809,7 @@ export class TransactionsService {
     return this.toAdminResponseShape(transaction);
   }
 
-  // Runs hourly rather than daily — escrowStalledThresholdDays is a count
-  // of days, but checking more often just means a stalled transaction gets
-  // flagged closer to the actual threshold instead of up to a day late.
+  // Runs hourly rather than daily — checking more often just means a stalled transaction gets flagged closer to the actual threshold instead of up to a day late.
   @Cron(CronExpression.EVERY_HOUR)
   async sweepStalledTransactions(): Promise<void> {
     const { escrowStalledThresholdDays: thresholdDays } =
@@ -930,8 +892,7 @@ export class TransactionsService {
         { attempts: transaction.failedCodeAttempts },
       );
 
-      // Dispute rate feeds both parties' trust score — recalculated again
-      // when an admin later resolves this via adminRelease()/adminRefund().
+      // Dispute rate feeds both parties' trust score — recalculated again when an admin later resolves this via adminRelease()/adminRefund().
       await Promise.all([
         this.trustScoreService.recalculate(transaction.buyer.toString()),
         this.trustScoreService.recalculate(transaction.seller.toString()),
@@ -963,8 +924,7 @@ export class TransactionsService {
   }
 
   private generateConfirmationCode(): string {
-    // Cryptographically secure — this code gates a real fund release, not
-    // just a display value, so Math.random() would be the wrong call here.
+    // Cryptographically secure — this code gates a real fund release, so Math.random() would be the wrong call here.
     return randomInt(100000, 1000000).toString();
   }
 
@@ -998,13 +958,7 @@ export class TransactionsService {
     return transaction;
   }
 
-  // Requires buyer/seller/listing already populated on the query/document
-  // that produced `transaction` — every caller populates before reaching
-  // here (see the callers above). rolePlayed is derived from which field
-  // we're shaping (buyer vs seller), not stored anywhere. Null-safe: a ref
-  // can populate to null for a stale/orphaned document (this dev DB still
-  // has pre-fix test data with string-typed ref fields — see CLAUDE.md's
-  // ObjectId schema bug note), and that shouldn't 500 the whole response.
+  // Requires buyer/seller/listing already populated by the caller. rolePlayed is derived from which field we're shaping, not stored. Null-safe — a ref can populate to null for stale/orphaned test data (see CLAUDE.md's ObjectId schema bug note), and that shouldn't 500 the whole response.
   private shapeParty(
     user: PopulatedParty | null,
     rolePlayed: 'buyer' | 'seller',
@@ -1208,17 +1162,7 @@ export class TransactionsService {
     };
   }
 
-  // Backs the admin Dashboard revenue-trends chart — always Jan-Dec of the
-  // given calendar year, zero-filled. Honesty flag: buckets by `updatedAt`
-  // as a proxy for "when it completed" (no dedicated completedAt field),
-  // but confirmCode()/adminRelease() set status to COMPLETED immediately
-  // before the save that stamps updatedAt, so the two are the same instant.
-  // trend[].revenue is commission (platform earnings), unchanged from
-  // before; insights.twelveMonthGross/bestMonth/avgPerMonth are built from
-  // gross transaction amount instead — a separate figure, not summed from
-  // trend[].revenue. totalRemittance is amount minus commission (what
-  // sellers were actually paid). Judgment call, flagged: this split wasn't
-  // pinned down beyond the screenshot's Gross-Revenue-vs-Commission legend.
+  // Backs the admin Dashboard revenue-trends chart — always Jan-Dec of the given calendar year, zero-filled, bucketed by `updatedAt` as a proxy for "when it completed" (no dedicated completedAt field, but COMPLETED is set immediately before the save that stamps it). trend[].revenue is commission; insights.twelveMonthGross/bestMonth/avgPerMonth are built from gross amount instead (not summed from trend[].revenue), and totalRemittance is amount minus commission — a judgment-call split not pinned down beyond the screenshot's Gross-Revenue-vs-Commission legend.
   async getRevenueTrends(year: number): Promise<{
     trend: Array<{ year: number; month: string; revenue: number }>;
     insights: {
@@ -1349,8 +1293,48 @@ export class TransactionsService {
     });
   }
 
-  // Requires buyer/seller/listing already populated — same contract as
-  // toResponseShape() above.
+  // Backs the dashboard's transaction-status donut — `total` is the sum of just these 4 buckets, not every Transaction document (pending_payment/escrow_active are still in-progress, stalled/refunded are already surfaced elsewhere), matching the 4-slice donut having no "other" wedge.
+  async getStatusBreakdown(): Promise<{
+    total: number;
+    completed: { count: number; percentage: number };
+    awaitingInspection: { count: number; percentage: number };
+    disputed: { count: number; percentage: number };
+    cancelled: { count: number; percentage: number };
+  }> {
+    const statuses = [
+      TransactionStatus.COMPLETED,
+      TransactionStatus.AWAITING_INSPECTION,
+      TransactionStatus.DISPUTED,
+      TransactionStatus.CANCELLED,
+    ];
+    const rows = await this.transactionModel.aggregate<{
+      _id: TransactionStatus;
+      count: number;
+    }>([
+      { $match: { status: { $in: statuses } } },
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+    ]);
+    const counts = new Map(rows.map((r) => [r._id, r.count]));
+    const total = statuses.reduce((sum, s) => sum + (counts.get(s) ?? 0), 0);
+
+    const bucket = (status: TransactionStatus) => {
+      const count = counts.get(status) ?? 0;
+      return {
+        count,
+        percentage: total > 0 ? Math.round((count / total) * 1000) / 10 : 0,
+      };
+    };
+
+    return {
+      total,
+      completed: bucket(TransactionStatus.COMPLETED),
+      awaitingInspection: bucket(TransactionStatus.AWAITING_INSPECTION),
+      disputed: bucket(TransactionStatus.DISPUTED),
+      cancelled: bucket(TransactionStatus.CANCELLED),
+    };
+  }
+
+  // Requires buyer/seller/listing already populated — same contract as toResponseShape() above.
   private toAdminResponseShape(transaction: TransactionDocument) {
     const obj = transaction.toObject() as unknown as Record<string, unknown>;
     obj.buyer = this.shapeParty(

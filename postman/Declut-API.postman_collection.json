@@ -2173,6 +2173,37 @@
                   "response": []
                 }
               ]
+            },
+            {
+              "name": "transaction-status-breakdown",
+              "item": [
+                {
+                  "name": "Get transaction status breakdown",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/dashboard/transaction-status-breakdown",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "dashboard",
+                        "transaction-status-breakdown"
+                      ]
+                    },
+                    "description": "All-time donut data. total = completed + awaitingInspection + disputed + cancelled counts (pending_payment/escrow_active/stalled/refunded are excluded — still in-progress or already surfaced elsewhere). Each of the 4 buckets: { count, percentage } (percentage is share of total, one decimal)."
+                  },
+                  "response": []
+                }
+              ]
             }
           ]
         },
