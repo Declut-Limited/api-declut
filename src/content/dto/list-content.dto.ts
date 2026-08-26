@@ -1,8 +1,8 @@
 import { Type } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, Max, Min } from 'class-validator';
-import { ArticleStatus } from '../schemas/article.schema';
+import { ContentStatus, ContentType } from '../schemas/content.schema';
 
-export class ListArticlesDto {
+export class ListContentDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -17,6 +17,10 @@ export class ListArticlesDto {
   limit?: number = 20;
 
   @IsOptional()
-  @IsEnum(ArticleStatus)
-  status?: ArticleStatus;
+  @IsEnum(ContentStatus)
+  status?: ContentStatus;
+
+  @IsOptional()
+  @IsEnum(ContentType)
+  contentType?: ContentType;
 }

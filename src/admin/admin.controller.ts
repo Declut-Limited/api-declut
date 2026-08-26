@@ -162,6 +162,24 @@ export class AdminController {
     return this.adminService.flagListing(id, admin.sub);
   }
 
+  @Patch('listings/:id/delist')
+  @RequirePermission('listings', 'write')
+  delistListing(
+    @CurrentAdmin() admin: AdminAccessTokenPayload,
+    @Param('id') id: string,
+  ) {
+    return this.adminService.delistListing(id, admin.sub);
+  }
+
+  @Patch('listings/:id/relist')
+  @RequirePermission('listings', 'write')
+  relistListing(
+    @CurrentAdmin() admin: AdminAccessTokenPayload,
+    @Param('id') id: string,
+  ) {
+    return this.adminService.relistListing(id, admin.sub);
+  }
+
   @Delete('listings/:id')
   @RequirePermission('listings', 'delete')
   removeListing(
@@ -215,6 +233,15 @@ export class AdminController {
   @RequirePermission('reviews', 'view')
   listReviews(@Query() dto: AdminListReviewsDto) {
     return this.adminService.listReviews(dto);
+  }
+
+  @Get('reviews/export')
+  @RequirePermission('reviews', 'view')
+  async exportReviews(@Query() dto: AdminListReviewsDto, @Res() res: Response) {
+    const csv = await this.adminService.exportReviewsCsv(dto.status);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="reviews.csv"');
+    res.send(csv);
   }
 
   @Patch('reviews/:id/flag')

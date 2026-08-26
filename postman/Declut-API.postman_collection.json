@@ -2673,6 +2673,70 @@
                       "response": []
                     }
                   ]
+                },
+                {
+                  "name": "delist",
+                  "item": [
+                    {
+                      "name": "Delist listing",
+                      "request": {
+                        "method": "PATCH",
+                        "header": [
+                          {
+                            "key": "Authorization",
+                            "value": "Bearer {{adminAccessToken}}",
+                            "type": "text"
+                          }
+                        ],
+                        "url": {
+                          "raw": "{{baseUrl}}/admin/listings/{{listingId}}/delist",
+                          "host": [
+                            "{{baseUrl}}"
+                          ],
+                          "path": [
+                            "admin",
+                            "listings",
+                            "{{listingId}}",
+                            "delist"
+                          ]
+                        },
+                        "description": "Admin-initiated hide, distinct from flag/archive. Only an active listing can be delisted."
+                      },
+                      "response": []
+                    }
+                  ]
+                },
+                {
+                  "name": "relist",
+                  "item": [
+                    {
+                      "name": "Relist listing",
+                      "request": {
+                        "method": "PATCH",
+                        "header": [
+                          {
+                            "key": "Authorization",
+                            "value": "Bearer {{adminAccessToken}}",
+                            "type": "text"
+                          }
+                        ],
+                        "url": {
+                          "raw": "{{baseUrl}}/admin/listings/{{listingId}}/relist",
+                          "host": [
+                            "{{baseUrl}}"
+                          ],
+                          "path": [
+                            "admin",
+                            "listings",
+                            "{{listingId}}",
+                            "relist"
+                          ]
+                        },
+                        "description": "Reverses a delist. Only a delisted listing can be relisted."
+                      },
+                      "response": []
+                    }
+                  ]
                 }
               ]
             }
@@ -2940,6 +3004,45 @@
                 "description": "Populates reviewer (name, email) and listing (title, slug)."
               },
               "response": []
+            },
+            {
+              "name": "export",
+              "item": [
+                {
+                  "name": "Export reviews (CSV)",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/reviews/export?",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "reviews",
+                        "export"
+                      ],
+                      "query": [
+                        {
+                          "key": "status",
+                          "value": "flagged",
+                          "disabled": true,
+                          "description": "visible, flagged, or resolved."
+                        }
+                      ]
+                    },
+                    "description": ""
+                  },
+                  "response": []
+                }
+              ]
             },
             {
               "name": "{reviewId}",
@@ -3230,6 +3333,72 @@
               "description": "",
               "item": [
                 {
+                  "name": "Update category",
+                  "request": {
+                    "method": "PATCH",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/categories/{{categoryId}}",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "categories",
+                        "{{categoryId}}"
+                      ]
+                    },
+                    "description": "title and status are both optional (partial update).",
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"title\": \"Furniture & Decor\"\n}",
+                      "options": {
+                        "raw": {
+                          "language": "json"
+                        }
+                      }
+                    }
+                  },
+                  "response": []
+                },
+                {
+                  "name": "Delete category",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/categories/{{categoryId}}",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "categories",
+                        "{{categoryId}}"
+                      ]
+                    },
+                    "description": "Blocked with 409 while any listing still references this category."
+                  },
+                  "response": []
+                },
+                {
                   "name": "toggle",
                   "description": "",
                   "item": [
@@ -3341,10 +3510,10 @@
                     "reports"
                   ]
                 },
-                "description": "At least one of listingId/userId is required.",
+                "description": "At least one of listingId/userId is required. reporterId is the user who filed the dispute.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"title\": \"Listing photos appear to be stolen from another site\",\n  \"reason\": \"Buyer called in claiming this listing's photos were lifted from a competitor's page.\",\n  \"listingId\": \"{{listingId}}\"\n}",
+                  "raw": "{\n  \"title\": \"Listing photos appear to be stolen from another site\",\n  \"reason\": \"Buyer called in claiming this listing's photos were lifted from a competitor's page.\",\n  \"listingId\": \"{{listingId}}\",\n  \"reporterId\": \"{{reporterId}}\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -3368,6 +3537,45 @@
                       "}"
                     ]
                   }
+                }
+              ]
+            },
+            {
+              "name": "export",
+              "item": [
+                {
+                  "name": "Export reports (CSV)",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/reports/export?",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "reports",
+                        "export"
+                      ],
+                      "query": [
+                        {
+                          "key": "status",
+                          "value": "new",
+                          "disabled": true,
+                          "description": "new, investigating, or resolved."
+                        }
+                      ]
+                    },
+                    "description": ""
+                  },
+                  "response": []
                 }
               ]
             },
@@ -3397,7 +3605,7 @@
                         "{{reportSlug}}"
                       ]
                     },
-                    "description": "Populates listing/user."
+                    "description": "Populates listing/user/reporter. reporter includes name, slug, status, createdAt, rating, company."
                   },
                   "response": []
                 }
@@ -3463,7 +3671,7 @@
           "description": "",
           "item": [
             {
-              "name": "List articles",
+              "name": "List content",
               "request": {
                 "method": "GET",
                 "header": [
@@ -3474,7 +3682,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/admin/content?page=1&limit=20&status=draft",
+                  "raw": "{{baseUrl}}/admin/content?page=1&limit=20",
                   "host": [
                     "{{baseUrl}}"
                   ],
@@ -3499,16 +3707,22 @@
                       "key": "status",
                       "value": "draft",
                       "disabled": true,
-                      "description": "draft, published, or retired."
+                      "description": "draft or published."
+                    },
+                    {
+                      "key": "contentType",
+                      "value": "faq",
+                      "disabled": true,
+                      "description": "faq, banner, or page."
                     }
                   ]
                 },
-                "description": ""
+                "description": "createdBy is populated: name, email, title, createdAt, role.name."
               },
               "response": []
             },
             {
-              "name": "Create article",
+              "name": "Create content",
               "request": {
                 "method": "POST",
                 "header": [
@@ -3533,10 +3747,10 @@
                     "content"
                   ]
                 },
-                "description": "",
+                "description": "status defaults to draft if omitted.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"title\": \"How does escrow work?\",\n  \"body\": \"Your payment is held by Declut until you confirm the item at the meetup \\u2014 the seller only gets paid once you enter the confirmation code.\"\n}",
+                  "raw": "{\n  \"title\": \"Holiday Shipping FAQ\",\n  \"contentType\": \"faq\",\n  \"whereToAppear\": \"Home Page - Top Banner\",\n  \"status\": \"draft\",\n  \"body\": \"<p>During the December holiday period, pickups are available within 24 hours of payment confirmation.</p>\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -3553,10 +3767,10 @@
                     "exec": [
                       "const data = pm.response.json();",
                       "if (data && data.data && data.data[\"slug\"]) {",
-                      "    pm.collectionVariables.set(\"articleSlug\", data.data[\"slug\"]);",
+                      "    pm.collectionVariables.set(\"contentSlug\", data.data[\"slug\"]);",
                       "}",
                       "if (data && data.data && data.data[\"_id\"]) {",
-                      "    pm.collectionVariables.set(\"articleId\", data.data[\"_id\"]);",
+                      "    pm.collectionVariables.set(\"contentId\", data.data[\"_id\"]);",
                       "}"
                     ]
                   }
@@ -3564,11 +3778,47 @@
               ]
             },
             {
-              "name": "{articleSlug}",
-              "description": "",
+              "name": "slug",
               "item": [
                 {
-                  "name": "Get article by slug",
+                  "name": "{contentSlug}",
+                  "item": [
+                    {
+                      "name": "Get content by slug",
+                      "request": {
+                        "method": "GET",
+                        "header": [
+                          {
+                            "key": "Authorization",
+                            "value": "Bearer {{adminAccessToken}}",
+                            "type": "text"
+                          }
+                        ],
+                        "url": {
+                          "raw": "{{baseUrl}}/admin/content/slug/{{contentSlug}}",
+                          "host": [
+                            "{{baseUrl}}"
+                          ],
+                          "path": [
+                            "admin",
+                            "content",
+                            "slug",
+                            "{{contentSlug}}"
+                          ]
+                        },
+                        "description": ""
+                      },
+                      "response": []
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "{contentId}",
+              "item": [
+                {
+                  "name": "Get content by ID",
                   "request": {
                     "method": "GET",
                     "header": [
@@ -3579,28 +3829,22 @@
                       }
                     ],
                     "url": {
-                      "raw": "{{baseUrl}}/admin/content/{{articleSlug}}",
+                      "raw": "{{baseUrl}}/admin/content/{{contentId}}",
                       "host": [
                         "{{baseUrl}}"
                       ],
                       "path": [
                         "admin",
                         "content",
-                        "{{articleSlug}}"
+                        "{{contentId}}"
                       ]
                     },
                     "description": ""
                   },
                   "response": []
-                }
-              ]
-            },
-            {
-              "name": "{articleId}",
-              "description": "",
-              "item": [
+                },
                 {
-                  "name": "Update article",
+                  "name": "Update content",
                   "request": {
                     "method": "PATCH",
                     "header": [
@@ -3616,20 +3860,20 @@
                       }
                     ],
                     "url": {
-                      "raw": "{{baseUrl}}/admin/content/{{articleId}}",
+                      "raw": "{{baseUrl}}/admin/content/{{contentId}}",
                       "host": [
                         "{{baseUrl}}"
                       ],
                       "path": [
                         "admin",
                         "content",
-                        "{{articleId}}"
+                        "{{contentId}}"
                       ]
                     },
-                    "description": "title and body are both optional (partial update).",
+                    "description": "All fields optional (partial update).",
                     "body": {
                       "mode": "raw",
-                      "raw": "{\n  \"body\": \"Your payment is held by Declut in escrow until you confirm the item in person \\u2014 the seller is paid only after you enter your confirmation code.\"\n}",
+                      "raw": "{\n  \"status\": \"published\",\n  \"whereToAppear\": \"Home Page - Bottom Banner\"\n}",
                       "options": {
                         "raw": {
                           "language": "json"
@@ -3640,7 +3884,7 @@
                   "response": []
                 },
                 {
-                  "name": "Delete article",
+                  "name": "Delete content",
                   "request": {
                     "method": "DELETE",
                     "header": [
@@ -3651,85 +3895,19 @@
                       }
                     ],
                     "url": {
-                      "raw": "{{baseUrl}}/admin/content/{{articleId}}",
+                      "raw": "{{baseUrl}}/admin/content/{{contentId}}",
                       "host": [
                         "{{baseUrl}}"
                       ],
                       "path": [
                         "admin",
                         "content",
-                        "{{articleId}}"
+                        "{{contentId}}"
                       ]
                     },
                     "description": ""
                   },
                   "response": []
-                },
-                {
-                  "name": "publish",
-                  "description": "",
-                  "item": [
-                    {
-                      "name": "Publish article",
-                      "request": {
-                        "method": "PATCH",
-                        "header": [
-                          {
-                            "key": "Authorization",
-                            "value": "Bearer {{adminAccessToken}}",
-                            "type": "text"
-                          }
-                        ],
-                        "url": {
-                          "raw": "{{baseUrl}}/admin/content/{{articleId}}/publish",
-                          "host": [
-                            "{{baseUrl}}"
-                          ],
-                          "path": [
-                            "admin",
-                            "content",
-                            "{{articleId}}",
-                            "publish"
-                          ]
-                        },
-                        "description": ""
-                      },
-                      "response": []
-                    }
-                  ]
-                },
-                {
-                  "name": "retire",
-                  "description": "",
-                  "item": [
-                    {
-                      "name": "Retire article",
-                      "request": {
-                        "method": "PATCH",
-                        "header": [
-                          {
-                            "key": "Authorization",
-                            "value": "Bearer {{adminAccessToken}}",
-                            "type": "text"
-                          }
-                        ],
-                        "url": {
-                          "raw": "{{baseUrl}}/admin/content/{{articleId}}/retire",
-                          "host": [
-                            "{{baseUrl}}"
-                          ],
-                          "path": [
-                            "admin",
-                            "content",
-                            "{{articleId}}",
-                            "retire"
-                          ]
-                        },
-                        "description": ""
-                      },
-                      "response": []
-                    }
-                  ]
                 }
               ]
             }
@@ -4043,11 +4221,11 @@
                       "key": "entityType",
                       "value": "listing",
                       "disabled": true,
-                      "description": "transaction, listing, review, report, article, or campaign."
+                      "description": "transaction, listing, review, report, content, or campaign."
                     }
                   ]
                 },
-                "description": "entityType is now a fixed enum: transaction, listing, review, report, article, campaign — omit for everything."
+                "description": "Each entry includes: label (readable event text), actor (id, name, role, image), and target (entityType/entityId)."
               },
               "response": [],
               "event": [
@@ -4073,6 +4251,32 @@
                   "name": "Get activity log by ID",
                   "request": {
                     "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/activity-log/{{activityLogId}}",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "activity-log",
+                        "{{activityLogId}}"
+                      ]
+                    },
+                    "description": "actor is further populated: email, status, createdAt, rating, company, totalListings (User actors only — omitted for Admin/System)."
+                  },
+                  "response": []
+                },
+                {
+                  "name": "Delete activity log entry",
+                  "request": {
+                    "method": "DELETE",
                     "header": [
                       {
                         "key": "Authorization",
@@ -4852,12 +5056,12 @@
       "type": "string"
     },
     {
-      "key": "articleId",
+      "key": "contentId",
       "value": "",
       "type": "string"
     },
     {
-      "key": "articleSlug",
+      "key": "contentSlug",
       "value": "",
       "type": "string"
     },
@@ -4878,6 +5082,11 @@
     },
     {
       "key": "roleId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "reporterId",
       "value": "",
       "type": "string"
     }

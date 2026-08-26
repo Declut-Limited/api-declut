@@ -1,15 +1,17 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { Article, ArticleSchema } from './schemas/article.schema';
+import { Content, ContentSchema } from './schemas/content.schema';
 import { ContentService } from './content.service';
 import { ContentController } from './content.controller';
 import { AdminAuthModule } from '../admin-auth/admin-auth.module';
+import { CounterModule } from '../common/counter/counter.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: Article.name, schema: ArticleSchema }]),
+    MongooseModule.forFeature([{ name: Content.name, schema: ContentSchema }]),
     AdminAuthModule,
+    CounterModule,
     AuditLogModule,
   ],
   controllers: [ContentController],

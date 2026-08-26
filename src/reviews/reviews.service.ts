@@ -20,6 +20,7 @@ import { UsersService } from '../users/users.service';
 import { TrustScoreService } from '../trust-score/trust-score.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { toCsv } from '../common/utils/csv.util';
 
 const REVIEWER_POPULATE_FIELDS = 'name email slug company accountStatus image';
 const REVIEW_LISTING_POPULATE_FIELDS = 'title images slug createdAt';
@@ -162,6 +163,47 @@ export class ReviewsService {
       actor: adminId,
       oldState: review.status,
     });
+  }
+
+  // Unpaginated (full matching set) and flattened rather than reusing shapeReview() — a nested-object CSV cell is unreadable.
+  async exportCsv(status?: ReviewStatus): Promise<string> {
+    const filter = status ? { status } : {};
+    const found = await this.reviewModel
+      .find(filter)
+      .populate('reviewer', REVIEWER_POPULATE_FIELDS)
+      .populate('listing', REVIEW_LISTING_POPULATE_FIELDS)
+      .sort({ createdAt: -1 })
+      .exec();
+
+    const rows = found.map((r) => {
+      const reviewer = r.reviewer as unknown as PopulatedReviewer;
+      const listing = r.listing as unknown as PopulatedReviewListing;
+      return {
+        id: r._id.toString(),
+        transactionId: r.transaction.toString(),
+        listingTitle: listing?.title ?? '',
+        reviewerName: reviewer?.name ?? '',
+        reviewerEmail: reviewer?.email ?? '',
+        role: r.role,
+        rating: r.rating,
+        comment: r.comment ?? '',
+        status: r.status,
+        createdAt: r.createdAt,
+      };
+    });
+
+    return toCsv(rows, [
+      'id',
+      'transactionId',
+      'listingTitle',
+      'reviewerName',
+      'reviewerEmail',
+      'role',
+      'rating',
+      'comment',
+      'status',
+      'createdAt',
+    ]);
   }
 
   // Admin moderation list — populates reviewer and listing so an admin can

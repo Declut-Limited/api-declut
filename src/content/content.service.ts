@@ -1,180 +1,156 @@
-import {
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, isValidObjectId } from 'mongoose';
-import {
-  Article,
-  ArticleDocument,
-  ArticleStatus,
-} from './schemas/article.schema';
-import { CreateArticleDto } from './dto/create-article.dto';
-import { UpdateArticleDto } from './dto/update-article.dto';
-import { ListArticlesDto } from './dto/list-articles.dto';
-import { slugify } from '../common/utils/slugify.util';
+import { Content, ContentDocument } from './schemas/content.schema';
+import { CreateContentDto } from './dto/create-content.dto';
+import { UpdateContentDto } from './dto/update-content.dto';
+import { ListContentDto } from './dto/list-content.dto';
+import { CounterService } from '../common/counter/counter.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+
+// Admin has no `status` field of its own (unlike User's accountStatus), so that part of the populate ask is skipped.
+const CREATED_BY_POPULATE = {
+  path: 'createdBy',
+  select: 'name email title createdAt role',
+  populate: { path: 'role', select: 'name' },
+};
 
 @Injectable()
 export class ContentService {
   constructor(
-    @InjectModel(Article.name) private articleModel: Model<ArticleDocument>,
+    @InjectModel(Content.name) private contentModel: Model<ContentDocument>,
+    private readonly counterService: CounterService,
     private readonly auditLogService: AuditLogService,
   ) {}
 
   async create(
     adminId: string,
-    dto: CreateArticleDto,
-  ): Promise<ArticleDocument> {
-    const slug = slugify(dto.title);
-    const existing = await this.articleModel.findOne({ slug });
-    if (existing) {
-      throw new ConflictException('An article with this title already exists');
-    }
-
-    const article = await this.articleModel.create({
+    dto: CreateContentDto,
+  ): Promise<ContentDocument> {
+    const slug = await this.counterService.nextSlug('content', 'CNT', 4);
+    const content = await this.contentModel.create({
       title: dto.title,
       slug,
+      contentType: dto.contentType,
+      whereToAppear: dto.whereToAppear,
       body: dto.body,
+      status: dto.status,
       createdBy: adminId,
     });
 
     await this.auditLogService.record({
-      entityType: 'article',
-      entityId: article._id.toString(),
-      event: 'article.created',
+      entityType: 'content',
+      entityId: content._id.toString(),
+      event: 'content.created',
       actor: adminId,
-      newState: article.status,
+      newState: content.status,
     });
 
-    return article;
+    return content;
   }
 
-  async list(dto: ListArticlesDto): Promise<{
-    results: ArticleDocument[];
+  async list(dto: ListContentDto): Promise<{
+    results: ContentDocument[];
     total: number;
     page: number;
     limit: number;
   }> {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
-    const filter = dto.status ? { status: dto.status } : {};
+    const filter: Record<string, unknown> = {};
+    if (dto.status) filter.status = dto.status;
+    if (dto.contentType) filter.contentType = dto.contentType;
 
     const [results, total] = await Promise.all([
-      this.articleModel
+      this.contentModel
         .find(filter)
+        .populate(CREATED_BY_POPULATE)
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
         .exec(),
-      this.articleModel.countDocuments(filter),
+      this.contentModel.countDocuments(filter),
     ]);
 
     return { results, total, page, limit };
   }
 
-  async findBySlug(slug: string): Promise<ArticleDocument> {
-    const article = await this.articleModel.findOne({ slug }).exec();
-    if (!article) {
-      throw new NotFoundException('Article not found');
+  async findById(id: string): Promise<ContentDocument> {
+    if (!isValidObjectId(id)) {
+      throw new NotFoundException('Content not found');
     }
-    return article;
+    const content = await this.contentModel
+      .findById(id)
+      .populate(CREATED_BY_POPULATE)
+      .exec();
+    if (!content) {
+      throw new NotFoundException('Content not found');
+    }
+    return content;
+  }
+
+  async findBySlug(slug: string): Promise<ContentDocument> {
+    const content = await this.contentModel
+      .findOne({ slug })
+      .populate(CREATED_BY_POPULATE)
+      .exec();
+    if (!content) {
+      throw new NotFoundException('Content not found');
+    }
+    return content;
   }
 
   async update(
     id: string,
     adminId: string,
-    dto: UpdateArticleDto,
-  ): Promise<ArticleDocument> {
-    const article = await this.findByIdOrThrow(id);
+    dto: UpdateContentDto,
+  ): Promise<ContentDocument> {
+    const content = await this.findByIdOrThrow(id);
+    const oldState = content.status;
 
-    if (dto.title !== undefined && dto.title !== article.title) {
-      const newSlug = slugify(dto.title);
-      const clash = await this.articleModel.findOne({
-        slug: newSlug,
-        _id: { $ne: id },
-      });
-      if (clash) {
-        throw new ConflictException(
-          'An article with this title already exists',
-        );
-      }
-      article.title = dto.title;
-      article.slug = newSlug;
-    }
-    if (dto.body !== undefined) article.body = dto.body;
+    if (dto.title !== undefined) content.title = dto.title;
+    if (dto.contentType !== undefined) content.contentType = dto.contentType;
+    if (dto.whereToAppear !== undefined)
+      content.whereToAppear = dto.whereToAppear;
+    if (dto.body !== undefined) content.body = dto.body;
+    if (dto.status !== undefined) content.status = dto.status;
 
-    await article.save();
+    await content.save();
+    await content.populate(CREATED_BY_POPULATE);
 
     await this.auditLogService.record({
-      entityType: 'article',
+      entityType: 'content',
       entityId: id,
-      event: 'article.updated',
-      actor: adminId,
-    });
-
-    return article;
-  }
-
-  async publish(id: string, adminId: string): Promise<ArticleDocument> {
-    const article = await this.findByIdOrThrow(id);
-    const oldState = article.status;
-    article.status = ArticleStatus.PUBLISHED;
-    article.publishedAt = new Date();
-    await article.save();
-
-    await this.auditLogService.record({
-      entityType: 'article',
-      entityId: id,
-      event: 'article.published',
+      event: 'content.updated',
       actor: adminId,
       oldState,
-      newState: article.status,
+      newState: content.status,
     });
 
-    return article;
-  }
-
-  async retire(id: string, adminId: string): Promise<ArticleDocument> {
-    const article = await this.findByIdOrThrow(id);
-    const oldState = article.status;
-    article.status = ArticleStatus.RETIRED;
-    await article.save();
-
-    await this.auditLogService.record({
-      entityType: 'article',
-      entityId: id,
-      event: 'article.retired',
-      actor: adminId,
-      oldState,
-      newState: article.status,
-    });
-
-    return article;
+    return content;
   }
 
   async remove(id: string, adminId: string): Promise<void> {
-    const article = await this.findByIdOrThrow(id);
-    await article.deleteOne();
+    const content = await this.findByIdOrThrow(id);
+    await content.deleteOne();
 
     await this.auditLogService.record({
-      entityType: 'article',
+      entityType: 'content',
       entityId: id,
-      event: 'article.deleted',
+      event: 'content.deleted',
       actor: adminId,
-      oldState: article.status,
+      oldState: content.status,
     });
   }
 
-  private async findByIdOrThrow(id: string): Promise<ArticleDocument> {
+  private async findByIdOrThrow(id: string): Promise<ContentDocument> {
     if (!isValidObjectId(id)) {
-      throw new NotFoundException('Article not found');
+      throw new NotFoundException('Content not found');
     }
-    const article = await this.articleModel.findById(id);
-    if (!article) {
-      throw new NotFoundException('Article not found');
+    const content = await this.contentModel.findById(id);
+    if (!content) {
+      throw new NotFoundException('Content not found');
     }
-    return article;
+    return content;
   }
 }

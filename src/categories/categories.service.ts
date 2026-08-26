@@ -13,6 +13,7 @@ import {
 } from './schemas/category.schema';
 import { Listing, ListingDocument } from '../listings/schemas/listing.schema';
 import { CreateCategoryDto } from './dto/create-category.dto';
+import { UpdateCategoryDto } from './dto/update-category.dto';
 import { slugify } from '../common/utils/slugify.util';
 import { toCsv } from '../common/utils/csv.util';
 
@@ -72,6 +73,43 @@ export class CategoriesService {
         : CategoryStatus.ACTIVE;
     await category.save();
     return this.withCount(category);
+  }
+
+  async update(id: string, dto: UpdateCategoryDto): Promise<CategoryWithCount> {
+    const category = await this.findByIdOrThrow(id);
+
+    if (dto.title !== undefined && dto.title !== category.title) {
+      const slug = slugify(dto.title);
+      const clash = await this.categoryModel.findOne({
+        slug,
+        _id: { $ne: id },
+      });
+      if (clash) {
+        throw new ConflictException(
+          'A category with this title already exists',
+        );
+      }
+      category.title = dto.title;
+      category.slug = slug;
+    }
+    if (dto.status !== undefined) category.status = dto.status;
+
+    await category.save();
+    return this.withCount(category);
+  }
+
+  // Blocks deletion while any listing still references this category (same guard RolesService uses for a Role still assigned to an Admin).
+  async remove(id: string): Promise<void> {
+    const category = await this.findByIdOrThrow(id);
+    const listingCount = await this.listingModel.countDocuments({
+      category: category._id,
+    });
+    if (listingCount > 0) {
+      throw new ConflictException(
+        `${listingCount} listing${listingCount === 1 ? ' is' : 's are'} using this category — move or remove them before deleting it`,
+      );
+    }
+    await category.deleteOne();
   }
 
   async exportCsv(): Promise<string> {

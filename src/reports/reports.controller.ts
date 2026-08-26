@@ -6,8 +6,10 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ReportsService } from './reports.service';
 import { CreateReportDto } from './dto/create-report.dto';
 import { ListReportsDto } from './dto/list-reports.dto';
@@ -36,6 +38,16 @@ export class ReportsController {
     @Body() dto: CreateReportDto,
   ) {
     return this.reportsService.create(admin.sub, dto);
+  }
+
+  // Must come before ':slug' — otherwise Nest matches "export" as the slug.
+  @Get('export')
+  @RequirePermission('reports', 'view')
+  async export(@Query() dto: ListReportsDto, @Res() res: Response) {
+    const csv = await this.reportsService.exportCsv(dto.status);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="reports.csv"');
+    res.send(csv);
   }
 
   @Get(':slug')

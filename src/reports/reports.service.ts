@@ -10,12 +10,15 @@ import { CreateReportDto } from './dto/create-report.dto';
 import { ListReportsDto } from './dto/list-reports.dto';
 import { CounterService } from '../common/counter/counter.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { toCsv } from '../common/utils/csv.util';
 
 // Proposed field sets, not explicitly pinned down beyond "populated" —
 // flag back if these need adjusting once a real UI consumes them.
 const POPULATE_FIELDS = {
   listing: 'title slug images',
   user: 'name slug email',
+  // No "role" here — User has no role field (only Admin does); status/rating map to accountStatus/avgRating, reshaped in shapeReport().
+  reporter: 'name slug accountStatus createdAt avgRating company',
 };
 
 @Injectable()
@@ -40,6 +43,7 @@ export class ReportsService {
       reason: dto.reason,
       listing: dto.listingId,
       user: dto.userId,
+      reporter: dto.reporterId,
       createdBy: adminId,
     });
 
@@ -69,6 +73,7 @@ export class ReportsService {
         .find(filter)
         .populate('listing', POPULATE_FIELDS.listing)
         .populate('user', POPULATE_FIELDS.user)
+        .populate('reporter', POPULATE_FIELDS.reporter)
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
@@ -84,11 +89,50 @@ export class ReportsService {
     };
   }
 
+  // Unpaginated (full matching set) and flattened rather than reusing shapeReport() — a nested-object CSV cell is unreadable.
+  async exportCsv(status?: ReportStatus): Promise<string> {
+    const filter = status ? { status } : {};
+    const found = await this.reportModel
+      .find(filter)
+      .populate('listing', POPULATE_FIELDS.listing)
+      .populate('user', POPULATE_FIELDS.user)
+      .sort({ createdAt: -1 })
+      .exec();
+
+    const rows = found.map((r) => {
+      const listing = r.listing as unknown as { title?: string } | undefined;
+      const user = r.user as unknown as
+        { name?: string; email?: string } | undefined;
+      return {
+        slug: r.slug,
+        title: r.title,
+        reason: r.reason,
+        listingTitle: listing?.title ?? '',
+        userName: user?.name ?? '',
+        userEmail: user?.email ?? '',
+        status: r.status,
+        createdAt: r.createdAt,
+      };
+    });
+
+    return toCsv(rows, [
+      'slug',
+      'title',
+      'reason',
+      'listingTitle',
+      'userName',
+      'userEmail',
+      'status',
+      'createdAt',
+    ]);
+  }
+
   async findBySlug(slug: string): Promise<Record<string, unknown>> {
     const report = await this.reportModel
       .findOne({ slug })
       .populate('listing', POPULATE_FIELDS.listing)
       .populate('user', POPULATE_FIELDS.user)
+      .populate('reporter', POPULATE_FIELDS.reporter)
       .exec();
     if (!report) {
       throw new NotFoundException('Report not found');
@@ -121,15 +165,21 @@ export class ReportsService {
     return report;
   }
 
-  // Requires listing/user already populated on the query that fetched
-  // `report`. mainImage is derived (Listing has no single-image field, just
-  // an images array) — not a Mongoose populate concern by itself.
+  // Requires listing/user/reporter already populated on the query that fetched `report`. mainImage is derived (Listing has no single-image field, just an images array) — not a Mongoose populate concern by itself.
   private shapeReport(report: ReportDocument): Record<string, unknown> {
     const obj = report.toObject() as unknown as Record<string, unknown>;
     if (obj.listing && typeof obj.listing === 'object') {
       const listing = obj.listing as { images?: string[] };
       const { images, ...rest } = listing;
       obj.listing = { ...rest, mainImage: images?.[0] };
+    }
+    if (obj.reporter && typeof obj.reporter === 'object') {
+      const reporter = obj.reporter as {
+        accountStatus?: string;
+        avgRating?: number;
+      };
+      const { accountStatus, avgRating, ...rest } = reporter;
+      obj.reporter = { ...rest, status: accountStatus, rating: avgRating };
     }
     return obj;
   }

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -558,6 +559,44 @@ export class ListingsService {
       entityType: 'listing',
       entityId: id,
       event: 'listing.flagged',
+      actor: adminId,
+      oldState,
+      newState: listing.status,
+    });
+    return listing;
+  }
+
+  async delist(id: string, adminId: string): Promise<ListingDocument> {
+    const listing = await this.adminFindById(id);
+    if (listing.status !== ListingStatus.ACTIVE) {
+      throw new BadRequestException('Only an active listing can be delisted');
+    }
+    const oldState = listing.status;
+    listing.status = ListingStatus.DELISTED;
+    await listing.save();
+    await this.auditLogService.record({
+      entityType: 'listing',
+      entityId: id,
+      event: 'listing.delisted',
+      actor: adminId,
+      oldState,
+      newState: listing.status,
+    });
+    return listing;
+  }
+
+  async relist(id: string, adminId: string): Promise<ListingDocument> {
+    const listing = await this.adminFindById(id);
+    if (listing.status !== ListingStatus.DELISTED) {
+      throw new BadRequestException('Only a delisted listing can be relisted');
+    }
+    const oldState = listing.status;
+    listing.status = ListingStatus.ACTIVE;
+    await listing.save();
+    await this.auditLogService.record({
+      entityType: 'listing',
+      entityId: id,
+      event: 'listing.relisted',
       actor: adminId,
       oldState,
       newState: listing.status,

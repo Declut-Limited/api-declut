@@ -5,6 +5,7 @@ import { TransactionsService } from '../transactions/transactions.service';
 import { TransactionStatus } from '../transactions/schemas/transaction.schema';
 import { OffersService } from '../offers/offers.service';
 import { ReviewsService } from '../reviews/reviews.service';
+import { ReviewStatus } from '../reviews/schemas/review.schema';
 import { TrustScoreService } from '../trust-score/trust-score.service';
 import { KycService } from '../kyc/kyc.service';
 import { KycStatus } from '../users/schemas/user.schema';
@@ -316,6 +317,14 @@ export class AdminService {
     return this.listingsService.flag(id, adminId);
   }
 
+  delistListing(id: string, adminId: string) {
+    return this.listingsService.delist(id, adminId);
+  }
+
+  relistListing(id: string, adminId: string) {
+    return this.listingsService.relist(id, adminId);
+  }
+
   async removeListing(id: string, adminId: string) {
     await this.listingsService.adminRemove(id, adminId);
     return { removed: true };
@@ -385,6 +394,10 @@ export class AdminService {
       dto.limit ?? 20,
       dto.status,
     );
+  }
+
+  exportReviewsCsv(status?: ReviewStatus) {
+    return this.reviewsService.exportCsv(status);
   }
 
   flagReview(reviewId: string, adminId: string) {

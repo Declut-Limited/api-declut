@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -11,6 +12,7 @@ import {
 import type { Response } from 'express';
 import { CategoriesService } from './categories.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
+import { UpdateCategoryDto } from './dto/update-category.dto';
 import { AdminJwtAuthGuard } from '../admin-auth/guards/admin-jwt-auth.guard';
 import { PermissionsGuard } from '../admin-auth/guards/permissions.guard';
 import { RequirePermission } from '../admin-auth/decorators/require-permission.decorator';
@@ -53,5 +55,18 @@ export class CategoriesController {
   @RequirePermission('categories', 'write')
   toggle(@Param('id') id: string) {
     return this.categoriesService.toggleStatus(id);
+  }
+
+  @Patch(':id')
+  @RequirePermission('categories', 'write')
+  update(@Param('id') id: string, @Body() dto: UpdateCategoryDto) {
+    return this.categoriesService.update(id, dto);
+  }
+
+  @Delete(':id')
+  @RequirePermission('categories', 'delete')
+  async remove(@Param('id') id: string) {
+    await this.categoriesService.remove(id);
+    return { removed: true };
   }
 }

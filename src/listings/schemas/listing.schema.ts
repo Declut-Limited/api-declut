@@ -17,6 +17,8 @@ export enum ListingStatus {
   DELETED = 'deleted',
   FLAGGED = 'flagged',
   SOLD = 'sold',
+  // Admin-initiated hide, distinct from ARCHIVED (seller's own action) and FLAGGED (moderation) — reversible via relist().
+  DELISTED = 'delisted',
 }
 
 @Schema({ _id: false })

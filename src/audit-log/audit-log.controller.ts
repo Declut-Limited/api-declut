@@ -1,4 +1,11 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { AuditLogService } from './audit-log.service';
 import { ListActivityLogDto } from './dto/list-activity-log.dto';
 import { AdminJwtAuthGuard } from '../admin-auth/guards/admin-jwt-auth.guard';
@@ -13,7 +20,7 @@ export class AuditLogController {
   @Get()
   @RequirePermission('activity', 'view')
   list(@Query() dto: ListActivityLogDto) {
-    return this.auditLogService.list(
+    return this.auditLogService.listWithDetails(
       dto.page ?? 1,
       dto.limit ?? 20,
       dto.entityType,
@@ -23,6 +30,13 @@ export class AuditLogController {
   @Get(':id')
   @RequirePermission('activity', 'view')
   findById(@Param('id') id: string) {
-    return this.auditLogService.findById(id);
+    return this.auditLogService.findByIdWithDetails(id);
+  }
+
+  @Delete(':id')
+  @RequirePermission('activity', 'delete')
+  async remove(@Param('id') id: string) {
+    await this.auditLogService.remove(id);
+    return { removed: true };
   }
 }

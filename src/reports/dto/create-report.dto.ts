@@ -24,4 +24,8 @@ export class CreateReportDto {
   @IsOptional()
   @IsMongoId()
   userId?: string;
+
+  // The user who actually filed this dispute — not the target being reported.
+  @IsMongoId()
+  reporterId: string;
 }

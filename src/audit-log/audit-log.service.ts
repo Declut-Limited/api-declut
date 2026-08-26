@@ -2,12 +2,37 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, isValidObjectId } from 'mongoose';
 import { AuditLog, AuditLogDocument } from './schemas/audit-log.schema';
+import { Listing, ListingDocument } from '../listings/schemas/listing.schema';
 import { getAuditIpAddress } from './audit-log-context';
+import { describeEvent } from './event-labels';
+import { UsersService } from '../users/users.service';
+import { AdminAuthService } from '../admin-auth/admin-auth.service';
+import { CounterService } from '../common/counter/counter.service';
+
+interface ActorSummary {
+  id: string;
+  name: string;
+  role: 'User' | 'Admin' | 'System';
+  image?: string;
+}
+
+interface ActorDetail extends ActorSummary {
+  email?: string;
+  status?: string;
+  createdAt?: Date;
+  rating?: number;
+  company?: string;
+  totalListings?: number;
+}
 
 @Injectable()
 export class AuditLogService {
   constructor(
     @InjectModel(AuditLog.name) private auditLogModel: Model<AuditLogDocument>,
+    @InjectModel(Listing.name) private listingModel: Model<ListingDocument>,
+    private readonly usersService: UsersService,
+    private readonly adminAuthService: AdminAuthService,
+    private readonly counterService: CounterService,
   ) {}
 
   async record(params: {
@@ -19,8 +44,10 @@ export class AuditLogService {
     newState?: string;
     metadata?: Record<string, unknown>;
   }): Promise<void> {
+    const slug = await this.counterService.nextSlug('activity_log', 'LOG', 4);
     await this.auditLogModel.create({
       ...params,
+      slug,
       ipAddress: getAuditIpAddress(),
     });
   }
@@ -72,4 +99,106 @@ export class AuditLogService {
     }
     return entry;
   }
+
+  // Enriched variant of list() for GET /admin/activity-log itself — readable
+  // label, actor summary, and target — kept separate from list() above so
+  // AdminService.getRecentActivity() (which needs the raw shape) is unaffected.
+  async listWithDetails(
+    page: number,
+    limit: number,
+    entityType?: string,
+  ): Promise<{
+    results: Record<string, unknown>[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const { results, total } = await this.list(page, limit, entityType);
+    const shaped = await Promise.all(results.map((r) => this.shapeSummary(r)));
+    return { results: shaped, total, page, limit };
+  }
+
+  async findByIdWithDetails(id: string): Promise<Record<string, unknown>> {
+    const entry = await this.findById(id);
+    const obj = entry.toObject() as unknown as Record<string, unknown>;
+    return {
+      ...obj,
+      label: describeEvent(entry.event),
+      target: { type: entry.entityType, id: entry.entityId.toString() },
+      actor: await this.resolveActorDetail(entry.actor),
+    };
+  }
+
+  async remove(id: string): Promise<void> {
+    const entry = await this.findById(id);
+    await entry.deleteOne();
+  }
+
+  private async shapeSummary(
+    entry: AuditLogDocument,
+  ): Promise<Record<string, unknown>> {
+    const obj = entry.toObject() as unknown as Record<string, unknown>;
+    return {
+      ...obj,
+      label: describeEvent(entry.event),
+      target: { type: entry.entityType, id: entry.entityId.toString() },
+      actor: await this.resolveActorSummary(entry.actor),
+    };
+  }
+
+  private async resolveActorSummary(actor: string): Promise<ActorSummary> {
+    if (actor === 'system' || !isValidObjectId(actor)) {
+      return { id: actor, name: capitalize(actor), role: 'System' };
+    }
+    const user = await this.usersService.findById(actor);
+    if (user) {
+      return { id: actor, name: user.name, role: 'User', image: user.image };
+    }
+    const admin = await this.adminAuthService.findById(actor);
+    if (admin) {
+      return { id: actor, name: admin.name, role: 'Admin' };
+    }
+    return { id: actor, name: 'Unknown', role: 'System' };
+  }
+
+  // Admin has no accountStatus/avgRating/company/listings — those fields
+  // are simply omitted for an Admin actor rather than faked.
+  private async resolveActorDetail(actor: string): Promise<ActorDetail> {
+    if (actor === 'system' || !isValidObjectId(actor)) {
+      return { id: actor, name: capitalize(actor), role: 'System' };
+    }
+    const user = await this.usersService.findById(actor);
+    if (user) {
+      const totalListings = await this.listingModel.countDocuments({
+        seller: user._id,
+      });
+      return {
+        id: actor,
+        name: user.name,
+        role: 'User',
+        image: user.image,
+        email: user.email,
+        status: user.accountStatus,
+        createdAt: user.createdAt,
+        rating: user.avgRating,
+        company: user.company,
+        totalListings,
+      };
+    }
+    const admin = await this.adminAuthService.findById(actor);
+    if (admin) {
+      return {
+        id: actor,
+        name: admin.name,
+        role: 'Admin',
+        email: admin.email,
+        createdAt: admin.createdAt,
+      };
+    }
+    return { id: actor, name: 'Unknown', role: 'System' };
+  }
+}
+
+function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }

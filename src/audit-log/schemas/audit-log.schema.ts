@@ -13,7 +13,7 @@ export enum AuditEntityType {
   LISTING = 'listing',
   REVIEW = 'review',
   REPORT = 'report',
-  ARTICLE = 'article',
+  CONTENT = 'content',
   CAMPAIGN = 'campaign',
 }
 
@@ -23,6 +23,10 @@ export enum AuditEntityType {
 // knows its own entityType when it queries, so it doesn't need populate().
 @Schema({ timestamps: { createdAt: true, updatedAt: false } })
 export class AuditLog {
+  // LOG-#### — assigned once at creation via CounterService (sequential, not random — same reasoning as every other slug in this app).
+  @Prop({ unique: true, sparse: true })
+  slug?: string;
+
   @Prop({ required: true, index: true })
   entityType: string;
 
