@@ -2032,7 +2032,7 @@
                         }
                       ]
                     },
-                    "description": "filter: thisMonth|lastMonth|last3Months|thisYear|custom (custom requires startDate+endDate). 8 cards: newUsers, activeListings, totalTransactions, completedTransactions, totalRevenue, avgOrderValue, disputedTransactions, stalledTransactions — each {value, extra: {status, result}}, status is \"productive\" or \"warning\"."
+                    "description": "filter: thisMonth|lastMonth|last3Months|thisYear|custom (custom requires startDate+endDate). 8 cards, each {value, extra: {status, result}} (status is \"productive\" or \"warning\"): numberOfUsers, newListings, transactionsToday, completedTransactions, revenue, escrowBalance, pendingInspections, openDisputes. numberOfUsers/newListings/transactionsToday/completedTransactions.value/revenue scope to the selected filter (extra compares vs the prior period). escrowBalance/pendingInspections/openDisputes are live, filter-independent snapshots (\"what needs attention right now\") — escrowBalance sums amount currently held in escrow_active/awaiting_inspection transactions, pendingInspections.extra counts those within 6h of their inspection deadline, openDisputes.extra counts disputes past the stalled-threshold SLA. completedTransactions.extra is an all-time success rate (completed ÷ all finished-outcome transactions), not period-scoped."
                   },
                   "response": []
                 }
@@ -2072,7 +2072,7 @@
                         }
                       ]
                     },
-                    "description": "Always Jan-Dec of the given year, zero-filled. trend[].revenue is commission (platform earnings). insights: twelveMonthGross/bestMonth/avgPerMonth are built from gross transaction amount instead, short-form Naira; totalRemittance (amount minus commission) is full, non-abbreviated Naira."
+                    "description": "Always Jan-Dec of the given year, zero-filled. Each trend entry carries both grossRevenue (summed transaction amount) and commissionAmount (platform earnings) for that month. insights: twelveMonthGross/bestMonth/avgPerMonth are derived from trend[].grossRevenue, short-form Naira; totalRemittance (grossRevenue minus commissionAmount, summed) is full, non-abbreviated Naira."
                   },
                   "response": []
                 }
@@ -2104,7 +2104,7 @@
                         "listings-per-month"
                       ]
                     },
-                    "description": "totalListingsValue: all-time sum of listing.price across every non-deleted listing. trend: last 6 months (5 back + current), zero-filled, summed by listing.price (not a count). extra: \"+{count} this month\" — count of listings created this month, not a percentage."
+                    "description": "totalListingsValue: all-time sum of listing.price across every non-deleted listing. trend: last 6 months (5 back + current), zero-filled, each { month, value } summed by listing.price (not a count)."
                   },
                   "response": []
                 }

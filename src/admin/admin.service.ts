@@ -499,7 +499,7 @@ export class AdminService {
     }
   }
 
-  // "{count} {periodLabel}" phrasing for the two plain-count cards — matches the dashboard mock exactly (e.g. "840 this week"), no invented words.
+  // "{count} {periodLabel}" phrasing for the two plain-count cards — matches the dashboard mock exactly (e.g. "840 this month"), no invented words.
   private static readonly FILTER_LABELS: Record<
     DashboardInsightsFilter,
     string
@@ -511,7 +511,7 @@ export class AdminService {
     custom: 'in the selected range',
   };
 
-  // 8 cards, each {value, extra: {status, result}} — no chart/donut/activity-feed, explicitly out of scope.
+  // 8 cards, each {value, extra: {status, result}} — no chart/donut/activity-feed, explicitly out of scope. Reworked 2026-08-26 for the new 8-card set — all 8 stay scoped to ?filter where a period genuinely applies (numberOfUsers/newListings included: value AND extra both compare the selected period vs the one before it, same as every other filtered card here — reverted an earlier fixed-"this week" version of this that broke that consistency).
   async getDashboardInsights(
     filter: DashboardInsightsFilter = 'thisMonth',
     startDate?: string,
@@ -525,16 +525,14 @@ export class AdminService {
     const periodLabel = AdminService.FILTER_LABELS[filter];
 
     const [
-      newUsers,
-      priorNewUsers,
-      activeListings,
+      numberOfUsers,
+      priorNumberOfUsers,
       newListings,
       priorNewListings,
       txSummary,
     ] = await Promise.all([
       this.usersService.countNewInPeriod(since, until),
       this.usersService.countNewInPeriod(priorSince, priorUntil),
-      this.listingsService.countActive(),
       this.listingsService.countCreatedInRange(since, until),
       this.listingsService.countCreatedInRange(priorSince, priorUntil),
       this.transactionsService.getDashboardInsights(
@@ -550,13 +548,17 @@ export class AdminService {
       since,
       until,
       cards: {
-        newUsers: {
-          value: newUsers,
-          extra: countTrend(newUsers, periodLabel, priorNewUsers, true),
+        numberOfUsers: {
+          value: numberOfUsers,
+          extra: countTrend(
+            numberOfUsers,
+            periodLabel,
+            priorNumberOfUsers,
+            true,
+          ),
         },
-        // activeListings itself is a live total with no period of its own — its trend uses the listing-creation rate instead.
-        activeListings: {
-          value: activeListings,
+        newListings: {
+          value: newListings,
           extra: countTrend(newListings, periodLabel, priorNewListings, true),
         },
         ...txSummary,
@@ -572,24 +574,12 @@ export class AdminService {
 
   // Backs the admin Dashboard "listings per month" chart — 6 months (5 back + current), by listing.price, not a count (per your read of the mock). extra is a plain "+{count} this month" new-listings count, not a trend comparison — matches the mock's single green indicator.
   async getListingsPerMonth() {
-    const now = new Date();
-    const thisMonthSince = new Date(now.getFullYear(), now.getMonth(), 1);
-
-    const [totalListingsValue, trend, newThisMonth] = await Promise.all([
+    const [totalListingsValue, trend] = await Promise.all([
       this.listingsService.sumTotalValue(),
       this.listingsService.sumValueByMonth(6),
-      this.listingsService.countCreatedInRange(thisMonthSince),
     ]);
 
-    return {
-      totalListingsValue,
-      extra: {
-        status:
-          newThisMonth > 0 ? ('productive' as const) : ('warning' as const),
-        result: `+${newThisMonth} this month`,
-      },
-      trend,
-    };
+    return { totalListingsValue, trend };
   }
 
   getCategoryDistribution() {

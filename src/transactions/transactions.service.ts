@@ -1005,7 +1005,6 @@ export class TransactionsService {
       totalTransactions: number;
       completedTransactions: number;
       totalRevenue: number;
-      completedAmountSum: number;
     }>([
       { $match: filter },
       {
@@ -1026,15 +1025,6 @@ export class TransactionsService {
               ],
             },
           },
-          completedAmountSum: {
-            $sum: {
-              $cond: [
-                { $eq: ['$status', TransactionStatus.COMPLETED] },
-                '$amount',
-                0,
-              ],
-            },
-          },
         },
       },
     ]);
@@ -1043,12 +1033,112 @@ export class TransactionsService {
       totalTransactions: r?.totalTransactions ?? 0,
       completedTransactions: r?.completedTransactions ?? 0,
       totalRevenue: Math.round((r?.totalRevenue ?? 0) * 100) / 100,
-      avgOrderValue:
-        r && r.completedTransactions > 0
-          ? Math.round((r.completedAmountSum / r.completedTransactions) * 100) /
-            100
-          : 0,
     };
+  }
+
+  // Live, filter-independent snapshot — money the buyer has already paid that's held by the platform, not yet released to the seller or refunded. Backs the "Escrow Balance" card.
+  private async getEscrowBalance(): Promise<{
+    amount: number;
+    count: number;
+  }> {
+    const rows = await this.transactionModel.aggregate<{
+      _id: null;
+      amount: number;
+      count: number;
+    }>([
+      {
+        $match: {
+          status: {
+            $in: [
+              TransactionStatus.ESCROW_ACTIVE,
+              TransactionStatus.AWAITING_INSPECTION,
+            ],
+          },
+        },
+      },
+      {
+        $group: { _id: null, amount: { $sum: '$amount' }, count: { $sum: 1 } },
+      },
+    ]);
+    const r = rows[0];
+    return {
+      amount: Math.round((r?.amount ?? 0) * 100) / 100,
+      count: r?.count ?? 0,
+    };
+  }
+
+  // Live, filter-independent snapshot — how many transactions are currently awaiting the seller entering the buyer's code, and how many of those are close to breaching their inspection deadline. `expiringBefore` guards against `inspectionDeadlineAt` being unset on pre-rework transactions (would otherwise sort as "already expired" in the comparison).
+  private async getPendingInspections(expiringBefore: Date): Promise<{
+    total: number;
+    expiringSoon: number;
+  }> {
+    const rows = await this.transactionModel.aggregate<{
+      _id: null;
+      total: number;
+      expiringSoon: number;
+    }>([
+      { $match: { status: TransactionStatus.AWAITING_INSPECTION } },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: 1 },
+          expiringSoon: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $ne: ['$inspectionDeadlineAt', null] },
+                    { $lte: ['$inspectionDeadlineAt', expiringBefore] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+      },
+    ]);
+    const r = rows[0];
+    return { total: r?.total ?? 0, expiringSoon: r?.expiringSoon ?? 0 };
+  }
+
+  // All-time — completed vs every transaction that's reached a final outcome (completed/cancelled/refunded/disputed). Excludes still-in-progress statuses (pending_payment/escrow_active/awaiting_inspection/stalled), since those haven't resolved one way or the other yet. Backs "Completed Transactions"' success-rate extra.
+  private async getCompletionOutcomes(): Promise<{
+    completed: number;
+    total: number;
+  }> {
+    const rows = await this.transactionModel.aggregate<{
+      _id: null;
+      completed: number;
+      total: number;
+    }>([
+      {
+        $match: {
+          status: {
+            $in: [
+              TransactionStatus.COMPLETED,
+              TransactionStatus.CANCELLED,
+              TransactionStatus.REFUNDED,
+              TransactionStatus.DISPUTED,
+            ],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: 1 },
+          completed: {
+            $sum: {
+              $cond: [{ $eq: ['$status', TransactionStatus.COMPLETED] }, 1, 0],
+            },
+          },
+        },
+      },
+    ]);
+    const r = rows[0];
+    return { completed: r?.completed ?? 0, total: r?.total ?? 0 };
   }
 
   // Live count of disputed/stalled transactions, split by whether they've sat untouched past the SLA cutoff — reuses escrowStalledThresholdDays as the SLA proxy (no dedicated "dispute SLA" setting exists yet, judgment call, flagged) via updatedAt (same proxy-timestamp caveat as getRevenueTrends).
@@ -1083,19 +1173,19 @@ export class TransactionsService {
     };
   }
 
-  // Backs 6 of the admin Dashboard's 8 "insights" cards — each returned as {value, extra}. disputedTransactions/stalledTransactions.value stay a live, un-scoped snapshot ("how much needs my attention right now"); their .extra is a real SLA-breach count, not a trend. See AdminService.getDashboardInsights() for the other 2 cards and the filter/prior-period math (every filter now has concrete since/until/priorSince/priorUntil bounds).
+  // Backs 6 of the admin Dashboard's 8 "insights" cards — each returned as {value, extra}. See AdminService.getDashboardInsights() for the other 2 cards (numberOfUsers/newListings) and the filter/prior-period math. Reworked 2026-08-26 for the new 8-card set (Revenue/Escrow Balance/Transaction Today/Pending Inspections/Open Disputes/Completed Transactions here; avgOrderValue and stalledTransactions dropped — no longer part of the card set). escrowBalance/pendingInspections/openDisputes stay live, filter-independent snapshots ("what needs my attention right now") — same reasoning already established for the old disputed/stalled cards; revenue/transactionsToday/completedTransactions.value scope to the selected filter period.
   async getDashboardInsights(
     since: Date,
     until: Date,
     priorSince: Date,
     priorUntil: Date,
   ): Promise<{
-    totalTransactions: { value: number; extra: Trend };
+    transactionsToday: { value: number; extra: Trend };
     completedTransactions: { value: number; extra: Trend };
-    totalRevenue: { value: number; extra: Trend };
-    avgOrderValue: { value: number; extra: Trend };
-    disputedTransactions: { value: number; extra: Trend };
-    stalledTransactions: { value: number; extra: Trend };
+    revenue: { value: number; extra: Trend };
+    escrowBalance: { value: number; extra: Trend };
+    pendingInspections: { value: number; extra: Trend };
+    openDisputes: { value: number; extra: Trend };
   }> {
     const periodFilter = { createdAt: { $gte: since, $lt: until } };
     const priorFilter = { createdAt: { $gte: priorSince, $lt: priorUntil } };
@@ -1103,15 +1193,26 @@ export class TransactionsService {
     const slaCutoff = new Date(
       Date.now() - escrowStalledThresholdDays * 24 * 60 * 60 * 1000,
     );
+    const sixHoursFromNow = new Date(Date.now() + 6 * 60 * 60 * 1000);
 
-    const [current, prior, attention] = await Promise.all([
-      this.summarizeTransactions(periodFilter),
-      this.summarizeTransactions(priorFilter),
-      this.summarizeAttentionStates(slaCutoff),
-    ]);
+    const [current, prior, attention, escrow, inspections, outcomes] =
+      await Promise.all([
+        this.summarizeTransactions(periodFilter),
+        this.summarizeTransactions(priorFilter),
+        this.summarizeAttentionStates(slaCutoff),
+        this.getEscrowBalance(),
+        this.getPendingInspections(sixHoursFromNow),
+        this.getCompletionOutcomes(),
+      ]);
+
+    // No admin-configurable "healthy success rate" threshold exists yet — 90% picked as a reasonable bar, judgment call, flagged.
+    const successRate =
+      outcomes.total > 0
+        ? Math.round((outcomes.completed / outcomes.total) * 1000) / 10
+        : 0;
 
     return {
-      totalTransactions: {
+      transactionsToday: {
         value: current.totalTransactions,
         extra: pctTrend(
           current.totalTransactions,
@@ -1123,15 +1224,12 @@ export class TransactionsService {
       },
       completedTransactions: {
         value: current.completedTransactions,
-        extra: pctTrend(
-          current.completedTransactions,
-          prior.completedTransactions,
-          true,
-          (pct, dir) => `${pct}% ${dir}`,
-          (value) => `${value} this period`,
-        ),
+        extra: {
+          status: successRate >= 90 ? 'productive' : 'warning',
+          result: `${successRate}% success rate`,
+        },
       },
-      totalRevenue: {
+      revenue: {
         value: current.totalRevenue,
         extra: pctTrend(
           current.totalRevenue,
@@ -1141,30 +1239,33 @@ export class TransactionsService {
           (value) => `${formatNairaShort(value)} this period`,
         ),
       },
-      avgOrderValue: {
-        value: current.avgOrderValue,
-        extra: pctTrend(
-          current.avgOrderValue,
-          prior.avgOrderValue,
-          true,
-          (pct) => `${pct}% vs prior period`,
-          (value) => `${formatNairaShort(value)} this period`,
-        ),
+      // Always 'warning' (informational, not a performance trend) — matches the screenshot's orange indicator, distinct from the green up-arrow trend cards.
+      escrowBalance: {
+        value: escrow.amount,
+        extra: {
+          status: 'warning',
+          result: `held across ${escrow.count} transaction${escrow.count === 1 ? '' : 's'}`,
+        },
       },
-      disputedTransactions: {
+      pendingInspections: {
+        value: inspections.total,
+        extra: breachTrend(inspections.expiringSoon, 'expiring in <6H'),
+      },
+      openDisputes: {
         value: attention.disputed.total,
         extra: breachTrend(attention.disputed.breaching, 'breaching SLA'),
-      },
-      stalledTransactions: {
-        value: attention.stalled.total,
-        extra: breachTrend(attention.stalled.breaching, 'breaching SLA'),
       },
     };
   }
 
-  // Backs the admin Dashboard revenue-trends chart — always Jan-Dec of the given calendar year, zero-filled, bucketed by `updatedAt` as a proxy for "when it completed" (no dedicated completedAt field, but COMPLETED is set immediately before the save that stamps it). trend[].revenue is commission; insights.twelveMonthGross/bestMonth/avgPerMonth are built from gross amount instead (not summed from trend[].revenue), and totalRemittance is amount minus commission — a judgment-call split not pinned down beyond the screenshot's Gross-Revenue-vs-Commission legend.
+  // Backs the admin Dashboard revenue-trends chart — always Jan-Dec of the given calendar year, zero-filled, bucketed by `updatedAt` as a proxy for "when it completed" (no dedicated completedAt field, but COMPLETED is set immediately before the save that stamps it). trend[] carries both grossRevenue and commissionAmount per month (2026-08-26: previously only commission, exposed as `revenue`); insights.twelveMonthGross/bestMonth/avgPerMonth/totalRemittance are now derived straight from trend[] instead of a separate re-aggregation, same numbers as before, one fewer pass over the data.
   async getRevenueTrends(year: number): Promise<{
-    trend: Array<{ year: number; month: string; revenue: number }>;
+    trend: Array<{
+      year: number;
+      month: string;
+      grossRevenue: number;
+      commissionAmount: number;
+    }>;
     insights: {
       twelveMonthGross: string;
       bestMonth: string;
@@ -1196,23 +1297,25 @@ export class TransactionsService {
     ]);
     const byMonth = new Map(rows.map((r) => [r._id, r]));
 
-    const trend = MONTH_ABBREVIATIONS.map((month, i) => ({
-      year,
-      month,
-      revenue:
-        Math.round((byMonth.get(i + 1)?.commissionAmount ?? 0) * 100) / 100,
-    }));
+    const trend = MONTH_ABBREVIATIONS.map((month, i) => {
+      const bucket = byMonth.get(i + 1);
+      return {
+        year,
+        month,
+        grossRevenue: Math.round((bucket?.grossAmount ?? 0) * 100) / 100,
+        commissionAmount:
+          Math.round((bucket?.commissionAmount ?? 0) * 100) / 100,
+      };
+    });
 
-    const grossByMonth = MONTH_NAMES.map((name, i) => ({
-      name,
-      gross: byMonth.get(i + 1)?.grossAmount ?? 0,
-    }));
-    const twelveMonthGross = grossByMonth.reduce((sum, m) => sum + m.gross, 0);
-    const bestMonth = grossByMonth.reduce((max, m) =>
-      m.gross > max.gross ? m : max,
+    const twelveMonthGross = trend.reduce((sum, m) => sum + m.grossRevenue, 0);
+    const bestMonthIndex = trend.reduce(
+      (maxIdx, m, i) =>
+        m.grossRevenue > trend[maxIdx].grossRevenue ? i : maxIdx,
+      0,
     );
-    const totalRemittance = rows.reduce(
-      (sum, r) => sum + (r.grossAmount - r.commissionAmount),
+    const totalRemittance = trend.reduce(
+      (sum, m) => sum + (m.grossRevenue - m.commissionAmount),
       0,
     );
 
@@ -1220,7 +1323,7 @@ export class TransactionsService {
       trend,
       insights: {
         twelveMonthGross: formatNairaShort(twelveMonthGross),
-        bestMonth: `${bestMonth.name} - ${formatNairaShort(bestMonth.gross)}`,
+        bestMonth: `${MONTH_NAMES[bestMonthIndex]} - ${formatNairaShort(trend[bestMonthIndex].grossRevenue)}`,
         avgPerMonth: formatNairaShort(twelveMonthGross / 12),
         totalRemittance: formatNairaFull(totalRemittance),
       },

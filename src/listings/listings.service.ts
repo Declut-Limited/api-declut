@@ -488,14 +488,7 @@ export class ListingsService {
     );
   }
 
-  // Backs the admin Dashboard "active listings" card — live, unscoped snapshot.
-  countActive(): Promise<number> {
-    return this.listingModel
-      .countDocuments({ status: ListingStatus.ACTIVE })
-      .exec();
-  }
-
-  // Trend context for activeListings: new-listing rate, since the live total has no period of its own (judgment call).
+  // Backs the admin Dashboard "New Listings" card's main value (period-scoped) and its fixed weekly extra.
   countCreatedInRange(since?: Date, until?: Date): Promise<number> {
     const filter = since
       ? { createdAt: until ? { $gte: since, $lt: until } : { $gte: since } }
@@ -518,7 +511,7 @@ export class ListingsService {
   // Same chart's monthly bars — rolling window of `monthsBack` months up to and including the current one, zero-filled, summed by listing.price (not a count).
   async sumValueByMonth(
     monthsBack: number,
-  ): Promise<Array<{ year: number; month: string; value: number }>> {
+  ): Promise<Array<{ month: string; value: number }>> {
     const now = new Date();
     const buckets: { year: number; month: number }[] = [];
     for (let i = monthsBack - 1; i >= 0; i--) {
@@ -552,7 +545,6 @@ export class ListingsService {
     );
 
     return buckets.map((b) => ({
-      year: b.year,
       month: MONTH_ABBREVIATIONS[b.month - 1],
       value: Math.round((byMonth.get(`${b.year}-${b.month}`) ?? 0) * 100) / 100,
     }));
