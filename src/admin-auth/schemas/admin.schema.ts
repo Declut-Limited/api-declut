@@ -21,6 +21,11 @@ export class Admin {
   @Prop({ required: true, trim: true })
   name: string;
 
+  // ADM-#### — assigned once at creation via CounterService. sparse since
+  // admins created before this field existed have none, no backfill.
+  @Prop({ unique: true, sparse: true })
+  slug?: string;
+
   @Prop({ required: true, select: false })
   password: string;
 

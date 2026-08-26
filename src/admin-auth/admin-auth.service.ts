@@ -29,6 +29,7 @@ import {
 import { EmailService } from '../email/email.service';
 import { escapeRegex } from '../common/utils/regex.util';
 import { AdminPermissions } from './interfaces/admin-permissions.interface';
+import { CounterService } from '../common/counter/counter.service';
 
 export interface AdminTokenPair {
   accessToken: string;
@@ -37,6 +38,7 @@ export interface AdminTokenPair {
 
 export interface AdminProfile {
   id: string;
+  slug?: string;
   email: string;
   name: string;
   title?: string;
@@ -62,6 +64,7 @@ export class AdminAuthService {
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
     private readonly emailService: EmailService,
+    private readonly counterService: CounterService,
   ) {}
 
   async login(dto: AdminLoginDto): Promise<AdminTokenPair> {
@@ -97,9 +100,11 @@ export class AdminAuthService {
     }
 
     const password = await bcrypt.hash(dto.password, this.saltRounds());
+    const slug = await this.counterService.nextSlug('admin', 'ADM', 4);
     const admin = await this.adminModel.create({
       email: dto.email.toLowerCase(),
       name: dto.name,
+      slug,
       password,
       title: dto.title,
       company: dto.company,
@@ -180,13 +185,19 @@ export class AdminAuthService {
 
   // Used by the admin Users federated list — Admins have no equivalent of
   // accountStatus, so status filters only ever narrow the User side.
+  // Populates role with just its name (not the full permissions object —
+  // this list view only needs it for display, unlike getProfile()/findById()).
   searchAdmins(search?: string): Promise<AdminDocument[]> {
     const query: Record<string, unknown> = {};
     if (search) {
       const re = new RegExp(escapeRegex(search), 'i');
       query.$or = [{ name: re }, { email: re }];
     }
-    return this.adminModel.find(query).sort({ createdAt: -1 }).exec();
+    return this.adminModel
+      .find(query)
+      .populate('role', 'name')
+      .sort({ createdAt: -1 })
+      .exec();
   }
 
   async refresh(dto: AdminRefreshTokenDto): Promise<AdminTokenPair> {
@@ -402,6 +413,7 @@ export class AdminAuthService {
       | undefined;
     return {
       id: admin._id.toString(),
+      slug: admin.slug,
       email: admin.email,
       name: admin.name,
       title: admin.title,

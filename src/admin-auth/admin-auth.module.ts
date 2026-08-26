@@ -8,6 +8,7 @@ import { AdminAuthController } from './admin-auth.controller';
 import { AdminJwtAuthGuard } from './guards/admin-jwt-auth.guard';
 import { PermissionsGuard } from './guards/permissions.guard';
 import { EmailModule } from '../email/email.module';
+import { CounterModule } from '../common/counter/counter.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { EmailModule } from '../email/email.module';
     // so its JwtService dependency must resolve there too, not just here.
     JwtModule.register({ global: true }),
     EmailModule,
+    CounterModule,
   ],
   controllers: [AdminAuthController],
   providers: [AdminAuthService, AdminJwtAuthGuard, PermissionsGuard],

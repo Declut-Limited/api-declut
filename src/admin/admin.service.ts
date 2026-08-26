@@ -107,6 +107,9 @@ export class AdminService {
       id: a._id.toString(),
       name: a.name,
       email: a.email,
+      slug: a.slug,
+      roleName: a.role?,
+
       // Literal, like 'User' above — there are only two account roles.
       // a.title (job title, e.g. "Support Lead") is a display label, never
       // what's shown in the role column; permissions are what actually
