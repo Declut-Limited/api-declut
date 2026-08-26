@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { FcmService, PushNotificationPayload } from './fcm.service';
-import { AdminNotificationsGateway } from './admin-notifications.gateway';
 
 @Injectable()
 export class NotificationsService {
@@ -10,7 +9,6 @@ export class NotificationsService {
   constructor(
     private readonly usersService: UsersService,
     private readonly fcmService: FcmService,
-    private readonly adminGateway: AdminNotificationsGateway,
   ) {}
 
   async registerTokens(userId: string, tokens: string[]): Promise<void> {
@@ -43,15 +41,6 @@ export class NotificationsService {
       }
     } catch (err) {
       this.logger.error(`notifyUser failed for user ${userId}`, err as Error);
-    }
-  }
-
-  // Admin-only live in-app channel — separate from notifyUser()'s FCM push.
-  notifyAdmins(event: string, payload: Record<string, unknown>): void {
-    try {
-      this.adminGateway.broadcast(event, payload);
-    } catch (err) {
-      this.logger.error(`notifyAdmins failed for event ${event}`, err as Error);
     }
   }
 }

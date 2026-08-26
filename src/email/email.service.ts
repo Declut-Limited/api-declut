@@ -76,6 +76,21 @@ export class EmailService {
     const { subject, html } = buildOtpEmailBody(name, otp, expiryMinutes);
     await this.sendEmail({ to, toName: name, subject, html });
   }
+
+  async sendSubAdminInviteEmail(
+    to: string,
+    name: string,
+    password: string,
+    loginUrl: string,
+  ): Promise<void> {
+    const { subject, html } = buildSubAdminInviteEmailBody(
+      name,
+      to,
+      password,
+      loginUrl,
+    );
+    await this.sendEmail({ to, toName: name, subject, html });
+  }
 }
 
 // Shared with AuthService.forgotPassword(), which echoes this back in the
@@ -89,6 +104,19 @@ export function buildOtpEmailBody(
   return {
     subject: 'Your Declut verification code',
     html: `<p>Hi ${escapeHtml(name)},</p><p>Your verification code is:</p><p style="font-size:28px;font-weight:bold;letter-spacing:4px;">${otp}</p><p>This code expires in ${expiryMinutes} minutes. If you didn't request this, you can safely ignore this email.</p>`,
+  };
+}
+
+// Sends the sub-admin's own login password in plaintext — explicit instruction, same "invite email carries a temporary credential" pattern as most admin panels. The account is already created by the time this is called (see AdminAuthService.createSubAdmin), so a failed/unconfigured send must not fail the whole creation — swallowed the same way AuthService.register()'s email send is.
+export function buildSubAdminInviteEmailBody(
+  name: string,
+  email: string,
+  password: string,
+  loginUrl: string,
+): { subject: string; html: string } {
+  return {
+    subject: "You've been added as a Declut admin",
+    html: `<p>Hi ${escapeHtml(name)},</p><p>An account has been created for you on the Declut admin portal. Here are your login details:</p><p>Email: ${escapeHtml(email)}<br />Password: ${escapeHtml(password)}</p><p><a href="${loginUrl}">${loginUrl}</a></p><p>For security, please log in and change your password as soon as possible.</p>`,
   };
 }
 

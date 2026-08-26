@@ -857,14 +857,6 @@ export class TransactionsService {
           },
         }),
       ]);
-
-      this.notificationsService.notifyAdmins('transaction.stalled', {
-        transactionId: transaction._id.toString(),
-        buyer: transaction.buyer.toString(),
-        seller: transaction.seller.toString(),
-        amount: transaction.amount,
-        thresholdDays,
-      });
     }
 
     if (stale.length > 0) {
@@ -897,14 +889,6 @@ export class TransactionsService {
         this.trustScoreService.recalculate(transaction.buyer.toString()),
         this.trustScoreService.recalculate(transaction.seller.toString()),
       ]);
-
-      this.notificationsService.notifyAdmins('transaction.disputed', {
-        transactionId: transaction._id.toString(),
-        buyer: transaction.buyer.toString(),
-        seller: transaction.seller.toString(),
-        amount: transaction.amount,
-        attempts: transaction.failedCodeAttempts,
-      });
 
       throw new BadRequestException(
         'Too many failed attempts — this transaction has been flagged for admin review',

@@ -25,7 +25,6 @@ import { SettingsModule } from './settings/settings.module';
 import { CategoriesModule } from './categories/categories.module';
 import { ReportsModule } from './reports/reports.module';
 import { ContentModule } from './content/content.module';
-import { NotificationCampaignsModule } from './notification-campaigns/notification-campaigns.module';
 import { RolesModule } from './roles/roles.module';
 import { AuditContextMiddleware } from './common/middleware/audit-context.middleware';
 
@@ -78,7 +77,6 @@ import { AuditContextMiddleware } from './common/middleware/audit-context.middle
     CategoriesModule,
     ReportsModule,
     ContentModule,
-    NotificationCampaignsModule,
     RolesModule,
   ],
   providers: [

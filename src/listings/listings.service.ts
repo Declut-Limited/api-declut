@@ -404,8 +404,39 @@ export class ListingsService {
         .exec(),
       this.listingModel.countDocuments(filter),
     ]);
-    const results = await this.attachSellerSummaries(found);
+    const results = found.map((l) => this.shapeAdminListingRow(l));
     return { results, total, page, limit };
+  }
+
+  // Lean row shape for the admin listings table — drops fields that only
+  // matter on the detail view (location, views, saves, priceHistory,
+  // condition) and trims category/seller down to what a table row needs.
+  private shapeAdminListingRow(
+    listing: ListingDocument,
+  ): Record<string, unknown> {
+    const obj = listing.toObject() as unknown as Record<string, unknown>;
+    delete obj.location;
+    delete obj.views;
+    delete obj.saves;
+    delete obj.priceHistory;
+    delete obj.condition;
+
+    const category = obj.category as
+      { _id: Types.ObjectId; title?: string } | undefined;
+    if (category) {
+      obj.category = { _id: category._id, title: category.title };
+    }
+
+    const seller = obj.seller as PopulatedSeller | undefined;
+    if (seller) {
+      obj.seller = {
+        _id: seller._id,
+        name: seller.name,
+        company: seller.company,
+      };
+    }
+
+    return obj;
   }
 
   // Unpaginated (full matching set) and flattened rather than reusing attachSellerSummaries() — a nested-object CSV cell is unreadable.

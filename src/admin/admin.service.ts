@@ -80,9 +80,11 @@ export class AdminService {
     type Row = {
       type: 'user' | 'admin';
       id: string;
+      slug?: string;
       name: string;
       email: string;
       role: string;
+      roleId?: string;
       listingsCount: number;
       status: string;
       joinedAt: Date;
@@ -91,6 +93,7 @@ export class AdminService {
     const userRows: Row[] = users.map((u) => ({
       type: 'user' as const,
       id: u._id.toString(),
+      slug: u.slug,
       name: u.name,
       email: u.email,
       role: 'User',
@@ -109,6 +112,9 @@ export class AdminService {
       // what's shown in the role column; permissions are what actually
       // distinguish one admin from another.
       role: 'Admin',
+      // The assigned Role's id (src/roles/) — this admin's actual RBAC
+      // grants, distinct from the literal 'Admin' account-type above.
+      roleId: a.role?.toString(),
       listingsCount: 0,
       status: 'active',
       joinedAt: (a as unknown as { createdAt: Date }).createdAt,
@@ -292,6 +298,8 @@ export class AdminService {
       saves: listing.saves,
       price: listing.price,
       address: listing.locationLabel,
+      location: listing.location,
+      locationLabel: listing.locationLabel,
       description: listing.description,
       specs: {
         brand: listing.specs?.brand,

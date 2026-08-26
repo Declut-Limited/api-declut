@@ -7,6 +7,7 @@ export enum ReportStatus {
   NEW = 'new',
   INVESTIGATING = 'investigating',
   RESOLVED = 'resolved',
+  DISMISSED = 'dismissed',
 }
 
 @Schema({ timestamps: true })

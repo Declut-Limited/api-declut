@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -53,6 +54,8 @@ const ROLE_POPULATE_FIELDS = 'name permissions';
 // forgotPassword() below.
 @Injectable()
 export class AdminAuthService {
+  private readonly logger = new Logger(AdminAuthService.name);
+
   constructor(
     @InjectModel(Admin.name) private adminModel: Model<AdminDocument>,
     @InjectModel(Role.name) private roleModel: Model<RoleDocument>,
@@ -104,6 +107,24 @@ export class AdminAuthService {
       createdBy: creatorAdminId,
     });
     await admin.populate('role', ROLE_POPULATE_FIELDS);
+
+    // Account already exists at this point — a failed/unconfigured email
+    // send must not fail the whole creation, same posture as
+    // AuthService.register()'s verification-email send.
+    const appUrl = this.config.get<string>('ADMIN_APP_URL', '');
+    try {
+      await this.emailService.sendSubAdminInviteEmail(
+        admin.email,
+        admin.name,
+        dto.password,
+        `${appUrl}/login`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `sendSubAdminInviteEmail failed for ${admin.email}`,
+        err as Error,
+      );
+    }
 
     return this.toProfile(admin);
   }

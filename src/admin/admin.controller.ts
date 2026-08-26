@@ -38,11 +38,8 @@ import type { AdminAccessTokenPayload } from '../admin-auth/interfaces/admin-jwt
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
-  // Grouped under 'transactions' — no dedicated 'dashboard' RBAC bucket
-  // exists, and these two endpoints are overwhelmingly transaction/revenue
-  // data, same judgment call already made for the 'offers' routes below.
   @Get('dashboard/insights')
-  @RequirePermission('transactions', 'view')
+  @RequirePermission('dashboard', 'view')
   getDashboardInsights(@Query() dto: DashboardInsightsDto) {
     return this.adminService.getDashboardInsights(
       dto.filter,
@@ -52,33 +49,31 @@ export class AdminController {
   }
 
   @Get('dashboard/revenue-trends')
-  @RequirePermission('transactions', 'view')
+  @RequirePermission('dashboard', 'view')
   getRevenueTrends(@Query() dto: RevenueTrendsDto) {
     return this.adminService.getRevenueTrends(dto.year);
   }
 
-  // Listings data, not transactions — 'listings' bucket, unlike the two dashboard routes above.
   @Get('dashboard/listings-per-month')
-  @RequirePermission('listings', 'view')
+  @RequirePermission('dashboard', 'view')
   getListingsPerMonth() {
     return this.adminService.getListingsPerMonth();
   }
 
   @Get('dashboard/category-distribution')
-  @RequirePermission('transactions', 'view')
+  @RequirePermission('dashboard', 'view')
   getCategoryDistribution() {
     return this.adminService.getCategoryDistribution();
   }
 
   @Get('dashboard/transaction-breakdown')
-  @RequirePermission('transactions', 'view')
+  @RequirePermission('dashboard', 'view')
   getTransactionStatusBreakdown() {
     return this.adminService.getTransactionStatusBreakdown();
   }
 
-  // Reads AuditLog data — 'activity' bucket, matching the standalone Activity Log page's own gate.
   @Get('dashboard/recent-activity')
-  @RequirePermission('activity', 'view')
+  @RequirePermission('dashboard', 'view')
   getRecentActivity() {
     return this.adminService.getRecentActivity();
   }

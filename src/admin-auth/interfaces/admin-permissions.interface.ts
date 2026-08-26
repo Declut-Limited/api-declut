@@ -10,6 +10,7 @@ export const ADMIN_PERMISSION_MODULES = [
   'notifications',
   'settings',
   'roles',
+  'dashboard',
 ] as const;
 
 export type AdminPermissionModule = (typeof ADMIN_PERMISSION_MODULES)[number];

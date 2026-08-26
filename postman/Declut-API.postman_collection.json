@@ -2258,7 +2258,7 @@
                     }
                   ]
                 },
-                "description": "Federated view — merges Users and Admins into one list, sorted by joinedAt. status filter narrows to Users only."
+                "description": "Federated view — merges Users and Admins into one list, sorted by joinedAt. status filter narrows to Users only. User rows carry slug (USR-####); Admin rows carry roleId (the assigned Role's id, see the roles folder) instead."
               },
               "response": []
             },
@@ -2506,7 +2506,7 @@
                     }
                   ]
                 },
-                "description": "status accepts 'all' alongside the real statuses (active/archived/deleted/flagged/sold)."
+                "description": "status accepts 'all' alongside the real statuses (active/archived/deleted/flagged/sold). Lean row shape — no location, views, saves, priceHistory, or condition (detail-view-only fields); category is trimmed to {_id, title} (no slug), seller to {_id, name, company}."
               },
               "response": []
             },
@@ -2584,7 +2584,7 @@
                             "{{listingId}}"
                           ]
                         },
-                        "description": "Same rich detail shape as Get listing by slug — seller info, specs + condition, price history, last-3 activity log entries."
+                        "description": "Same rich detail shape as Get listing by slug — seller info, specs + condition, price history, last-3 activity log entries, location (GeoJSON Point) and locationLabel."
                       },
                       "response": []
                     }
@@ -2618,7 +2618,7 @@
                         "{{listingSlug}}"
                       ]
                     },
-                    "description": "Rich detail: seller info, specs + condition, price history, last-3 activity log entries."
+                    "description": "Rich detail: seller info, specs + condition, price history, last-3 activity log entries, location (GeoJSON Point) and locationLabel."
                   },
                   "response": []
                 }
@@ -3832,7 +3832,7 @@
                             "status"
                           ]
                         },
-                        "description": "status: new|investigating|resolved.",
+                        "description": "status: new|investigating|resolved|dismissed.",
                         "body": {
                           "mode": "raw",
                           "raw": "{\n  \"status\": \"investigating\"\n}",
@@ -4093,273 +4093,6 @@
                     "description": ""
                   },
                   "response": []
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "name": "notification-campaigns",
-          "description": "",
-          "item": [
-            {
-              "name": "List campaigns",
-              "request": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{adminAccessToken}}",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/admin/notification-campaigns?page=1&limit=20&status=draft",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "admin",
-                    "notification-campaigns"
-                  ],
-                  "query": [
-                    {
-                      "key": "page",
-                      "value": "1",
-                      "disabled": false,
-                      "description": "Page number, >= 1. Default 1."
-                    },
-                    {
-                      "key": "limit",
-                      "value": "20",
-                      "disabled": false,
-                      "description": "Results per page, 1-100. Default 20."
-                    },
-                    {
-                      "key": "status",
-                      "value": "draft",
-                      "disabled": true,
-                      "description": "draft or sent."
-                    }
-                  ]
-                },
-                "description": ""
-              },
-              "response": []
-            },
-            {
-              "name": "Create campaign",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{adminAccessToken}}",
-                    "type": "text"
-                  },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/admin/notification-campaigns",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "admin",
-                    "notification-campaigns"
-                  ]
-                },
-                "description": "channel: push|email. title doubles as the push title / email subject.",
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"title\": \"Weekend flash sale\",\n  \"message\": \"Selected listings are 10% off this weekend only \\u2014 check the app for details.\",\n  \"channel\": \"push\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "response": [],
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "const data = pm.response.json();",
-                      "if (data && data.data && data.data[\"_id\"]) {",
-                      "    pm.collectionVariables.set(\"campaignId\", data.data[\"_id\"]);",
-                      "}"
-                    ]
-                  }
-                }
-              ]
-            },
-            {
-              "name": "automation-rules",
-              "description": "",
-              "item": [
-                {
-                  "name": "List automation rules",
-                  "request": {
-                    "method": "GET",
-                    "header": [
-                      {
-                        "key": "Authorization",
-                        "value": "Bearer {{adminAccessToken}}",
-                        "type": "text"
-                      }
-                    ],
-                    "url": {
-                      "raw": "{{baseUrl}}/admin/notification-campaigns/automation-rules",
-                      "host": [
-                        "{{baseUrl}}"
-                      ],
-                      "path": [
-                        "admin",
-                        "notification-campaigns",
-                        "automation-rules"
-                      ]
-                    },
-                    "description": "Static, read-only — describes the automated (non-campaign) notifications this app already sends."
-                  },
-                  "response": []
-                }
-              ]
-            },
-            {
-              "name": "{campaignId}",
-              "description": "",
-              "item": [
-                {
-                  "name": "Get campaign by ID",
-                  "request": {
-                    "method": "GET",
-                    "header": [
-                      {
-                        "key": "Authorization",
-                        "value": "Bearer {{adminAccessToken}}",
-                        "type": "text"
-                      }
-                    ],
-                    "url": {
-                      "raw": "{{baseUrl}}/admin/notification-campaigns/{{campaignId}}",
-                      "host": [
-                        "{{baseUrl}}"
-                      ],
-                      "path": [
-                        "admin",
-                        "notification-campaigns",
-                        "{{campaignId}}"
-                      ]
-                    },
-                    "description": ""
-                  },
-                  "response": []
-                },
-                {
-                  "name": "Update campaign",
-                  "request": {
-                    "method": "PATCH",
-                    "header": [
-                      {
-                        "key": "Authorization",
-                        "value": "Bearer {{adminAccessToken}}",
-                        "type": "text"
-                      },
-                      {
-                        "key": "Content-Type",
-                        "value": "application/json",
-                        "type": "text"
-                      }
-                    ],
-                    "url": {
-                      "raw": "{{baseUrl}}/admin/notification-campaigns/{{campaignId}}",
-                      "host": [
-                        "{{baseUrl}}"
-                      ],
-                      "path": [
-                        "admin",
-                        "notification-campaigns",
-                        "{{campaignId}}"
-                      ]
-                    },
-                    "description": "Only while still draft.",
-                    "body": {
-                      "mode": "raw",
-                      "raw": "{\n  \"message\": \"Selected listings are 15% off this weekend only \\u2014 check the app for details.\"\n}",
-                      "options": {
-                        "raw": {
-                          "language": "json"
-                        }
-                      }
-                    }
-                  },
-                  "response": []
-                },
-                {
-                  "name": "Delete campaign",
-                  "request": {
-                    "method": "DELETE",
-                    "header": [
-                      {
-                        "key": "Authorization",
-                        "value": "Bearer {{adminAccessToken}}",
-                        "type": "text"
-                      }
-                    ],
-                    "url": {
-                      "raw": "{{baseUrl}}/admin/notification-campaigns/{{campaignId}}",
-                      "host": [
-                        "{{baseUrl}}"
-                      ],
-                      "path": [
-                        "admin",
-                        "notification-campaigns",
-                        "{{campaignId}}"
-                      ]
-                    },
-                    "description": "Only while still draft."
-                  },
-                  "response": []
-                },
-                {
-                  "name": "send",
-                  "description": "",
-                  "item": [
-                    {
-                      "name": "Send campaign",
-                      "request": {
-                        "method": "PATCH",
-                        "header": [
-                          {
-                            "key": "Authorization",
-                            "value": "Bearer {{adminAccessToken}}",
-                            "type": "text"
-                          }
-                        ],
-                        "url": {
-                          "raw": "{{baseUrl}}/admin/notification-campaigns/{{campaignId}}/send",
-                          "host": [
-                            "{{baseUrl}}"
-                          ],
-                          "path": [
-                            "admin",
-                            "notification-campaigns",
-                            "{{campaignId}}",
-                            "send"
-                          ]
-                        },
-                        "description": "Sends to every user via the existing NotificationsService/EmailService. Only while still draft; permanent afterward."
-                      },
-                      "response": []
-                    }
-                  ]
                 }
               ]
             }
@@ -4708,7 +4441,7 @@
                         "sub-admins"
                       ]
                     },
-                    "description": "Every admin must be assigned a Role at creation (roleId) — access comes entirely from that Role's permissions, not from anything on the admin itself. title is a free-text job label, not a role.",
+                    "description": "Every admin must be assigned a Role at creation (roleId) — access comes entirely from that Role's permissions, not from anything on the admin itself. title is a free-text job label, not a role. Sends an invite email to the new sub-admin with their email, password, and a link to the admin portal login page — a failed/unconfigured send does not fail the creation itself.",
                     "body": {
                       "mode": "raw",
                       "raw": "{\n  \"email\": \"amaka.okafor@declut.com\",\n  \"name\": \"Amaka Okafor\",\n  \"password\": \"SubAdminPass2026!\",\n  \"title\": \"Support Lead\",\n  \"company\": \"Declut\",\n  \"roleId\": \"{{roleId}}\"\n}",
@@ -5118,41 +4851,12 @@
           ]
         }
       ]
-    },
-    {
-      "name": "admin-notifications",
-      "description": "",
-      "item": [
-        {
-          "name": "Connect — admin-notifications gateway (see description)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/admin-notifications",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "admin-notifications"
-              ]
-            },
-            "description": "Not a real HTTP request (running it 404s — expected). Connect a Socket.IO client to {{wsBaseUrl}}/admin-notifications (no /api prefix) with auth: { token: adminAccessToken }. Events: transaction.disputed, transaction.stalled."
-          },
-          "response": []
-        }
-      ]
     }
   ],
   "variable": [
     {
       "key": "baseUrl",
       "value": "https://api-declut.up.railway.app/api",
-      "type": "string"
-    },
-    {
-      "key": "wsBaseUrl",
-      "value": "https://api-declut.up.railway.app",
       "type": "string"
     },
     {
@@ -5247,11 +4951,6 @@
     },
     {
       "key": "contentSlug",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "campaignId",
       "value": "",
       "type": "string"
     },
