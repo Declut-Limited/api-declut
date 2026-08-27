@@ -56,9 +56,9 @@ export interface AdminProfile {
   lastName?: string;
   phone?: string;
   dashboardPreferences?: DashboardPreferences;
-  passwordChangedAt?: Date;
-  lastLoginAt?: Date;
-  lastProfileUpdateAt?: Date;
+  passwordChangedAt?: Date | null;
+  lastLoginAt?: Date | null;
+  lastProfileUpdateAt?: Date | null;
   title?: string;
   company?: string;
   role: { id: string; name: string; permissions: AdminPermissions } | null;
@@ -531,9 +531,9 @@ export class AdminAuthService {
       lastName: admin.lastName,
       phone: admin.phone,
       dashboardPreferences: admin.dashboardPreferences,
-      passwordChangedAt: admin.passwordChangedAt,
-      lastLoginAt: admin.lastLoginAt,
-      lastProfileUpdateAt: admin.lastProfileUpdateAt,
+      passwordChangedAt: admin.passwordChangedAt ?? null,
+      lastLoginAt: admin.lastLoginAt ?? null,
+      lastProfileUpdateAt: admin.lastProfileUpdateAt ?? null,
       title: admin.title,
       company: admin.company,
       role: role
