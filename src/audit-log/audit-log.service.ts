@@ -8,6 +8,7 @@ import { describeEvent } from './event-labels';
 import { UsersService } from '../users/users.service';
 import { AdminAuthService } from '../admin-auth/admin-auth.service';
 import { CounterService } from '../common/counter/counter.service';
+import { toCsv } from '../common/utils/csv.util';
 
 interface ActorSummary {
   id: string;
@@ -132,6 +133,39 @@ export class AuditLogService {
   async remove(id: string): Promise<void> {
     const entry = await this.findById(id);
     await entry.deleteOne();
+  }
+
+  // Unpaginated and flattened, same convention as every other export in this app. Actor stays a raw id/string rather than resolved to a name — resolving each row would mean an N+1 lookup per row across a potentially large unpaginated set; the paginated list view already pays that cost at 20 rows/page, this export doesn't.
+  async exportCsv(entityType?: string): Promise<string> {
+    const filter = entityType ? { entityType } : {};
+    const rows = await this.auditLogModel
+      .find(filter)
+      .sort({ createdAt: -1 })
+      .exec();
+
+    const shaped = rows.map((r) => ({
+      slug: r.slug ?? '',
+      entityType: r.entityType,
+      entityId: r.entityId.toString(),
+      event: describeEvent(r.event),
+      actor: r.actor,
+      oldState: r.oldState ?? '',
+      newState: r.newState ?? '',
+      ipAddress: r.ipAddress ?? '',
+      createdAt: r.createdAt,
+    }));
+
+    return toCsv(shaped, [
+      'slug',
+      'entityType',
+      'entityId',
+      'event',
+      'actor',
+      'oldState',
+      'newState',
+      'ipAddress',
+      'createdAt',
+    ]);
   }
 
   private async shapeSummary(

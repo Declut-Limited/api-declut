@@ -4,8 +4,10 @@ import {
   Get,
   Param,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { AuditLogService } from './audit-log.service';
 import { ListActivityLogDto } from './dto/list-activity-log.dto';
 import { AdminJwtAuthGuard } from '../admin-auth/guards/admin-jwt-auth.guard';
@@ -25,6 +27,19 @@ export class AuditLogController {
       dto.limit ?? 20,
       dto.entityType,
     );
+  }
+
+  // Must come before ':id' — otherwise Nest matches "export" as the id.
+  @Get('export')
+  @RequirePermission('activity', 'view')
+  async export(@Query() dto: ListActivityLogDto, @Res() res: Response) {
+    const csv = await this.auditLogService.exportCsv(dto.entityType);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="activity-log.csv"',
+    );
+    res.send(csv);
   }
 
   @Get(':id')

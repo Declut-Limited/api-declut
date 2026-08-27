@@ -6,6 +6,7 @@ import { ReportsController } from './reports.controller';
 import { AdminAuthModule } from '../admin-auth/admin-auth.module';
 import { CounterModule } from '../common/counter/counter.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { AuditLogModule } from '../audit-log/audit-log.module';
     AdminAuthModule,
     CounterModule,
     AuditLogModule,
+    NotificationsModule,
   ],
   controllers: [ReportsController],
   providers: [ReportsService],

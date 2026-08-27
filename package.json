@@ -20,6 +20,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "@nestjs/bullmq": "^12.0.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.0.1",
@@ -32,12 +33,14 @@
     "@nestjs/throttler": "^6.5.0",
     "@nestjs/websockets": "^11.1.28",
     "bcrypt": "^6.0.0",
+    "bullmq": "^6.3.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "cloudinary": "^2.10.0",
     "firebase-admin": "^14.1.0",
     "google-auth-library": "^10.9.0",
     "helmet": "^8.3.0",
+    "ioredis": "^6.0.0",
     "joi": "^18.2.3",
     "mailtrap": "^4.9.0",
     "mongoose": "^9.7.4",

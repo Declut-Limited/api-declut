@@ -1,12 +1,17 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, isValidObjectId } from 'mongoose';
-import { Content, ContentDocument } from './schemas/content.schema';
+import {
+  Content,
+  ContentDocument,
+  ContentStatus,
+} from './schemas/content.schema';
 import { CreateContentDto } from './dto/create-content.dto';
 import { UpdateContentDto } from './dto/update-content.dto';
 import { ListContentDto } from './dto/list-content.dto';
 import { CounterService } from '../common/counter/counter.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 // Admin has no `status` field of its own (unlike User's accountStatus), so that part of the populate ask is skipped.
 const CREATED_BY_POPULATE = {
@@ -21,6 +26,7 @@ export class ContentService {
     @InjectModel(Content.name) private contentModel: Model<ContentDocument>,
     private readonly counterService: CounterService,
     private readonly auditLogService: AuditLogService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async create(
@@ -45,6 +51,13 @@ export class ContentService {
       actor: adminId,
       newState: content.status,
     });
+
+    if (content.status === ContentStatus.PUBLISHED) {
+      await this.notificationsService.broadcastContentPublished(
+        content,
+        adminId,
+      );
+    }
 
     return content;
   }
@@ -126,6 +139,13 @@ export class ContentService {
       oldState,
       newState: content.status,
     });
+
+    if (content.status === ContentStatus.PUBLISHED) {
+      await this.notificationsService.broadcastContentPublished(
+        content,
+        adminId,
+      );
+    }
 
     return content;
   }

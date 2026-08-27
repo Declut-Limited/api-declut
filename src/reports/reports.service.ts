@@ -11,6 +11,8 @@ import { ListReportsDto } from './dto/list-reports.dto';
 import { CounterService } from '../common/counter/counter.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { toCsv } from '../common/utils/csv.util';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationRecipientType } from '../notifications/schemas/notification.schema';
 
 // Proposed field sets, not explicitly pinned down beyond "populated" —
 // flag back if these need adjusting once a real UI consumes them.
@@ -27,6 +29,7 @@ export class ReportsService {
     @InjectModel(Report.name) private reportModel: Model<ReportDocument>,
     private readonly counterService: CounterService,
     private readonly auditLogService: AuditLogService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async create(adminId: string, dto: CreateReportDto): Promise<ReportDocument> {
@@ -161,6 +164,16 @@ export class ReportsService {
       oldState,
       newState: status,
     });
+
+    if (status === ReportStatus.RESOLVED) {
+      await this.notificationsService.notify({
+        recipientType: NotificationRecipientType.USER,
+        recipientId: report.reporter.toString(),
+        type: 'report_resolved',
+        title: 'Your report has been resolved',
+        body: `Your report "${report.title}" has been resolved.`,
+      });
+    }
 
     return report;
   }

@@ -19,6 +19,7 @@ import { TransactionStatus } from '../transactions/schemas/transaction.schema';
 import { UsersService } from '../users/users.service';
 import { TrustScoreService } from '../trust-score/trust-score.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationRecipientType } from '../notifications/schemas/notification.schema';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { toCsv } from '../common/utils/csv.util';
 
@@ -251,6 +252,15 @@ export class ReviewsService {
       oldState,
       newState: review.status,
     });
+
+    await this.notificationsService.notify({
+      recipientType: NotificationRecipientType.USER,
+      recipientId: review.reviewee.toString(),
+      type: 'review_flagged',
+      title: 'A review about you was flagged',
+      body: 'An admin flagged a review on your profile for attention.',
+    });
+
     return review;
   }
 

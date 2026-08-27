@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
+import { BullModule } from '@nestjs/bullmq';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { envValidationSchema } from './config/env.validation';
 import { HealthModule } from './health/health.module';
@@ -58,6 +59,35 @@ import { AuditContextMiddleware } from './common/middleware/audit-context.middle
       },
     ]),
     ScheduleModule.forRoot(),
+    // Backs the notification-broadcast queue. lazyConnect + maxRetriesPerRequest: null (BullMQ's own requirement) so a missing Redis in this environment doesn't block app boot — jobs just won't process until Redis is reachable.
+    BullModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        const redisUrl = config.get<string>(
+          'REDIS_URL',
+          'redis://127.0.0.1:6379',
+        );
+        const url = new URL(redisUrl);
+        // Manually decomposing the URL (rather than handing the raw string to ioredis) means TLS never gets applied on its own — has to be set explicitly. Can't trust the `rediss:` scheme alone either: Upstash's own copy-pasted connection string uses a plain `redis://` scheme while still requiring TLS on the actual endpoint (confirmed live — a plaintext connection to it connects then immediately resets). Defaulting TLS on for any non-loopback host covers every managed provider correctly; only a local/self-hosted Redis on the same machine skips it.
+        const isLoopback = ['127.0.0.1', 'localhost', '::1'].includes(
+          url.hostname,
+        );
+        const useTls = url.protocol === 'rediss:' || !isLoopback;
+        return {
+          connection: {
+            host: url.hostname,
+            port: Number(url.port) || 6379,
+            username: url.username || undefined,
+            password: url.password || undefined,
+            ...(useTls ? { tls: {} } : {}),
+            lazyConnect: true,
+            maxRetriesPerRequest: null,
+            // Capped backoff, not the default rapid-retry — an unreachable Redis in this environment shouldn't flood the logs reconnecting every few ms.
+            retryStrategy: (times: number) => Math.min(times * 1000, 30000),
+          },
+        };
+      },
+    }),
     AuthGuardsModule,
     HealthModule,
     UsersModule,

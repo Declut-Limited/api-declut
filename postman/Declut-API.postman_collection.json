@@ -1720,6 +1720,76 @@
               ]
             }
           ]
+        },
+        {
+          "name": "List my notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false,
+                  "description": "Page number, >= 1. Default 1."
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false,
+                  "description": "Results per page, 1-100. Default 20."
+                }
+              ]
+            },
+            "description": "Paginated (page/limit query params). Returns { results, total, unreadCount, page, limit }."
+          },
+          "response": []
+        },
+        {
+          "name": "{id}",
+          "description": "",
+          "item": [
+            {
+              "name": "Mark notification read",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/notifications/{{notificationId}}/read",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "notifications",
+                    "{{notificationId}}",
+                    "read"
+                  ]
+                },
+                "description": "Scoped to the caller — marking another user's notification is a no-op, not a 403/404 leak."
+              },
+              "response": []
+            }
+          ]
         }
       ]
     },
@@ -3982,6 +4052,40 @@
               ]
             },
             {
+              "name": "Export activity log",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/activity-log/export?entityType=listing",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "activity-log",
+                    "export"
+                  ],
+                  "query": [
+                    {
+                      "key": "entityType",
+                      "value": "listing",
+                      "disabled": true,
+                      "description": "Filter to one entityType."
+                    }
+                  ]
+                },
+                "description": "CSV, unpaginated. Optional entityType query param. Must be requested before {id} — otherwise Nest would match \"export\" as the id."
+              },
+              "response": []
+            },
+            {
               "name": "{id}",
               "description": "",
               "item": [
@@ -4751,6 +4855,135 @@
               ]
             }
           ]
+        },
+        {
+          "name": "notifications",
+          "description": "An admin's own notification bell/inbox — not PermissionsGuard-gated, same posture as /admin/auth/me.",
+          "item": [
+            {
+              "name": "Get my notifications",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/notifications?page=1&limit=20",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "notifications"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "disabled": false,
+                      "description": "Page number, >= 1. Default 1."
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "disabled": false,
+                      "description": "Results per page, 1-100. Default 20."
+                    }
+                  ]
+                },
+                "description": "Paginated. Returns { results, total, unreadCount, page, limit }. Real-time delivery for new ones is over the admin-notifications WebSocket namespace, not this endpoint — see the gateway."
+              },
+              "response": []
+            },
+            {
+              "name": "{notificationId}",
+              "description": "",
+              "item": [
+                {
+                  "name": "Mark notification read",
+                  "request": {
+                    "method": "PATCH",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/notifications/{{notificationId}}/read",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "notifications",
+                        "{{notificationId}}",
+                        "read"
+                      ]
+                    },
+                    "description": "Scoped to the caller."
+                  },
+                  "response": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "notification-broadcasts",
+          "description": "Platform-wide broadcast log (one row per bulk send, e.g. a published Content item) — gated by the `notifications` RBAC permission, unlike the personal inbox above.",
+          "item": [
+            {
+              "name": "List notification broadcasts",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/notification-broadcasts?page=1&limit=20",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "notification-broadcasts"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "disabled": false,
+                      "description": "Page number, >= 1. Default 1."
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "disabled": false,
+                      "description": "Results per page, 1-100. Default 20."
+                    },
+                    {
+                      "key": "status",
+                      "value": "sent",
+                      "disabled": true,
+                      "description": "Filter to one status."
+                    }
+                  ]
+                },
+                "description": "Paginated, optional status filter (draft|scheduled|sending|sent|failed|cancelled)."
+              },
+              "response": []
+            }
+          ]
         }
       ]
     }
@@ -4870,6 +5103,10 @@
       "key": "reporterId",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "notificationId",
+      "value": ""
     }
   ]
 }

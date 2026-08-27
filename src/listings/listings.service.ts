@@ -17,6 +17,8 @@ import { SearchListingsDto } from './dto/search-listings.dto';
 import { CategoriesService } from '../categories/categories.service';
 import { CounterService } from '../common/counter/counter.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationRecipientType } from '../notifications/schemas/notification.schema';
 import { escapeRegex } from '../common/utils/regex.util';
 import { MONTH_ABBREVIATIONS } from '../common/utils/date.util';
 import { toCsv } from '../common/utils/csv.util';
@@ -43,6 +45,7 @@ export class ListingsService {
     private readonly categoriesService: CategoriesService,
     private readonly counterService: CounterService,
     private readonly auditLogService: AuditLogService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async create(
@@ -686,6 +689,15 @@ export class ListingsService {
       oldState,
       newState: listing.status,
     });
+
+    await this.notificationsService.notify({
+      recipientType: NotificationRecipientType.USER,
+      recipientId: listing.seller.toString(),
+      type: 'listing_flagged',
+      title: 'Your listing was flagged',
+      body: `Your listing "${listing.title}" was flagged for review.`,
+    });
+
     return listing;
   }
 
@@ -724,6 +736,15 @@ export class ListingsService {
       oldState,
       newState: listing.status,
     });
+
+    await this.notificationsService.notify({
+      recipientType: NotificationRecipientType.USER,
+      recipientId: listing.seller.toString(),
+      type: 'listing_unlisted',
+      title: 'Your listing was unlisted',
+      body: `Your listing "${listing.title}" was taken down by an admin.`,
+    });
+
     return listing;
   }
 

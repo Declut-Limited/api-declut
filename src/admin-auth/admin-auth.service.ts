@@ -1,10 +1,12 @@
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
   UnauthorizedException,
+  forwardRef,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
@@ -37,6 +39,8 @@ import { EmailService } from '../email/email.service';
 import { escapeRegex } from '../common/utils/regex.util';
 import { AdminPermissions } from './interfaces/admin-permissions.interface';
 import { CounterService } from '../common/counter/counter.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationRecipientType } from '../notifications/schemas/notification.schema';
 
 export interface AdminTokenPair {
   accessToken: string;
@@ -79,6 +83,9 @@ export class AdminAuthService {
     private readonly config: ConfigService,
     private readonly emailService: EmailService,
     private readonly counterService: CounterService,
+    // forwardRef both ways — see notifications.module.ts's comment on the AdminAuthModule/NotificationsModule cycle.
+    @Inject(forwardRef(() => NotificationsService))
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async login(dto: AdminLoginDto): Promise<AdminTokenPair> {
@@ -169,6 +176,14 @@ export class AdminAuthService {
     admin.role = role._id;
     await admin.save();
     await admin.populate('role', ROLE_POPULATE_FIELDS);
+
+    await this.notificationsService.notify({
+      recipientType: NotificationRecipientType.ADMIN,
+      recipientId: adminId,
+      type: 'role_updated',
+      title: 'Your role was updated',
+      body: `Your role is now "${role.name}".`,
+    });
 
     return this.toProfile(admin);
   }
@@ -309,6 +324,9 @@ export class AdminAuthService {
     await this.adminModel
       .updateOne({ _id: payload.sub }, { $unset: { refreshToken: 1 } })
       .exec();
+
+    // Doesn't revoke the access token itself (stateless JWT) — just drops the live socket so the bell stops updating past logout. See NotificationsService.disconnectAdminSockets().
+    this.notificationsService.disconnectAdminSockets(payload.sub);
   }
 
   // Link-based reset, not the regular-user OTP flow: generate a random raw token, store only its SHA-256 hash + a short expiry, email the raw token as a link. Deliberately NOT anti-enumeration, unlike the regular-User flow: Admin accounts are never self-registered (only created by another admin via createSubAdmin), so there's no public signup surface an attacker could probe — and a generic "if that email is registered..." response just left a real admin unable to tell whether their own reset email actually went out. Explicit instruction: verify the email exists first, then send and report honestly either way.

@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 import { ConfigService } from '@nestjs/config';
 import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
@@ -10,6 +11,9 @@ async function bootstrap() {
     rawBody: true,
   });
   const config = app.get(ConfigService);
+
+  // Backs NotificationsGateway (the admin notification bell) — the only WebSocket usage in this app.
+  app.useWebSocketAdapter(new IoAdapter(app));
 
   // Every HTTP route lives under /api (e.g. /api/auth/login).
   app.setGlobalPrefix('api');
