@@ -40,12 +40,7 @@ export class Transaction {
   })
   seller: Types.ObjectId;
 
-  // Set only if this transaction was seeded from an accepted negotiation
-  // rather than an outright buy at list price.
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Offer' })
-  offer?: Types.ObjectId;
-
-  // The agreed price — listing.price, or offer.amount if `offer` is set.
+  // The agreed price — listing.price at checkout.
   @Prop({ required: true, min: 0 })
   amount: number;
 

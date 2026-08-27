@@ -14,7 +14,6 @@ import type { Response } from 'express';
 import { AdminService } from './admin.service';
 import {
   AdminListListingsDto,
-  AdminListOffersDto,
   AdminListReviewsDto,
   AdminListTransactionsDto,
   AdminListUsersDto,
@@ -27,6 +26,9 @@ import { EmailSellerDto } from './dto/email-seller.dto';
 import { UpdateListingDto } from '../listings/dto/update-listing.dto';
 import { DashboardInsightsDto, RevenueTrendsDto } from './dto/dashboard.dto';
 import { UpdateAppSettingsDto } from '../settings/dto/update-app-settings.dto';
+import { UpdateGeneralSettingsDto } from '../settings/dto/update-general-settings.dto';
+import { UpdatePaymentSettingsDto } from '../settings/dto/update-payment-settings.dto';
+import { UpdateFeesSettingsDto } from '../settings/dto/update-fees-settings.dto';
 import { AdminJwtAuthGuard } from '../admin-auth/guards/admin-jwt-auth.guard';
 import { PermissionsGuard } from '../admin-auth/guards/permissions.guard';
 import { RequirePermission } from '../admin-auth/decorators/require-permission.decorator';
@@ -259,15 +261,6 @@ export class AdminController {
     return this.adminService.refundTransaction(id, admin.sub, dto.reason);
   }
 
-  // Offers has no permission bucket of its own in the RBAC module list —
-  // grouped under transactions since an offer only ever matters as the
-  // pre-checkout step feeding one.
-  @Get('offers')
-  @RequirePermission('transactions', 'view')
-  listOffers(@Query() dto: AdminListOffersDto) {
-    return this.adminService.listOffers(dto.page ?? 1, dto.limit ?? 20);
-  }
-
   @Get('reviews')
   @RequirePermission('reviews', 'view')
   listReviews(@Query() dto: AdminListReviewsDto) {
@@ -321,5 +314,23 @@ export class AdminController {
   @RequirePermission('settings', 'write')
   updateSettings(@Body() dto: UpdateAppSettingsDto) {
     return this.adminService.updateSettings(dto);
+  }
+
+  @Patch('settings/general')
+  @RequirePermission('settings', 'write')
+  updateGeneralSettings(@Body() dto: UpdateGeneralSettingsDto) {
+    return this.adminService.updateGeneralSettings(dto);
+  }
+
+  @Patch('settings/payments')
+  @RequirePermission('settings', 'write')
+  updatePaymentSettings(@Body() dto: UpdatePaymentSettingsDto) {
+    return this.adminService.updatePaymentSettings(dto);
+  }
+
+  @Patch('settings/fees')
+  @RequirePermission('settings', 'write')
+  updateFeesSettings(@Body() dto: UpdateFeesSettingsDto) {
+    return this.adminService.updateFeesSettings(dto);
   }
 }

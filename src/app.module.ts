@@ -14,7 +14,6 @@ import { AuthGuardsModule } from './auth/guards/guards.module';
 import { ListingsModule } from './listings/listings.module';
 import { FavoritesModule } from './favorites/favorites.module';
 import { KycModule } from './kyc/kyc.module';
-import { OffersModule } from './offers/offers.module';
 import { PaymentsModule } from './payments/payments.module';
 import { TransactionsModule } from './transactions/transactions.module';
 import { ReviewsModule } from './reviews/reviews.module';
@@ -66,7 +65,6 @@ import { AuditContextMiddleware } from './common/middleware/audit-context.middle
     ListingsModule,
     FavoritesModule,
     KycModule,
-    OffersModule,
     PaymentsModule,
     TransactionsModule,
     ReviewsModule,

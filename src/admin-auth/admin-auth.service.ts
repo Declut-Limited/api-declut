@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   Logger,
@@ -12,7 +13,11 @@ import { Model } from 'mongoose';
 import { randomBytes, randomUUID, createHash } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import type { StringValue } from 'ms';
-import { Admin, AdminDocument } from './schemas/admin.schema';
+import {
+  Admin,
+  AdminDocument,
+  DashboardPreferences,
+} from './schemas/admin.schema';
 import { Role, RoleDocument } from '../roles/schemas/role.schema';
 import { AdminLoginDto } from './dto/admin-login.dto';
 import { CreateSubAdminDto } from './dto/create-sub-admin.dto';
@@ -21,6 +26,8 @@ import { AdminForgotPasswordDto } from './dto/admin-forgot-password.dto';
 import { AdminResetPasswordDto } from './dto/admin-reset-password.dto';
 import { AdminChangePasswordDto } from './dto/admin-change-password.dto';
 import { UpdateAdminRoleDto } from './dto/update-admin-role.dto';
+import { UpdateAdminGeneralProfileDto } from './dto/update-admin-general-profile.dto';
+import { UpdateDashboardPreferencesDto } from './dto/update-dashboard-preferences.dto';
 import { AdminRefreshTokenPayload } from './interfaces/admin-jwt-payload.interface';
 import {
   hashRefreshToken,
@@ -41,6 +48,13 @@ export interface AdminProfile {
   slug?: string;
   email: string;
   name: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  dashboardPreferences?: DashboardPreferences;
+  passwordChangedAt?: Date;
+  lastLoginAt?: Date;
+  profileUpdatedAt?: Date;
   title?: string;
   company?: string;
   role: { id: string; name: string; permissions: AdminPermissions } | null;
@@ -80,6 +94,10 @@ export class AdminAuthService {
     if (!matches) {
       throw new UnauthorizedException('Invalid credentials');
     }
+
+    await this.adminModel
+      .updateOne({ _id: admin._id }, { lastLoginAt: new Date() })
+      .exec();
 
     return this.issueTokens(admin);
   }
@@ -168,6 +186,68 @@ export class AdminAuthService {
     if (!admin) {
       throw new UnauthorizedException('Admin not found');
     }
+    return this.toProfile(admin);
+  }
+
+  // First of 3 category-scoped admin-profile update endpoints (general
+  // here; 2 more TBD). firstName/lastName/phone/email — a partial update,
+  // same shape as the settings category endpoints. Whenever firstName or
+  // lastName is part of this update, `name` is recomputed from both
+  // (explicit instruction: keep `name` in sync rather than replacing it).
+  async updateGeneralProfile(
+    adminId: string,
+    dto: UpdateAdminGeneralProfileDto,
+  ): Promise<AdminProfile> {
+    const admin = await this.adminModel.findById(adminId).exec();
+    if (!admin) {
+      throw new UnauthorizedException('Admin not found');
+    }
+
+    if (dto.email && dto.email.toLowerCase() !== admin.email) {
+      const existing = await this.adminModel.findOne({
+        email: dto.email.toLowerCase(),
+      });
+      if (existing) {
+        throw new ConflictException('An admin with this email already exists');
+      }
+      admin.email = dto.email.toLowerCase();
+    }
+    if (dto.phone !== undefined) {
+      admin.phone = dto.phone;
+    }
+    if (dto.firstName !== undefined) {
+      admin.firstName = dto.firstName;
+    }
+    if (dto.lastName !== undefined) {
+      admin.lastName = dto.lastName;
+    }
+    if (dto.firstName !== undefined || dto.lastName !== undefined) {
+      admin.name = `${admin.firstName ?? ''} ${admin.lastName ?? ''}`.trim();
+    }
+    admin.profileUpdatedAt = new Date();
+
+    await admin.save();
+    await admin.populate('role', ROLE_POPULATE_FIELDS);
+    return this.toProfile(admin);
+  }
+
+  // Second of the 3 admin-profile update endpoints. Merges onto the
+  // existing dashboardPreferences sub-document rather than replacing it
+  // wholesale, so a partial PATCH never resets fields the caller didn't send.
+  async updateDashboardPreferences(
+    adminId: string,
+    dto: UpdateDashboardPreferencesDto,
+  ): Promise<AdminProfile> {
+    const admin = await this.adminModel.findById(adminId).exec();
+    if (!admin) {
+      throw new UnauthorizedException('Admin not found');
+    }
+
+    admin.dashboardPreferences = { ...admin.dashboardPreferences, ...dto };
+    admin.profileUpdatedAt = new Date();
+
+    await admin.save();
+    await admin.populate('role', ROLE_POPULATE_FIELDS);
     return this.toProfile(admin);
   }
 
@@ -297,6 +377,7 @@ export class AdminAuthService {
         { _id: admin._id },
         {
           password,
+          passwordChangedAt: new Date(),
           $unset: {
             refreshToken: 1,
             passwordResetToken: 1,
@@ -336,10 +417,22 @@ export class AdminAuthService {
     if (!matches) {
       throw new UnauthorizedException('Current password is incorrect');
     }
+    if (dto.newPassword !== dto.confirmNewPassword) {
+      throw new BadRequestException(
+        'newPassword and confirmNewPassword do not match',
+      );
+    }
 
     const password = await bcrypt.hash(dto.newPassword, this.saltRounds());
     await this.adminModel
-      .updateOne({ _id: adminId }, { password, $unset: { refreshToken: 1 } })
+      .updateOne(
+        { _id: adminId },
+        {
+          password,
+          passwordChangedAt: new Date(),
+          $unset: { refreshToken: 1 },
+        },
+      )
       .exec();
 
     return {
@@ -416,6 +509,13 @@ export class AdminAuthService {
       slug: admin.slug,
       email: admin.email,
       name: admin.name,
+      firstName: admin.firstName,
+      lastName: admin.lastName,
+      phone: admin.phone,
+      dashboardPreferences: admin.dashboardPreferences,
+      passwordChangedAt: admin.passwordChangedAt,
+      lastLoginAt: admin.lastLoginAt,
+      profileUpdatedAt: admin.profileUpdatedAt,
       title: admin.title,
       company: admin.company,
       role: role

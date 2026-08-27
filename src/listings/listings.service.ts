@@ -14,7 +14,6 @@ import {
 import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { SearchListingsDto } from './dto/search-listings.dto';
-import { SettingsService } from '../settings/settings.service';
 import { CategoriesService } from '../categories/categories.service';
 import { CounterService } from '../common/counter/counter.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -41,7 +40,6 @@ interface PopulatedSeller {
 export class ListingsService {
   constructor(
     @InjectModel(Listing.name) private listingModel: Model<ListingDocument>,
-    private readonly settingsService: SettingsService,
     private readonly categoriesService: CategoriesService,
     private readonly counterService: CounterService,
     private readonly auditLogService: AuditLogService,
@@ -95,10 +93,10 @@ export class ListingsService {
 
   // Display-only variant of findById() — seller populated and reshaped for
   // the public single-listing GET. Deliberately separate from findById()
-  // itself: OffersService/TransactionsService/FavoritesService all call
-  // findById() internally and read listing.seller as a raw ObjectId
-  // (ownership checks, seller lookups) — populating seller there would
-  // silently corrupt every one of those .toString() comparisons.
+  // itself: TransactionsService/FavoritesService both call findById()
+  // internally and read listing.seller as a raw ObjectId (ownership
+  // checks, seller lookups) — populating seller there would silently
+  // corrupt every one of those .toString() comparisons.
   async findByIdForDisplay(id: string): Promise<Record<string, unknown>> {
     if (!isValidObjectId(id)) {
       throw new NotFoundException('Listing not found');
@@ -291,9 +289,6 @@ export class ListingsService {
     // there too) rather than a separate $match. $lookup replaces .populate()
     // here since aggregation pipelines don't support it.
     if (dto.lat !== undefined && dto.lng !== undefined) {
-      const settings = await this.settingsService.get();
-      const radiusKm = dto.radiusKm ?? settings.defaultSearchRadiusKm;
-
       const rows = await this.listingModel.aggregate<
         ListingDocument & { seller: PopulatedSeller }
       >([
@@ -301,7 +296,6 @@ export class ListingsService {
           $geoNear: {
             near: { type: 'Point', coordinates: [dto.lng, dto.lat] },
             distanceField: 'distanceMeters',
-            maxDistance: radiusKm * 1000,
             spherical: true,
             query: filter,
           },

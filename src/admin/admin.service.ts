@@ -5,7 +5,6 @@ import { ListingStatus } from '../listings/schemas/listing.schema';
 import type { UpdateListingDto } from '../listings/dto/update-listing.dto';
 import { TransactionsService } from '../transactions/transactions.service';
 import { TransactionStatus } from '../transactions/schemas/transaction.schema';
-import { OffersService } from '../offers/offers.service';
 import { ReviewsService } from '../reviews/reviews.service';
 import { ReviewStatus } from '../reviews/schemas/review.schema';
 import { TrustScoreService } from '../trust-score/trust-score.service';
@@ -13,6 +12,9 @@ import { KycService } from '../kyc/kyc.service';
 import { KycStatus } from '../users/schemas/user.schema';
 import { SettingsService } from '../settings/settings.service';
 import { UpdateAppSettingsDto } from '../settings/dto/update-app-settings.dto';
+import { UpdateGeneralSettingsDto } from '../settings/dto/update-general-settings.dto';
+import { UpdatePaymentSettingsDto } from '../settings/dto/update-payment-settings.dto';
+import { UpdateFeesSettingsDto } from '../settings/dto/update-fees-settings.dto';
 import { AdminAuthService } from '../admin-auth/admin-auth.service';
 import type { AdminDocument } from '../admin-auth/schemas/admin.schema';
 import { EmailService } from '../email/email.service';
@@ -47,7 +49,6 @@ export class AdminService {
     private readonly usersService: UsersService,
     private readonly listingsService: ListingsService,
     private readonly transactionsService: TransactionsService,
-    private readonly offersService: OffersService,
     private readonly reviewsService: ReviewsService,
     private readonly trustScoreService: TrustScoreService,
     private readonly settingsService: SettingsService,
@@ -424,10 +425,6 @@ export class AdminService {
     return this.transactionsService.adminRefund(transactionId, adminId, reason);
   }
 
-  listOffers(page: number, limit: number) {
-    return this.offersService.adminList(page, limit);
-  }
-
   listReviews(dto: AdminListReviewsDto) {
     return this.reviewsService.adminList(
       dto.page ?? 1,
@@ -460,7 +457,19 @@ export class AdminService {
     return this.settingsService.update(dto);
   }
 
-  // Spans Users + Listings + Transactions — same "genuine exception, lives here rather than forced into one domain service" reasoning as the Users federation above. No dedicated 'dashboard' RBAC bucket exists, same judgment call already made for Offers, grouped under 'transactions' in the controller.
+  updateGeneralSettings(dto: UpdateGeneralSettingsDto) {
+    return this.settingsService.updateGeneral(dto);
+  }
+
+  updatePaymentSettings(dto: UpdatePaymentSettingsDto) {
+    return this.settingsService.updatePayments(dto);
+  }
+
+  updateFeesSettings(dto: UpdateFeesSettingsDto) {
+    return this.settingsService.updateFees(dto);
+  }
+
+  // Spans Users + Listings + Transactions — same "genuine exception, lives here rather than forced into one domain service" reasoning as the Users federation above.
   // Fixed set of 5 named filters (no more generic today/week/all) — lastMonth/last3Months/thisYear compare against the FULL prior calendar period, not an elapsed-mirrored one, since each is now a discrete, named option rather than an arbitrary rolling window.
   private static resolveRange(
     filter: DashboardInsightsFilter,

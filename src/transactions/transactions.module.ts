@@ -4,7 +4,6 @@ import { Transaction, TransactionSchema } from './schemas/transaction.schema';
 import { TransactionsService } from './transactions.service';
 import { TransactionsController } from './transactions.controller';
 import { ListingsModule } from '../listings/listings.module';
-import { OffersModule } from '../offers/offers.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { UsersModule } from '../users/users.module';
 import { TrustScoreModule } from '../trust-score/trust-score.module';
@@ -19,7 +18,6 @@ import { CounterModule } from '../common/counter/counter.module';
       { name: Transaction.name, schema: TransactionSchema },
     ]),
     ListingsModule,
-    OffersModule,
     PaymentsModule,
     UsersModule,
     TrustScoreModule,

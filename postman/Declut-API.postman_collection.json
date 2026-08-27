@@ -812,8 +812,8 @@
                 {
                   "key": "radiusKm",
                   "value": "15",
-                  "disabled": false,
-                  "description": "Search radius in km, > 0.1 — defaults to the admin-configured defaultSearchRadiusKm when lat/lng are given but this is omitted."
+                  "disabled": true,
+                  "description": "Currently unread by the backend — defaultSearchRadiusKm and the $geoNear maxDistance cap were removed 2026-08-27 while work is focused on the admin side. Radius search has no distance limit right now."
                 },
                 {
                   "key": "page",
@@ -1259,261 +1259,6 @@
       ]
     },
     {
-      "name": "offers",
-      "description": "",
-      "item": [
-        {
-          "name": "List my offers",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/offers?page=1&limit=20",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "offers"
-              ],
-              "query": [
-                {
-                  "key": "page",
-                  "value": "1",
-                  "disabled": false,
-                  "description": "Page number, >= 1. Default 1."
-                },
-                {
-                  "key": "limit",
-                  "value": "20",
-                  "disabled": false,
-                  "description": "Results per page, 1-50. Default 20."
-                }
-              ]
-            },
-            "description": ""
-          },
-          "response": []
-        },
-        {
-          "name": "Make an offer",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/offers",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "offers"
-              ]
-            },
-            "description": "One pending offer per listing at a time.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"listingId\": \"{{listingId}}\",\n  \"amount\": 38000\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "{offerId}",
-          "description": "",
-          "item": [
-            {
-              "name": "Get offer by ID",
-              "request": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{accessToken}}",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/offers/{{offerId}}",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "offers",
-                    "{{offerId}}"
-                  ]
-                },
-                "description": ""
-              },
-              "response": []
-            },
-            {
-              "name": "accept",
-              "description": "",
-              "item": [
-                {
-                  "name": "Accept offer",
-                  "request": {
-                    "method": "PATCH",
-                    "header": [
-                      {
-                        "key": "Authorization",
-                        "value": "Bearer {{accessToken}}",
-                        "type": "text"
-                      }
-                    ],
-                    "url": {
-                      "raw": "{{baseUrl}}/offers/{{offerId}}/accept",
-                      "host": [
-                        "{{baseUrl}}"
-                      ],
-                      "path": [
-                        "offers",
-                        "{{offerId}}",
-                        "accept"
-                      ]
-                    },
-                    "description": "Only whoever did not make the current offer can accept/reject/counter."
-                  },
-                  "response": []
-                }
-              ]
-            },
-            {
-              "name": "reject",
-              "description": "",
-              "item": [
-                {
-                  "name": "Reject offer",
-                  "request": {
-                    "method": "PATCH",
-                    "header": [
-                      {
-                        "key": "Authorization",
-                        "value": "Bearer {{accessToken}}",
-                        "type": "text"
-                      }
-                    ],
-                    "url": {
-                      "raw": "{{baseUrl}}/offers/{{offerId}}/reject",
-                      "host": [
-                        "{{baseUrl}}"
-                      ],
-                      "path": [
-                        "offers",
-                        "{{offerId}}",
-                        "reject"
-                      ]
-                    },
-                    "description": ""
-                  },
-                  "response": []
-                }
-              ]
-            },
-            {
-              "name": "counter",
-              "description": "",
-              "item": [
-                {
-                  "name": "Counter offer",
-                  "request": {
-                    "method": "POST",
-                    "header": [
-                      {
-                        "key": "Authorization",
-                        "value": "Bearer {{accessToken}}",
-                        "type": "text"
-                      },
-                      {
-                        "key": "Content-Type",
-                        "value": "application/json",
-                        "type": "text"
-                      }
-                    ],
-                    "url": {
-                      "raw": "{{baseUrl}}/offers/{{offerId}}/counter",
-                      "host": [
-                        "{{baseUrl}}"
-                      ],
-                      "path": [
-                        "offers",
-                        "{{offerId}}",
-                        "counter"
-                      ]
-                    },
-                    "description": "",
-                    "body": {
-                      "mode": "raw",
-                      "raw": "{\n  \"amount\": 40000\n}",
-                      "options": {
-                        "raw": {
-                          "language": "json"
-                        }
-                      }
-                    }
-                  },
-                  "response": []
-                }
-              ]
-            },
-            {
-              "name": "withdraw",
-              "description": "",
-              "item": [
-                {
-                  "name": "Withdraw offer",
-                  "request": {
-                    "method": "PATCH",
-                    "header": [
-                      {
-                        "key": "Authorization",
-                        "value": "Bearer {{accessToken}}",
-                        "type": "text"
-                      }
-                    ],
-                    "url": {
-                      "raw": "{{baseUrl}}/offers/{{offerId}}/withdraw",
-                      "host": [
-                        "{{baseUrl}}"
-                      ],
-                      "path": [
-                        "offers",
-                        "{{offerId}}",
-                        "withdraw"
-                      ]
-                    },
-                    "description": "Only while pending, only by whoever made the current offer."
-                  },
-                  "response": []
-                }
-              ]
-            }
-          ]
-        }
-      ]
-    },
-    {
       "name": "transactions",
       "description": "",
       "item": [
@@ -1542,10 +1287,10 @@
                 "transactions"
               ]
             },
-            "description": "offerId optional — omit to pay list price, or pass an accepted offer to pay the negotiated amount.",
+            "description": "Pays the listing's list price and creates a transaction in escrow.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"listingId\": \"{{listingId}}\",\n  \"offerId\": \"\"\n}",
+              "raw": "{\n  \"listingId\": \"{{listingId}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3097,51 +2842,6 @@
           ]
         },
         {
-          "name": "offers",
-          "description": "",
-          "item": [
-            {
-              "name": "List offers (all)",
-              "request": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{adminAccessToken}}",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/admin/offers?page=1&limit=20",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "admin",
-                    "offers"
-                  ],
-                  "query": [
-                    {
-                      "key": "page",
-                      "value": "1",
-                      "disabled": false,
-                      "description": "Page number, >= 1. Default 1."
-                    },
-                    {
-                      "key": "limit",
-                      "value": "20",
-                      "disabled": false,
-                      "description": "Results per page, 1-100. Default 20."
-                    }
-                  ]
-                },
-                "description": ""
-              },
-              "response": []
-            }
-          ]
-        },
-        {
           "name": "reviews",
           "description": "",
           "item": [
@@ -3354,7 +3054,7 @@
                     "settings"
                   ]
                 },
-                "description": "escrowStalledThresholdDays, commissionPercentage, offerExpiryDays, defaultSearchRadiusKm, maxCodeAttempts."
+                "description": "escrowStalledThresholdDays, commissionPercentage, maxCodeAttempts, companyName, supportEmail, defaultCurrency, timezone, cardPaymentsEnabled, bankTransferEnabled, buyerServiceFeePercentage, escrowReleaseFee, minimumPayoutThreshold — the full singleton settings document, regardless of which endpoint last updated a given field."
               },
               "response": []
             },
@@ -3387,7 +3087,127 @@
                 "description": "Partial update — only send fields you're changing.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"defaultSearchRadiusKm\": 20,\n  \"commissionPercentage\": 12\n}",
+                  "raw": "{\n  \"commissionPercentage\": 12,\n  \"escrowStalledThresholdDays\": 5\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Update general settings",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/settings/general",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "settings",
+                    "general"
+                  ]
+                },
+                "description": "Partial update — only send fields you're changing. companyName, supportEmail (valid email), defaultCurrency (ISO 4217 code, e.g. NGN), timezone (IANA identifier, e.g. Africa/Lagos).",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"companyName\": \"Declut Marketplace\",\n  \"supportEmail\": \"support@declut.com\",\n  \"defaultCurrency\": \"NGN\",\n  \"timezone\": \"Africa/Lagos\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Update payment settings",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/settings/payments",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "settings",
+                    "payments"
+                  ]
+                },
+                "description": "Partial update — only send fields you're changing. cardPaymentsEnabled/bankTransferEnabled are admin-facing config only for now (not yet wired into checkout). escrowStalledThresholdDays is the same field the unscoped settings endpoint uses (\"Escrow release window\" in the admin UI). maxCodeAttempts moved here 2026-08-27 — the wrong confirmation-code attempt limit before a transaction auto-flags disputed.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"cardPaymentsEnabled\": true,\n  \"bankTransferEnabled\": true,\n  \"escrowStalledThresholdDays\": 3,\n  \"maxCodeAttempts\": 5\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Update fees & commission settings",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/settings/fees",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "settings",
+                    "fees"
+                  ]
+                },
+                "description": "Partial update — only send fields you're changing. commissionPercentage (\"Default Commission Rate\") and defaultCurrency/timezone are the same fields the general/unscoped settings endpoints use, repeated here since the admin UI shows them on this tab too. buyerServiceFeePercentage, escrowReleaseFee, and minimumPayoutThreshold are new and, like the payment toggles, not yet wired into checkout/payout logic.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"commissionPercentage\": 7.5,\n  \"buyerServiceFeePercentage\": 1.5,\n  \"escrowReleaseFee\": 100,\n  \"minimumPayoutThreshold\": 5000\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -4307,7 +4127,89 @@
                         "me"
                       ]
                     },
-                    "description": ""
+                    "description": "Not gated by PermissionsGuard — any authenticated admin can always read their own profile, regardless of role/permissions. Now also returns firstName, lastName, phone, dashboardPreferences, passwordChangedAt, lastLoginAt, profileUpdatedAt."
+                  },
+                  "response": []
+                },
+                {
+                  "name": "Update general profile",
+                  "request": {
+                    "method": "PATCH",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/auth/me/general",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "auth",
+                        "me",
+                        "general"
+                      ]
+                    },
+                    "description": "Partial update — only send fields you're changing. Not gated by PermissionsGuard, same as the rest of /admin/auth/me/*. Changing firstName/lastName recomputes name as \"${firstName} ${lastName}\". Changing email checks it isn't already taken by another admin (409 if so).",
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"firstName\": \"Ada\",\n  \"lastName\": \"Lovelace\",\n  \"phone\": \"08012345678\",\n  \"email\": \"ada.lovelace@declut.com\"\n}",
+                      "options": {
+                        "raw": {
+                          "language": "json"
+                        }
+                      }
+                    }
+                  },
+                  "response": []
+                },
+                {
+                  "name": "Update dashboard preferences",
+                  "request": {
+                    "method": "PATCH",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/auth/me/dashboard-preferences",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "auth",
+                        "me",
+                        "dashboard-preferences"
+                      ]
+                    },
+                    "description": "Partial update — only send fields you're changing. dateFormat: DD/MM/YYYY|MM/DD/YYYY|YYYY-MM-DD. timeFormat: 12-Hour|24-Hour. timezone: IANA identifier (e.g. Africa/Lagos). Display preferences only — not yet wired into any endpoint's actual behavior.",
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"landingPage\": \"Dashboard\",\n  \"rowsPerPage\": 20,\n  \"dateFormat\": \"DD/MM/YYYY\",\n  \"timeFormat\": \"24-Hour\",\n  \"timezone\": \"Africa/Lagos\",\n  \"language\": \"English\"\n}",
+                      "options": {
+                        "raw": {
+                          "language": "json"
+                        }
+                      }
+                    }
                   },
                   "response": []
                 }
@@ -4677,10 +4579,10 @@
                         "change-password"
                       ]
                     },
-                    "description": "",
+                    "description": "confirmNewPassword must match newPassword (400 otherwise). Sets passwordChangedAt, returned on GET /admin/auth/me.",
                     "body": {
                       "mode": "raw",
-                      "raw": "{\n  \"currentPassword\": \"Password123@\",\n  \"newPassword\": \"NewPassword123@\"\n}",
+                      "raw": "{\n  \"currentPassword\": \"Password123@\",\n  \"newPassword\": \"NewPassword123@\",\n  \"confirmNewPassword\": \"NewPassword123@\"\n}",
                       "options": {
                         "raw": {
                           "language": "json"
@@ -4906,11 +4808,6 @@
     },
     {
       "key": "userId",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "offerId",
       "value": "",
       "type": "string"
     },

@@ -4,7 +4,6 @@ import { AdminController } from './admin.controller';
 import { UsersModule } from '../users/users.module';
 import { ListingsModule } from '../listings/listings.module';
 import { TransactionsModule } from '../transactions/transactions.module';
-import { OffersModule } from '../offers/offers.module';
 import { ReviewsModule } from '../reviews/reviews.module';
 import { TrustScoreModule } from '../trust-score/trust-score.module';
 import { AdminAuthModule } from '../admin-auth/admin-auth.module';
@@ -18,7 +17,6 @@ import { AuditLogModule } from '../audit-log/audit-log.module';
     UsersModule,
     ListingsModule,
     TransactionsModule,
-    OffersModule,
     ReviewsModule,
     TrustScoreModule,
     AdminAuthModule,

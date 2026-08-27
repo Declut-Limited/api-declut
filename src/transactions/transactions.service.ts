@@ -20,8 +20,6 @@ import {
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { ConfirmCodeDto } from './dto/confirm-code.dto';
 import { ListingsService } from '../listings/listings.service';
-import { OffersService } from '../offers/offers.service';
-import { OfferStatus } from '../offers/schemas/offer.schema';
 import { UsersService } from '../users/users.service';
 import { PaystackService } from '../payments/paystack.service';
 import { TrustScoreService } from '../trust-score/trust-score.service';
@@ -75,7 +73,6 @@ export class TransactionsService {
     @InjectModel(Transaction.name)
     private transactionModel: Model<TransactionDocument>,
     private readonly listingsService: ListingsService,
-    private readonly offersService: OffersService,
     private readonly usersService: UsersService,
     private readonly paystackService: PaystackService,
     private readonly trustScoreService: TrustScoreService,
@@ -102,23 +99,7 @@ export class TransactionsService {
       );
     }
 
-    let amount = listing.price;
-    let offerId: string | undefined;
-
-    if (dto.offerId) {
-      const offer = await this.offersService.findById(dto.offerId, buyerId);
-      if (offer.buyer.toString() !== buyerId) {
-        throw new ForbiddenException('This offer does not belong to you');
-      }
-      if (offer.listing.toString() !== dto.listingId) {
-        throw new BadRequestException('Offer does not match this listing');
-      }
-      if (offer.status !== OfferStatus.ACCEPTED) {
-        throw new BadRequestException('Offer must be accepted before checkout');
-      }
-      amount = offer.amount;
-      offerId = offer._id.toString();
-    }
+    const amount = listing.price;
 
     const seller = await this.usersService.findById(listing.seller.toString());
     if (!seller) {
@@ -168,7 +149,6 @@ export class TransactionsService {
       listing: dto.listingId,
       buyer: buyerId,
       seller: listing.seller,
-      offer: offerId,
       amount,
       commissionPercentage,
       status: TransactionStatus.PENDING_PAYMENT,

@@ -18,6 +18,8 @@ import { AdminForgotPasswordDto } from './dto/admin-forgot-password.dto';
 import { AdminResetPasswordDto } from './dto/admin-reset-password.dto';
 import { AdminChangePasswordDto } from './dto/admin-change-password.dto';
 import { UpdateAdminRoleDto } from './dto/update-admin-role.dto';
+import { UpdateAdminGeneralProfileDto } from './dto/update-admin-general-profile.dto';
+import { UpdateDashboardPreferencesDto } from './dto/update-dashboard-preferences.dto';
 import { AdminJwtAuthGuard } from './guards/admin-jwt-auth.guard';
 import { CurrentAdmin } from './decorators/current-admin.decorator';
 import type { AdminAccessTokenPayload } from './interfaces/admin-jwt-payload.interface';
@@ -77,6 +79,24 @@ export class AdminAuthController {
   @Get('me')
   getMe(@CurrentAdmin() admin: AdminAccessTokenPayload) {
     return this.adminAuthService.getProfile(admin.sub);
+  }
+
+  @UseGuards(AdminJwtAuthGuard)
+  @Patch('me/general')
+  updateGeneralProfile(
+    @CurrentAdmin() admin: AdminAccessTokenPayload,
+    @Body() dto: UpdateAdminGeneralProfileDto,
+  ) {
+    return this.adminAuthService.updateGeneralProfile(admin.sub, dto);
+  }
+
+  @UseGuards(AdminJwtAuthGuard)
+  @Patch('me/dashboard-preferences')
+  updateDashboardPreferences(
+    @CurrentAdmin() admin: AdminAccessTokenPayload,
+    @Body() dto: UpdateDashboardPreferencesDto,
+  ) {
+    return this.adminAuthService.updateDashboardPreferences(admin.sub, dto);
   }
 
   @UseGuards(AdminJwtAuthGuard)

@@ -77,8 +77,6 @@ export class AdminListTransactionsDto extends PageDto {
   tab?: TransactionTab;
 }
 
-export class AdminListOffersDto extends PageDto {}
-
 export class AdminListReviewsDto extends PageDto {
   @IsOptional()
   @IsEnum(ReviewStatus)
