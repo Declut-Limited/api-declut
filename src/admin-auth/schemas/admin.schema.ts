@@ -104,7 +104,7 @@ export class Admin {
   // content) or password change (tracked separately by passwordChangedAt).
   // Added 2026-08-27, returned on GET /admin/auth/me.
   @Prop()
-  profileUpdatedAt?: Date;
+  lastProfileUpdateAt?: Date;
 
   // The only two ACCOUNT types in this system are User and Admin — two
   // separate collections, unrelated to `role` below. `title` is a

@@ -58,7 +58,7 @@ export interface AdminProfile {
   dashboardPreferences?: DashboardPreferences;
   passwordChangedAt?: Date;
   lastLoginAt?: Date;
-  profileUpdatedAt?: Date;
+  lastProfileUpdateAt?: Date;
   title?: string;
   company?: string;
   role: { id: string; name: string; permissions: AdminPermissions } | null;
@@ -239,7 +239,7 @@ export class AdminAuthService {
     if (dto.firstName !== undefined || dto.lastName !== undefined) {
       admin.name = `${admin.firstName ?? ''} ${admin.lastName ?? ''}`.trim();
     }
-    admin.profileUpdatedAt = new Date();
+    admin.lastProfileUpdateAt = new Date();
 
     await admin.save();
     await admin.populate('role', ROLE_POPULATE_FIELDS);
@@ -259,7 +259,7 @@ export class AdminAuthService {
     }
 
     admin.dashboardPreferences = { ...admin.dashboardPreferences, ...dto };
-    admin.profileUpdatedAt = new Date();
+    admin.lastProfileUpdateAt = new Date();
 
     await admin.save();
     await admin.populate('role', ROLE_POPULATE_FIELDS);
@@ -533,7 +533,7 @@ export class AdminAuthService {
       dashboardPreferences: admin.dashboardPreferences,
       passwordChangedAt: admin.passwordChangedAt,
       lastLoginAt: admin.lastLoginAt,
-      profileUpdatedAt: admin.profileUpdatedAt,
+      lastProfileUpdateAt: admin.lastProfileUpdateAt,
       title: admin.title,
       company: admin.company,
       role: role

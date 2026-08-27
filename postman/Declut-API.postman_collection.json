@@ -4231,7 +4231,7 @@
                         "me"
                       ]
                     },
-                    "description": "Not gated by PermissionsGuard — any authenticated admin can always read their own profile, regardless of role/permissions. Now also returns firstName, lastName, phone, dashboardPreferences, passwordChangedAt, lastLoginAt, profileUpdatedAt."
+                    "description": "Not gated by PermissionsGuard — any authenticated admin can always read their own profile, regardless of role/permissions. Now also returns firstName, lastName, phone, dashboardPreferences, passwordChangedAt, lastLoginAt, lastProfileUpdateAt."
                   },
                   "response": []
                 },
