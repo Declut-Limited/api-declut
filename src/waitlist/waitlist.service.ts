@@ -105,9 +105,9 @@ export class WaitlistService {
     waiting: number;
     invited: number;
     joined: number;
-    buyerInterest: number;
-    sellerInterest: number;
-    bothBuyerAndSellerInterest: number;
+    buyerInterest: string;
+    sellerInterest: string;
+    bothBuyerAndSellerInterest: string;
   }> {
     const [waiting, invited, joined, total, interestRows] = await Promise.all([
       this.waitlistModel.countDocuments({ status: WaitlistStatus.WAITING }),
@@ -120,8 +120,10 @@ export class WaitlistService {
     ]);
 
     const interestCounts = new Map(interestRows.map((r) => [r._id, r.count]));
-    const pct = (count: number) =>
-      total > 0 ? Math.round((count / total) * 1000) / 10 : 0;
+    const pct = (count: number) => {
+      const value = total > 0 ? Math.round((count / total) * 1000) / 10 : 0;
+      return `${value}%`;
+    };
 
     return {
       waiting,
