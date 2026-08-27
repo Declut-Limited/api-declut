@@ -91,6 +91,11 @@ export class EmailService {
     );
     await this.sendEmail({ to, toName: name, subject, html });
   }
+
+  async sendWaitlistInviteEmail(to: string, message: string): Promise<void> {
+    const { subject, html } = buildWaitlistInviteEmailBody(message);
+    await this.sendEmail({ to, subject, html });
+  }
 }
 
 // Shared with AuthService.forgotPassword(), which echoes this back in the
@@ -117,6 +122,19 @@ export function buildSubAdminInviteEmailBody(
   return {
     subject: "You've been added as a Declut admin",
     html: `<p>Hi ${escapeHtml(name)},</p><p>An account has been created for you on the Declut admin portal. Here are your login details:</p><p>Email: ${escapeHtml(email)}<br />Password: ${escapeHtml(password)}</p><p><a href="${loginUrl}">${loginUrl}</a></p><p>For security, please log in and change your password as soon as possible.</p>`,
+  };
+}
+
+// Body is entirely the admin's own message — no fixed marketing copy imposed
+// beyond a generic subject, since content is the admin's call, not ours.
+// Line breaks in the plain-text message become <br /> for a readable HTML email.
+export function buildWaitlistInviteEmailBody(message: string): {
+  subject: string;
+  html: string;
+} {
+  return {
+    subject: "You're invited to Declut",
+    html: `<p>${escapeHtml(message).replace(/\n/g, '<br />')}</p>`,
   };
 }
 

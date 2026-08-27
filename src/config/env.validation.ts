@@ -86,5 +86,5 @@ export const envValidationSchema = Joi.object({
   MAILTRAP_API_KEY: Joi.string().allow('').optional(),
 
   // Backs the BullMQ notification-broadcast queue — optional, defaults to a local Redis; BullModule connects with lazyConnect so the app still boots without a live Redis instance, same posture as every other optional vendor integration here.
-  REDIS_URL: Joi.string().allow('').optional(),
+  REDIS_URL: Joi.string().required(),
 });

@@ -27,6 +27,7 @@ import {
   refreshTokenMatches,
 } from './refresh-token-hash.util';
 import { EmailService, buildOtpEmailBody } from '../email/email.service';
+import { WaitlistService } from '../waitlist/waitlist.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { GoogleAuthDto } from './dto/google-auth.dto';
@@ -62,6 +63,7 @@ export class AuthService {
     private readonly googleOAuth: GoogleOAuthService,
     private readonly passwordResetTokens: PasswordResetTokenService,
     private readonly emailService: EmailService,
+    private readonly waitlistService: WaitlistService,
   ) {}
 
   async register(dto: RegisterDto): Promise<RegisterResult> {
@@ -82,6 +84,16 @@ export class AuthService {
       phone: dto.phone,
       password,
     });
+
+    // A waitlist side effect must never fail a real registration.
+    try {
+      await this.waitlistService.markJoinedIfInvited(user.email);
+    } catch (err) {
+      this.logger.error(
+        `Failed to mark waitlist entry joined for ${user.email}`,
+        err as Error,
+      );
+    }
 
     const tokens = await this.issueTokens(user);
     const { otp, otpToken } = await this.issueEmailVerificationOtp(
@@ -162,6 +174,15 @@ export class AuthService {
         name: identity.name,
         googleId: identity.googleId,
       });
+
+      try {
+        await this.waitlistService.markJoinedIfInvited(user.email);
+      } catch (err) {
+        this.logger.error(
+          `Failed to mark waitlist entry joined for ${user.email}`,
+          err as Error,
+        );
+      }
     }
 
     return this.issueTokens(user);

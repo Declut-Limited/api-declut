@@ -1794,6 +1794,45 @@
       ]
     },
     {
+      "name": "waitlist",
+      "description": "",
+      "item": [
+        {
+          "name": "Join waitlist",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/waitlist",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "waitlist"
+              ]
+            },
+            "description": "Public, unauthenticated — the marketing landing page signup form. Resubmitting an already-registered email is a silent success, not an error.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"chidinma.eze@gmail.com\",\n  \"interest\": \"buying\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "admin",
       "description": "",
       "item": [
@@ -4984,6 +5023,272 @@
               "response": []
             }
           ]
+        },
+        {
+          "name": "waitlist",
+          "description": "",
+          "item": [
+            {
+              "name": "List waitlist",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/waitlist?page=1&limit=20&status=waiting&interest=buying&inviteStatus=not_sent&search=chidinma",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "waitlist"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "disabled": false,
+                      "description": ""
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "disabled": false,
+                      "description": ""
+                    },
+                    {
+                      "key": "status",
+                      "value": "waiting",
+                      "disabled": true,
+                      "description": "'waiting' | 'invited' | 'joined'"
+                    },
+                    {
+                      "key": "interest",
+                      "value": "buying",
+                      "disabled": true,
+                      "description": "'buying' | 'selling' | 'both'"
+                    },
+                    {
+                      "key": "inviteStatus",
+                      "value": "not_sent",
+                      "disabled": true,
+                      "description": "'not_sent' | 'sent' | 'delivered'"
+                    },
+                    {
+                      "key": "search",
+                      "value": "chidinma",
+                      "disabled": true,
+                      "description": "matches email, case-insensitive"
+                    }
+                  ]
+                },
+                "description": "Paginated, filterable by status/interest/inviteStatus, searchable by email."
+              },
+              "response": []
+            },
+            {
+              "name": "Get waitlist insights",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/waitlist/insights",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "waitlist",
+                    "insights"
+                  ]
+                },
+                "description": "Returns { waiting, invited, joined, buyerInterest, sellerInterest, bothBuyerAndSellerInterest } — the first three are raw counts, the last three are percentages rounded to 1 decimal."
+              },
+              "response": []
+            },
+            {
+              "name": "List uninvited waitlist users",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/waitlist/uninvited?page=1&limit=20&search=chidinma",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "waitlist",
+                    "uninvited"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "disabled": false,
+                      "description": ""
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "disabled": false,
+                      "description": ""
+                    },
+                    {
+                      "key": "search",
+                      "value": "chidinma",
+                      "disabled": true,
+                      "description": ""
+                    }
+                  ]
+                },
+                "description": "Same shape as List waitlist, but status/inviteStatus are pinned server-side to 'waiting'/'not_sent' — backs a \"select all eligible\" bulk-invite action."
+              },
+              "response": []
+            },
+            {
+              "name": "bulk-invite",
+              "description": "",
+              "item": [
+                {
+                  "name": "Bulk invite waitlist users",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/waitlist/bulk-invite",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "waitlist",
+                        "bulk-invite"
+                      ]
+                    },
+                    "description": "One message sent to every listed recipient. Queued via BullMQ, returns { queued: N } immediately — does not wait for the sends. Each recipient must still be waiting/not_sent or it is skipped (server-logged, not reported back).",
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"recipients\": [\n    {\n      \"id\": \"{{waitlistId}}\",\n      \"email\": \"chidinma.eze@gmail.com\"\n    },\n    {\n      \"id\": \"68b000000000000000000001\",\n      \"email\": \"tunde.balogun@gmail.com\"\n    }\n  ],\n  \"message\": \"You're one of the first people we're inviting to try Declut — tap below to claim your spot.\"\n}",
+                      "options": {
+                        "raw": {
+                          "language": "json"
+                        }
+                      }
+                    }
+                  },
+                  "response": []
+                }
+              ]
+            },
+            {
+              "name": "{waitlistId}",
+              "description": "",
+              "item": [
+                {
+                  "name": "invite",
+                  "description": "",
+                  "item": [
+                    {
+                      "name": "Invite waitlist user",
+                      "request": {
+                        "method": "POST",
+                        "header": [
+                          {
+                            "key": "Authorization",
+                            "value": "Bearer {{adminAccessToken}}",
+                            "type": "text"
+                          },
+                          {
+                            "key": "Content-Type",
+                            "value": "application/json",
+                            "type": "text"
+                          }
+                        ],
+                        "url": {
+                          "raw": "{{baseUrl}}/admin/waitlist/{{waitlistId}}/invite",
+                          "host": [
+                            "{{baseUrl}}"
+                          ],
+                          "path": [
+                            "admin",
+                            "waitlist",
+                            "{{waitlistId}}",
+                            "invite"
+                          ]
+                        },
+                        "description": "Synchronous, single email. 400s if the entry isn't still status=waiting/inviteStatus=not_sent — invite is one-shot, not a resend.",
+                        "body": {
+                          "mode": "raw",
+                          "raw": "{\n  \"email\": \"chidinma.eze@gmail.com\",\n  \"message\": \"You're one of the first people we're inviting to try Declut — tap below to claim your spot.\"\n}",
+                          "options": {
+                            "raw": {
+                              "language": "json"
+                            }
+                          }
+                        }
+                      },
+                      "response": []
+                    }
+                  ]
+                },
+                {
+                  "name": "Remove waitlist user",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/waitlist/{{waitlistId}}",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "waitlist",
+                        "{{waitlistId}}"
+                      ]
+                    },
+                    "description": "Hard delete."
+                  },
+                  "response": []
+                }
+              ]
+            }
+          ]
         }
       ]
     }
@@ -5107,6 +5412,11 @@
     {
       "key": "notificationId",
       "value": ""
+    },
+    {
+      "key": "waitlistId",
+      "value": "",
+      "type": "string"
     }
   ]
 }

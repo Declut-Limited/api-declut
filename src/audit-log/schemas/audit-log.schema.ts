@@ -14,7 +14,6 @@ export enum AuditEntityType {
   REVIEW = 'review',
   REPORT = 'report',
   CONTENT = 'content',
-  CAMPAIGN = 'campaign',
 }
 
 // Append-only, cross-domain — one row per notable event on any entity
