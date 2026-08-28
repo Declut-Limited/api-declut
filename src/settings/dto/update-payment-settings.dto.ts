@@ -1,4 +1,27 @@
-import { IsBoolean, IsInt, IsOptional, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsBoolean,
+  IsInt,
+  IsOptional,
+  Min,
+  ValidateNested,
+} from 'class-validator';
+
+// Sent as a whole object when present — not individually mergeable like
+// dashboardPreferences, so no partial-nested-update logic is needed in
+// SettingsService (its generic $set: dto path just overwrites the sub-document).
+class InspectionWindowDto {
+  @IsInt()
+  @Min(1)
+  inspectionPeriod: number;
+
+  @IsBoolean()
+  allowExtension: boolean;
+
+  @IsInt()
+  @Min(1)
+  maxExtensionPeriod: number;
+}
 
 export class UpdatePaymentSettingsDto {
   @IsOptional()
@@ -9,17 +32,12 @@ export class UpdatePaymentSettingsDto {
   @IsBoolean()
   bankTransferEnabled?: boolean;
 
-  // "Escrow release window" in the admin UI — reuses the existing
-  // escrowStalledThresholdDays property rather than a new field.
+  // Replaces escrowStalledThresholdDays (2026-08-28, explicit instruction).
   @IsOptional()
-  @IsInt()
-  @Min(1)
-  escrowStalledThresholdDays?: number;
+  @ValidateNested()
+  @Type(() => InspectionWindowDto)
+  inspectionWindow?: InspectionWindowDto;
 
-  // Moved here from the unscoped settings endpoint 2026-08-27 — the wrong
-  // confirmation-code attempt limit before a transaction auto-flags
-  // disputed (TransactionsService.handleWrongCode()), grouped under
-  // Payments since it's part of the escrow release flow.
   @IsOptional()
   @IsInt()
   @Min(1)

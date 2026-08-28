@@ -21,6 +21,7 @@ import { BulkInviteWaitlistDto } from './dto/bulk-invite-waitlist.dto';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { EmailService } from '../email/email.service';
 import { escapeRegex } from '../common/utils/regex.util';
+import { toCsv } from '../common/utils/csv.util';
 import {
   WAITLIST_INVITE_QUEUE,
   WaitlistBulkInviteJobData,
@@ -74,6 +75,15 @@ export class WaitlistService {
     });
   }
 
+  private buildFilter(dto: ListWaitlistDto): Record<string, unknown> {
+    const filter: Record<string, unknown> = {};
+    if (dto.status) filter.status = dto.status;
+    if (dto.interest) filter.interest = dto.interest;
+    if (dto.inviteStatus) filter.inviteStatus = dto.inviteStatus;
+    if (dto.search) filter.email = new RegExp(escapeRegex(dto.search), 'i');
+    return filter;
+  }
+
   private async queryList(dto: ListWaitlistDto): Promise<{
     results: WaitlistDocument[];
     total: number;
@@ -82,11 +92,7 @@ export class WaitlistService {
   }> {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
-    const filter: Record<string, unknown> = {};
-    if (dto.status) filter.status = dto.status;
-    if (dto.interest) filter.interest = dto.interest;
-    if (dto.inviteStatus) filter.inviteStatus = dto.inviteStatus;
-    if (dto.search) filter.email = new RegExp(escapeRegex(dto.search), 'i');
+    const filter = this.buildFilter(dto);
 
     const [results, total] = await Promise.all([
       this.waitlistModel
@@ -99,6 +105,26 @@ export class WaitlistService {
     ]);
 
     return { results, total, page, limit };
+  }
+
+  // Unpaginated (full matching set) and flattened, same convention as every other export in this app.
+  async exportCsv(dto: ListWaitlistDto): Promise<string> {
+    const filter = this.buildFilter(dto);
+    const rows = await this.waitlistModel
+      .find(filter)
+      .sort({ createdAt: -1 })
+      .exec();
+
+    return toCsv(
+      rows.map((r) => ({
+        email: r.email,
+        interest: r.interest,
+        status: r.status,
+        inviteStatus: r.inviteStatus,
+        createdAt: r.createdAt,
+      })),
+      ['email', 'interest', 'status', 'inviteStatus', 'createdAt'],
+    );
   }
 
   async getInsights(): Promise<{

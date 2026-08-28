@@ -11,6 +11,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { SettingsModule } from '../settings/settings.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { CounterModule } from '../common/counter/counter.module';
+import { EscrowModule } from '../escrow/escrow.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { CounterModule } from '../common/counter/counter.module';
     SettingsModule,
     AuditLogModule,
     CounterModule,
+    EscrowModule,
   ],
   controllers: [TransactionsController],
   providers: [TransactionsService],

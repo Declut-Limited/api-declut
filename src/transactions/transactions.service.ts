@@ -13,10 +13,13 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { Model, Types, isValidObjectId } from 'mongoose';
 import { randomInt, randomUUID } from 'crypto';
 import {
+  InspectionStatus,
   Transaction,
   TransactionDocument,
   TransactionStatus,
 } from './schemas/transaction.schema';
+import { EscrowStatus } from '../escrow/schemas/escrow.schema';
+import { EscrowService } from '../escrow/escrow.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { ConfirmCodeDto } from './dto/confirm-code.dto';
 import { ListingsService } from '../listings/listings.service';
@@ -33,6 +36,7 @@ import {
 } from '../common/utils/currency.util';
 import { pctTrend, breachTrend, Trend } from '../common/utils/trend.util';
 import { MONTH_ABBREVIATIONS } from '../common/utils/date.util';
+import { PopulatedParty, shapeParty } from '../common/utils/party.util';
 
 interface PaystackWebhookPayload {
   event: string;
@@ -56,15 +60,6 @@ const MONTH_NAMES = [
   'December',
 ];
 
-interface PopulatedParty {
-  _id: Types.ObjectId;
-  name: string;
-  email: string;
-  accountStatus: string;
-  slug?: string;
-  company?: string;
-}
-
 @Injectable()
 export class TransactionsService {
   private readonly logger = new Logger(TransactionsService.name);
@@ -72,6 +67,7 @@ export class TransactionsService {
   constructor(
     @InjectModel(Transaction.name)
     private transactionModel: Model<TransactionDocument>,
+    private readonly escrowService: EscrowService,
     private readonly listingsService: ListingsService,
     private readonly usersService: UsersService,
     private readonly paystackService: PaystackService,
@@ -224,16 +220,26 @@ export class TransactionsService {
       return;
     }
 
-    const { escrowStalledThresholdDays } = await this.settingsService.get();
+    const { inspectionWindow } = await this.settingsService.get();
     const oldStatus = transaction.status;
+    const escrowActivatedAt = new Date();
     transaction.status = TransactionStatus.ESCROW_ACTIVE;
-    transaction.escrowActiveAt = new Date();
     transaction.inspectionDeadlineAt = new Date(
-      transaction.escrowActiveAt.getTime() +
-        escrowStalledThresholdDays * 24 * 60 * 60 * 1000,
+      escrowActivatedAt.getTime() +
+        inspectionWindow.inspectionPeriod * 24 * 60 * 60 * 1000,
     );
     transaction.confirmationCode = this.generateConfirmationCode();
     await transaction.save();
+
+    // One Escrow per Transaction, created the moment payment is verified —
+    // a standalone collection owned by EscrowModule, not a field on Transaction.
+    await this.escrowService.createForTransaction({
+      transactionId: transaction._id,
+      listingId: transaction.listing,
+      buyerId: transaction.buyer,
+      sellerId: transaction.seller,
+      amount: transaction.amount,
+    });
 
     await this.audit(
       transaction._id.toString(),
@@ -314,7 +320,12 @@ export class TransactionsService {
     transaction.commissionAmount = commissionAmount;
     transaction.sellerPayoutAmount = sellerPayoutAmount;
     transaction.confirmationCode = undefined;
+    transaction.inspectionStatus = InspectionStatus.COMPLETED;
     await transaction.save();
+    await this.escrowService.updateStatusForTransaction(
+      transaction._id.toString(),
+      EscrowStatus.RELEASED,
+    );
     await this.listingsService.markSold(transaction.listing.toString());
 
     await this.audit(
@@ -455,9 +466,22 @@ export class TransactionsService {
     return this.toAdminResponseShape(transaction);
   }
 
-  // Rich admin detail view: populated buyer/seller/listing, a computed progress-stage timeline, the virtual escrow view (still just a read over Transaction fields — no separate Escrow collection), and the generalized AuditLog as the event timeline.
+  // Rich admin detail view: populated buyer/seller/listing, a computed progress-stage timeline, a placeholder escrow summary (deferred — see adminListEscrows() for the real Escrow-collection-backed view), and the generalized AuditLog as the event timeline.
   async adminFindByIdDetailed(transactionId: string) {
     const transaction = await this.findRaw(transactionId);
+    return this.buildAdminDetailView(transaction);
+  }
+
+  async adminFindByReferenceDetailed(reference: string) {
+    const transaction = await this.transactionModel.findOne({ reference });
+    if (!transaction) {
+      throw new NotFoundException('Transaction not found');
+    }
+    return this.buildAdminDetailView(transaction);
+  }
+
+  private async buildAdminDetailView(transaction: TransactionDocument) {
+    const transactionId = transaction._id.toString();
     const [buyer, seller, listing, settings, timeline] = await Promise.all([
       this.usersService.findById(transaction.buyer.toString()),
       this.usersService.findById(transaction.seller.toString()),
@@ -483,9 +507,14 @@ export class TransactionsService {
         at: (transaction as unknown as { createdAt: Date }).createdAt,
       },
       {
+        // Minimal placeholder pending a full rework of this detail view
+        // (deferred) — escrowActiveAt is gone, so this stage no longer has
+        // its own precise timestamp; inspectionDeadlineAt's presence is an
+        // equivalent "did escrow become active" signal since both are set
+        // at the same moment.
         key: 'escrow_active',
-        completed: Boolean(transaction.escrowActiveAt),
-        at: transaction.escrowActiveAt,
+        completed: Boolean(transaction.inspectionDeadlineAt),
+        at: undefined as Date | undefined,
       },
       {
         key: 'completed',
@@ -514,8 +543,8 @@ export class TransactionsService {
       reference: transaction.reference,
       status,
       amount: transaction.amount,
-      buyer: buyer ? this.shapeParty(buyer, 'buyer') : null,
-      seller: seller ? this.shapeParty(seller, 'seller') : null,
+      buyer: buyer ? shapeParty(buyer, 'buyer') : null,
+      seller: seller ? shapeParty(seller, 'seller') : null,
       // "defect summary text" from the spec has no home yet — Listing tracks nothing beyond `description` for this, so it's left out rather than guessed.
       listing: {
         id: listing._id.toString(),
@@ -547,13 +576,13 @@ export class TransactionsService {
         // Honesty flag: Paystack's own processing fee isn't captured anywhere in this codebase (only the platform commission is), so this is reported as unknown rather than guessed.
         processingFee: null,
       },
+      // Minimal placeholder pending a full rework of this detail view (deferred) — heldSince dropped since escrowActiveAt is gone.
       escrow: {
         active: [
           TransactionStatus.ESCROW_ACTIVE,
           TransactionStatus.AWAITING_INSPECTION,
         ].includes(status),
-        heldSince: transaction.escrowActiveAt,
-        stalledThresholdDays: settings.escrowStalledThresholdDays,
+        stalledThresholdDays: settings.inspectionWindow.inspectionPeriod,
         inspectionDeadlineAt: transaction.inspectionDeadlineAt,
       },
       timeline,
@@ -700,7 +729,12 @@ export class TransactionsService {
     transaction.commissionAmount = commissionAmount;
     transaction.sellerPayoutAmount = sellerPayoutAmount;
     transaction.confirmationCode = undefined;
+    transaction.inspectionStatus = InspectionStatus.COMPLETED;
     await transaction.save();
+    await this.escrowService.updateStatusForTransaction(
+      transaction._id.toString(),
+      EscrowStatus.RELEASED,
+    );
     await this.listingsService.markSold(transaction.listing.toString());
 
     await this.audit(
@@ -754,7 +788,12 @@ export class TransactionsService {
     const oldStatus = transaction.status;
     transaction.status = TransactionStatus.REFUNDED;
     transaction.confirmationCode = undefined;
+    transaction.inspectionStatus = InspectionStatus.REFUNDED;
     await transaction.save();
+    await this.escrowService.updateStatusForTransaction(
+      transaction._id.toString(),
+      EscrowStatus.REFUNDED,
+    );
 
     await this.audit(
       transactionId,
@@ -792,9 +831,7 @@ export class TransactionsService {
   // Runs hourly rather than daily — checking more often just means a stalled transaction gets flagged closer to the actual threshold instead of up to a day late.
   @Cron(CronExpression.EVERY_HOUR)
   async sweepStalledTransactions(): Promise<void> {
-    const { escrowStalledThresholdDays: thresholdDays } =
-      await this.settingsService.get();
-    const cutoff = new Date(Date.now() - thresholdDays * 24 * 60 * 60 * 1000);
+    const { inspectionWindow } = await this.settingsService.get();
 
     const stale = await this.transactionModel.find({
       status: {
@@ -803,7 +840,7 @@ export class TransactionsService {
           TransactionStatus.AWAITING_INSPECTION,
         ],
       },
-      escrowActiveAt: { $lte: cutoff },
+      inspectionDeadlineAt: { $lte: new Date() },
     });
 
     for (const transaction of stale) {
@@ -816,7 +853,7 @@ export class TransactionsService {
         'system',
         oldStatus,
         TransactionStatus.STALLED,
-        { thresholdDays },
+        { thresholdDays: inspectionWindow.inspectionPeriod },
       );
 
       await Promise.all([
@@ -854,6 +891,7 @@ export class TransactionsService {
 
     if (transaction.failedCodeAttempts >= maxAttempts) {
       transaction.status = TransactionStatus.DISPUTED;
+      transaction.inspectionStatus = InspectionStatus.DISPUTED;
       await transaction.save();
       await this.audit(
         transaction._id.toString(),
@@ -922,23 +960,6 @@ export class TransactionsService {
     return transaction;
   }
 
-  // Requires buyer/seller/listing already populated by the caller. rolePlayed is derived from which field we're shaping, not stored. Null-safe — a ref can populate to null for stale/orphaned test data (see CLAUDE.md's ObjectId schema bug note), and that shouldn't 500 the whole response.
-  private shapeParty(
-    user: PopulatedParty | null,
-    rolePlayed: 'buyer' | 'seller',
-  ): Record<string, unknown> | null {
-    if (!user) return null;
-    return {
-      id: user._id.toString(),
-      name: user.name,
-      email: user.email,
-      status: user.accountStatus,
-      rolePlayed,
-      slug: user.slug,
-      company: user.company,
-    };
-  }
-
   private toResponseShape(
     transaction: TransactionDocument,
     requesterId: string,
@@ -954,8 +975,8 @@ export class TransactionsService {
       ].includes(transaction.status);
 
     const obj = transaction.toObject() as unknown as Record<string, unknown>;
-    obj.buyer = this.shapeParty(buyer, 'buyer');
-    obj.seller = this.shapeParty(seller, 'seller');
+    obj.buyer = shapeParty(buyer, 'buyer');
+    obj.seller = shapeParty(seller, 'seller');
     if (!showCode) {
       delete obj.confirmationCode;
     }
@@ -1105,7 +1126,7 @@ export class TransactionsService {
     return { completed: r?.completed ?? 0, total: r?.total ?? 0 };
   }
 
-  // Live count of disputed/stalled transactions, split by whether they've sat untouched past the SLA cutoff — reuses escrowStalledThresholdDays as the SLA proxy (no dedicated "dispute SLA" setting exists yet, judgment call, flagged) via updatedAt (same proxy-timestamp caveat as getRevenueTrends).
+  // Live count of disputed/stalled transactions, split by whether they've sat untouched past the SLA cutoff — reuses inspectionWindow.inspectionPeriod as the SLA proxy (no dedicated "dispute SLA" setting exists yet, judgment call, flagged) via updatedAt (same proxy-timestamp caveat as getRevenueTrends).
   private async summarizeAttentionStates(slaCutoff: Date) {
     const rows = await this.transactionModel.aggregate<{
       _id: TransactionStatus;
@@ -1153,9 +1174,9 @@ export class TransactionsService {
   }> {
     const periodFilter = { createdAt: { $gte: since, $lt: until } };
     const priorFilter = { createdAt: { $gte: priorSince, $lt: priorUntil } };
-    const { escrowStalledThresholdDays } = await this.settingsService.get();
+    const { inspectionWindow } = await this.settingsService.get();
     const slaCutoff = new Date(
-      Date.now() - escrowStalledThresholdDays * 24 * 60 * 60 * 1000,
+      Date.now() - inspectionWindow.inspectionPeriod * 24 * 60 * 60 * 1000,
     );
     const sixHoursFromNow = new Date(Date.now() + 6 * 60 * 60 * 1000);
 
@@ -1404,11 +1425,11 @@ export class TransactionsService {
   // Requires buyer/seller/listing already populated — same contract as toResponseShape() above.
   private toAdminResponseShape(transaction: TransactionDocument) {
     const obj = transaction.toObject() as unknown as Record<string, unknown>;
-    obj.buyer = this.shapeParty(
+    obj.buyer = shapeParty(
       transaction.buyer as unknown as PopulatedParty | null,
       'buyer',
     );
-    obj.seller = this.shapeParty(
+    obj.seller = shapeParty(
       transaction.seller as unknown as PopulatedParty | null,
       'seller',
     );

@@ -11,7 +11,6 @@ import { TrustScoreService } from '../trust-score/trust-score.service';
 import { KycService } from '../kyc/kyc.service';
 import { KycStatus } from '../users/schemas/user.schema';
 import { SettingsService } from '../settings/settings.service';
-import { UpdateAppSettingsDto } from '../settings/dto/update-app-settings.dto';
 import { UpdateGeneralSettingsDto } from '../settings/dto/update-general-settings.dto';
 import { UpdatePaymentSettingsDto } from '../settings/dto/update-payment-settings.dto';
 import { UpdateFeesSettingsDto } from '../settings/dto/update-fees-settings.dto';
@@ -63,15 +62,21 @@ export class AdminService {
     const limit = dto.limit ?? 20;
 
     // A status filter is a User-only concept (Admins have no accountStatus)
-    // — applying one narrows the federated view down to Users only.
+    // — applying one narrows the federated view down to Users only, same as
+    // an explicit type='user'. type='admin' skips the Users query entirely.
+    const includeUsers = dto.type !== 'admin';
+    const includeAdmins =
+      dto.type === 'admin' || (dto.type !== 'user' && !dto.status);
     const [users, admins] = await Promise.all([
-      this.usersService.adminSearchUsers({
-        status: dto.status,
-        search: dto.search,
-      }),
-      dto.status
-        ? Promise.resolve<AdminDocument[]>([])
-        : this.adminAuthService.searchAdmins(dto.search),
+      includeUsers
+        ? this.usersService.adminSearchUsers({
+            status: dto.status,
+            search: dto.search,
+          })
+        : Promise.resolve([]),
+      includeAdmins
+        ? this.adminAuthService.searchAdmins(dto.search)
+        : Promise.resolve<AdminDocument[]>([]),
     ]);
 
     const listingCounts = await this.listingsService.countsBySeller(
@@ -417,12 +422,8 @@ export class AdminService {
     return this.transactionsService.adminFindByIdDetailed(transactionId);
   }
 
-  releaseTransaction(transactionId: string, adminId: string) {
-    return this.transactionsService.adminRelease(transactionId, adminId);
-  }
-
-  refundTransaction(transactionId: string, adminId: string, reason?: string) {
-    return this.transactionsService.adminRefund(transactionId, adminId, reason);
+  getTransactionByReference(reference: string) {
+    return this.transactionsService.adminFindByReferenceDetailed(reference);
   }
 
   listReviews(dto: AdminListReviewsDto) {
@@ -451,10 +452,6 @@ export class AdminService {
 
   getSettings() {
     return this.settingsService.get();
-  }
-
-  updateSettings(dto: UpdateAppSettingsDto) {
-    return this.settingsService.update(dto);
   }
 
   updateGeneralSettings(dto: UpdateGeneralSettingsDto) {

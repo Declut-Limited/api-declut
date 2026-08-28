@@ -3,10 +3,22 @@ import { HydratedDocument } from 'mongoose';
 
 export type AppSettingsDocument = HydratedDocument<AppSettings>;
 
+@Schema({ _id: false })
+export class InspectionWindow {
+  @Prop({ required: true, min: 1, default: 5 })
+  inspectionPeriod: number;
+
+  @Prop({ required: true, default: false })
+  allowExtension: boolean;
+
+  @Prop({ required: true, min: 1, default: 5 })
+  maxExtensionPeriod: number;
+}
+
 @Schema({ timestamps: true })
 export class AppSettings {
-  @Prop({ required: true, min: 1, default: 5 })
-  escrowStalledThresholdDays: number;
+  @Prop({ type: InspectionWindow, required: true, default: () => ({}) })
+  inspectionWindow: InspectionWindow;
 
   @Prop({ required: true, min: 0, max: 100, default: 10 })
   commissionPercentage: number;
@@ -34,25 +46,12 @@ export class AppSettings {
   @Prop({ required: true, default: 'Africa/Lagos' })
   timezone: string;
 
-  // Payments settings — endpoint 2 of the 4 category-scoped update
-  // endpoints (PATCH /admin/settings/payments), added 2026-08-27. The two
-  // toggles are admin-facing config only for now — nothing in checkout
-  // branches on them yet (Paystack is still the only wired payment path).
-  // escrowStalledThresholdDays above is reused as-is for "Escrow release
-  // window" rather than adding a second day-count field for the same concept.
   @Prop({ required: true, default: false })
   cardPaymentsEnabled: boolean;
 
   @Prop({ required: true, default: false })
   bankTransferEnabled: boolean;
 
-  // Fees & commission settings — endpoint 3 of the 4 category-scoped update
-  // endpoints (PATCH /admin/settings/fees), added 2026-08-27.
-  // commissionPercentage above is reused as-is for "Default Commission
-  // Rate"; defaultCurrency/timezone above are reused as-is too (the admin
-  // UI repeats them on this tab). Not yet wired into checkout/payout
-  // logic — same "admin-facing config only for now" posture as the
-  // payments toggles above.
   @Prop({ required: true, min: 0, max: 100, default: 0 })
   buyerServiceFeePercentage: number;
 

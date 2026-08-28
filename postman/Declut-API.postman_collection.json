@@ -2105,6 +2105,12 @@
                       "description": "active, suspended, or pending — Users only; Admins have no accountStatus and are excluded by this filter."
                     },
                     {
+                      "key": "type",
+                      "value": "all",
+                      "disabled": true,
+                      "description": "'all' (default) | 'user' | 'admin' — which account type(s) to include."
+                    },
+                    {
                       "key": "search",
                       "value": "amaka",
                       "disabled": true,
@@ -2112,7 +2118,7 @@
                     }
                   ]
                 },
-                "description": "Federated view — merges Users and Admins into one list, sorted by joinedAt. status filter narrows to Users only. User rows carry slug (USR-####); Admin rows carry roleId (the assigned Role's id, see the roles folder) instead."
+                "description": "Federated view — merges Users and Admins into one list, sorted by joinedAt. status filter narrows to Users only. type explicitly picks all/user/admin (default all) — type=admin/type=user skip the other collection's query entirely. User rows carry slug (USR-####); Admin rows carry roleId (the assigned Role's id, see the roles folder) instead."
               },
               "response": []
             },
@@ -5113,7 +5119,59 @@
                     "insights"
                   ]
                 },
-                "description": "Returns { waiting, invited, joined, buyerInterest, sellerInterest, bothBuyerAndSellerInterest } — the first three are raw counts, the last three are percentages rounded to 1 decimal."
+                "description": "Returns { waiting, invited, joined, buyerInterest, sellerInterest, bothBuyerAndSellerInterest } — waiting/invited/joined are raw counts (numbers); the interest fields are strings like \"100%\"/\"0%\", rounded to 1 decimal before the % suffix."
+              },
+              "response": []
+            },
+            {
+              "name": "Export waitlist (CSV)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/waitlist/export?status=waiting&interest=buying&inviteStatus=not_sent&search=chidinma",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "waitlist",
+                    "export"
+                  ],
+                  "query": [
+                    {
+                      "key": "status",
+                      "value": "waiting",
+                      "disabled": true,
+                      "description": "'waiting' | 'invited' | 'joined'"
+                    },
+                    {
+                      "key": "interest",
+                      "value": "buying",
+                      "disabled": true,
+                      "description": "'buying' | 'selling' | 'both'"
+                    },
+                    {
+                      "key": "inviteStatus",
+                      "value": "not_sent",
+                      "disabled": true,
+                      "description": "'not_sent' | 'sent' | 'delivered'"
+                    },
+                    {
+                      "key": "search",
+                      "value": "chidinma",
+                      "disabled": true,
+                      "description": "matches email, case-insensitive"
+                    }
+                  ]
+                },
+                "description": "Unpaginated CSV of every matching waitlist entry: email, interest, status, inviteStatus, createdAt."
               },
               "response": []
             },

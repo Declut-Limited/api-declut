@@ -20,12 +20,10 @@ import {
   PageDto,
 } from './dto/admin-list.dto';
 import { SetKycStatusDto } from './dto/set-kyc-status.dto';
-import { AdminRefundDto } from './dto/admin-refund.dto';
 import { SuspendUserDto } from './dto/suspend-user.dto';
 import { EmailSellerDto } from './dto/email-seller.dto';
 import { UpdateListingDto } from '../listings/dto/update-listing.dto';
 import { DashboardInsightsDto, RevenueTrendsDto } from './dto/dashboard.dto';
-import { UpdateAppSettingsDto } from '../settings/dto/update-app-settings.dto';
 import { UpdateGeneralSettingsDto } from '../settings/dto/update-general-settings.dto';
 import { UpdatePaymentSettingsDto } from '../settings/dto/update-payment-settings.dto';
 import { UpdateFeesSettingsDto } from '../settings/dto/update-fees-settings.dto';
@@ -236,29 +234,20 @@ export class AdminController {
     return this.adminService.listTransactions(dto);
   }
 
+  // Trimmed 2026-08-28 (explicit instruction) to list/get-by-id/get-by-slug
+  // only — release/refund removed for now (deferred, not abandoned;
+  // TransactionsService.adminRelease()/adminRefund() still exist, just
+  // unreachable via HTTP until this is revisited).
+  @Get('transactions/reference/:reference')
+  @RequirePermission('transactions', 'view')
+  getTransactionByReference(@Param('reference') reference: string) {
+    return this.adminService.getTransactionByReference(reference);
+  }
+
   @Get('transactions/:id')
   @RequirePermission('transactions', 'view')
   getTransaction(@Param('id') id: string) {
     return this.adminService.getTransaction(id);
-  }
-
-  @Patch('transactions/:id/release')
-  @RequirePermission('transactions', 'write')
-  releaseTransaction(
-    @CurrentAdmin() admin: AdminAccessTokenPayload,
-    @Param('id') id: string,
-  ) {
-    return this.adminService.releaseTransaction(id, admin.sub);
-  }
-
-  @Patch('transactions/:id/refund')
-  @RequirePermission('transactions', 'write')
-  refundTransaction(
-    @CurrentAdmin() admin: AdminAccessTokenPayload,
-    @Param('id') id: string,
-    @Body() dto: AdminRefundDto,
-  ) {
-    return this.adminService.refundTransaction(id, admin.sub, dto.reason);
   }
 
   @Get('reviews')
@@ -310,12 +299,6 @@ export class AdminController {
     return this.adminService.getSettings();
   }
 
-  @Patch('settings')
-  @RequirePermission('settings', 'write')
-  updateSettings(@Body() dto: UpdateAppSettingsDto) {
-    return this.adminService.updateSettings(dto);
-  }
-
   @Patch('settings/general')
   @RequirePermission('settings', 'write')
   updateGeneralSettings(@Body() dto: UpdateGeneralSettingsDto) {
@@ -328,7 +311,7 @@ export class AdminController {
     return this.adminService.updatePaymentSettings(dto);
   }
 
-  @Patch('settings/fees')
+  @Patch('settings/fees-and-commission')
   @RequirePermission('settings', 'write')
   updateFeesSettings(@Body() dto: UpdateFeesSettingsDto) {
     return this.adminService.updateFeesSettings(dto);

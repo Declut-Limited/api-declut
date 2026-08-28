@@ -33,6 +33,13 @@ export class AdminListUsersDto extends PageDto {
   @IsEnum(AccountStatus)
   status?: AccountStatus;
 
+  // Narrows the federated Users+Admins list to one account type. 'all' is
+  // the default (both), same "accept 'all' explicitly" convention as
+  // AdminListListingsDto.status above.
+  @IsOptional()
+  @IsIn(['all', 'user', 'admin'])
+  type?: 'all' | 'user' | 'admin';
+
   @IsOptional()
   @IsString()
   search?: string;

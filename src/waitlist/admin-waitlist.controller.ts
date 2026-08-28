@@ -6,8 +6,10 @@ import {
   Param,
   Post,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { WaitlistService } from './waitlist.service';
 import { ListWaitlistDto } from './dto/list-waitlist.dto';
 import { InviteWaitlistDto } from './dto/invite-waitlist.dto';
@@ -35,6 +37,14 @@ export class AdminWaitlistController {
   @Get('uninvited')
   listUninvited(@Query() dto: ListWaitlistDto) {
     return this.waitlistService.listUninvited(dto);
+  }
+
+  @Get('export')
+  async export(@Query() dto: ListWaitlistDto, @Res() res: Response) {
+    const csv = await this.waitlistService.exportCsv(dto);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="waitlist.csv"');
+    res.send(csv);
   }
 
   @Post('bulk-invite')
