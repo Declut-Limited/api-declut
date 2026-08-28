@@ -19,24 +19,7 @@ interface PaystackApiResponse<T> {
   data: T;
 }
 
-/**
- * IMPORTANT — flagged, not guessed-and-hidden, same as the QoreID provider:
- * initializeTransaction/verifyTransaction/verifyWebhookSignature/refund
- * below match Paystack's well-documented, stable public API and I'm
- * confident in their shape. createSubaccount and initiateTransfer are ALSO
- * real, documented Paystack endpoints — but I'm not fully certain, from
- * memory alone, of the exact mechanics of how a subaccount's
- * `settlement_schedule: 'manual'` balance is meant to be released on
- * release-day: whether Paystack expects you to change the schedule
- * temporarily, call a dedicated settlement endpoint, or whether it's purely
- * informational and the Transfer API (used here) is the actual release
- * mechanism regardless of subaccount settlement schedule. This
- * implementation uses the Transfer API directly for release/refund, which I
- * can vouch for; the subaccount's role is to satisfy "held via subaccount
- * split" at checkout time. Verify this whole flow against Paystack's
- * sandbox before it touches real money — this is the one part of this
- * module I'd want smoke-tested against their docs, not just my testing.
- */
+
 @Injectable()
 export class PaystackService {
   private readonly baseUrl = 'https://api.paystack.co';

@@ -2838,9 +2838,46 @@
                     }
                   ]
                 },
-                "description": "tab groups statuses (active/completed/disputed/stalled/refunded); status is an exact override and takes precedence over tab."
+                "description": "tab groups related statuses (active/completed/disputed/stalled/refunded); status is an exact single-status override, taking precedence over tab. Trimmed 2026-08-28 to list/get-by-id/get-by-reference only — release/refund are deferred (service methods still exist, just unreachable via HTTP for now)."
               },
               "response": []
+            },
+            {
+              "name": "reference",
+              "item": [
+                {
+                  "name": "{transactionReference}",
+                  "item": [
+                    {
+                      "name": "Get transaction by reference",
+                      "request": {
+                        "method": "GET",
+                        "header": [
+                          {
+                            "key": "Authorization",
+                            "value": "Bearer {{adminAccessToken}}",
+                            "type": "text"
+                          }
+                        ],
+                        "url": {
+                          "raw": "{{baseUrl}}/admin/transactions/reference/{{transactionReference}}",
+                          "host": [
+                            "{{baseUrl}}"
+                          ],
+                          "path": [
+                            "admin",
+                            "transactions",
+                            "reference",
+                            "{{transactionReference}}"
+                          ]
+                        },
+                        "description": "Same rich detail view as get-by-ID, looked up by the TXN-{year}-{5-digit} reference instead."
+                      },
+                      "response": []
+                    }
+                  ]
+                }
+              ]
             },
             {
               "name": "{transactionId}",
@@ -2871,88 +2908,52 @@
                     "description": "Rich detail: buyer/seller/listing, stages timeline, payment/escrow breakdown, AuditLog timeline."
                   },
                   "response": []
-                },
-                {
-                  "name": "release",
-                  "description": "",
-                  "item": [
-                    {
-                      "name": "Release stalled/disputed transaction",
-                      "request": {
-                        "method": "PATCH",
-                        "header": [
-                          {
-                            "key": "Authorization",
-                            "value": "Bearer {{adminAccessToken}}",
-                            "type": "text"
-                          }
-                        ],
-                        "url": {
-                          "raw": "{{baseUrl}}/admin/transactions/{{transactionId}}/release",
-                          "host": [
-                            "{{baseUrl}}"
-                          ],
-                          "path": [
-                            "admin",
-                            "transactions",
-                            "{{transactionId}}",
-                            "release"
-                          ]
-                        },
-                        "description": "Only valid on stalled/disputed transactions."
-                      },
-                      "response": []
-                    }
-                  ]
-                },
-                {
-                  "name": "refund",
-                  "description": "",
-                  "item": [
-                    {
-                      "name": "Refund stalled/disputed transaction",
-                      "request": {
-                        "method": "PATCH",
-                        "header": [
-                          {
-                            "key": "Authorization",
-                            "value": "Bearer {{adminAccessToken}}",
-                            "type": "text"
-                          },
-                          {
-                            "key": "Content-Type",
-                            "value": "application/json",
-                            "type": "text"
-                          }
-                        ],
-                        "url": {
-                          "raw": "{{baseUrl}}/admin/transactions/{{transactionId}}/refund",
-                          "host": [
-                            "{{baseUrl}}"
-                          ],
-                          "path": [
-                            "admin",
-                            "transactions",
-                            "{{transactionId}}",
-                            "refund"
-                          ]
-                        },
-                        "description": "Only valid on stalled/disputed transactions. reason is optional.",
-                        "body": {
-                          "mode": "raw",
-                          "raw": "{\n  \"reason\": \"Seller unresponsive after multiple buyer attempts to coordinate a meetup.\"\n}",
-                          "options": {
-                            "raw": {
-                              "language": "json"
-                            }
-                          }
-                        }
-                      },
-                      "response": []
-                    }
-                  ]
                 }
               ]
+            }
+          ]
+        },
+        {
+          "name": "escrows",
+          "item": [
+            {
+              "name": "List escrows",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/escrows?page=1&limit=20",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "escrows"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "disabled": false,
+                      "description": "Page number, >= 1. Default 1."
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "disabled": false,
+                      "description": "Results per page, 1-100. Default 20."
+                    }
+                  ]
+                },
+                "description": "Escrow is its own collection/module (src/escrow/) as of 2026-08-28 — one row per Transaction, created once payment is verified. Gated under the transactions permission bucket, no dedicated RBAC bucket of its own."
+              },
+              "response": []
             }
           ]
         },
@@ -3169,46 +3170,7 @@
                     "settings"
                   ]
                 },
-                "description": "escrowStalledThresholdDays, commissionPercentage, maxCodeAttempts, companyName, supportEmail, defaultCurrency, timezone, cardPaymentsEnabled, bankTransferEnabled, buyerServiceFeePercentage, escrowReleaseFee, minimumPayoutThreshold — the full singleton settings document, regardless of which endpoint last updated a given field."
-              },
-              "response": []
-            },
-            {
-              "name": "Update app settings",
-              "request": {
-                "method": "PATCH",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{adminAccessToken}}",
-                    "type": "text"
-                  },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/admin/settings",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "admin",
-                    "settings"
-                  ]
-                },
-                "description": "Partial update — only send fields you're changing.",
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"commissionPercentage\": 12,\n  \"escrowStalledThresholdDays\": 5\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
+                "description": "inspectionWindow ({inspectionPeriod, allowExtension, maxExtensionPeriod}), commissionPercentage, maxCodeAttempts, companyName, supportEmail, defaultCurrency, timezone, cardPaymentsEnabled, bankTransferEnabled, buyerServiceFeePercentage, escrowReleaseFee, minimumPayoutThreshold — the full singleton settings document, regardless of which endpoint last updated a given field. There is no unscoped PATCH /admin/settings anymore (removed 2026-08-28) — use the category-scoped PATCH endpoints below."
               },
               "response": []
             },
@@ -3279,10 +3241,10 @@
                     "payments"
                   ]
                 },
-                "description": "Partial update — only send fields you're changing. cardPaymentsEnabled/bankTransferEnabled are admin-facing config only for now (not yet wired into checkout). escrowStalledThresholdDays is the same field the unscoped settings endpoint uses (\"Escrow release window\" in the admin UI). maxCodeAttempts moved here 2026-08-27 — the wrong confirmation-code attempt limit before a transaction auto-flags disputed.",
+                "description": "Partial update — only send fields you're changing. cardPaymentsEnabled/bankTransferEnabled are admin-facing config only for now (not yet wired into checkout). inspectionWindow replaces escrowStalledThresholdDays (2026-08-28) — sent as a whole object, not individually mergeable: inspectionPeriod (days), allowExtension (bool), maxExtensionPeriod (days). maxCodeAttempts moved here 2026-08-27 — the wrong confirmation-code attempt limit before a transaction auto-flags disputed.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"cardPaymentsEnabled\": true,\n  \"bankTransferEnabled\": true,\n  \"escrowStalledThresholdDays\": 3,\n  \"maxCodeAttempts\": 5\n}",
+                  "raw": "{\n  \"cardPaymentsEnabled\": true,\n  \"bankTransferEnabled\": true,\n  \"inspectionWindow\": {\n    \"inspectionPeriod\": 5,\n    \"allowExtension\": true,\n    \"maxExtensionPeriod\": 3\n  },\n  \"maxCodeAttempts\": 5\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -3309,14 +3271,14 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/admin/settings/fees",
+                  "raw": "{{baseUrl}}/admin/settings/fees-and-commission",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "admin",
                     "settings",
-                    "fees"
+                    "fees-and-commission"
                   ]
                 },
                 "description": "Partial update — only send fields you're changing. commissionPercentage (\"Default Commission Rate\") and defaultCurrency/timezone are the same fields the general/unscoped settings endpoints use, repeated here since the admin UI shows them on this tab too. buyerServiceFeePercentage, escrowReleaseFee, and minimumPayoutThreshold are new and, like the payment toggles, not yet wired into checkout/payout logic.",
@@ -5409,6 +5371,11 @@
     },
     {
       "key": "transactionId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "transactionReference",
       "value": "",
       "type": "string"
     },
