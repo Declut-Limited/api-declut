@@ -19,7 +19,6 @@ interface PaystackApiResponse<T> {
   data: T;
 }
 
-
 @Injectable()
 export class PaystackService {
   private readonly baseUrl = 'https://api.paystack.co';

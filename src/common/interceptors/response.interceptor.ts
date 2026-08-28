@@ -27,8 +27,35 @@ export class ResponseInterceptor<T> implements NestInterceptor<
     context: ExecutionContext,
     next: CallHandler,
   ): Observable<ApiResponse<T>> {
-    return next
-      .handle()
-      .pipe(map((data: T) => ({ success: true as const, data })));
+    return next.handle().pipe(
+      map((data: T) => ({
+        success: true as const,
+        data: injectHasMore(data),
+      })),
+    );
   }
+}
+
+// Every paginated list() method in this app returns {results, total, page,
+// limit} (the array field itself is sometimes named differently, e.g.
+// escrows, but total/page/limit are consistent) — detecting that shape here,
+// once, means every current and future paginated endpoint gets `hasMore`
+// automatically rather than each service computing it by hand.
+function injectHasMore<T>(data: T): T {
+  if (
+    data &&
+    typeof data === 'object' &&
+    !Array.isArray(data) &&
+    typeof (data as Record<string, unknown>).total === 'number' &&
+    typeof (data as Record<string, unknown>).page === 'number' &&
+    typeof (data as Record<string, unknown>).limit === 'number'
+  ) {
+    const { total, page, limit } = data as unknown as {
+      total: number;
+      page: number;
+      limit: number;
+    };
+    return { ...data, hasMore: page * limit < total };
+  }
+  return data;
 }
