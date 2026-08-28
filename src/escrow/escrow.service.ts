@@ -16,16 +16,17 @@ export class EscrowService {
   ) {}
 
   // Called from TransactionsService's webhook handler the moment payment is
-  // verified — one Escrow per Transaction, created here rather than a field
-  // set on Transaction itself (see escrow.schema.ts).
+  // verified — one Escrow per Transaction. Returns the new Escrow's id so
+  // the caller can write it back onto Transaction.escrow (the two documents
+  // reference each other, populatable from either side).
   async createForTransaction(params: {
     transactionId: Types.ObjectId;
     listingId: Types.ObjectId;
     buyerId: Types.ObjectId;
     sellerId: Types.ObjectId;
     amount: number;
-  }): Promise<void> {
-    await this.escrowModel.create({
+  }): Promise<Types.ObjectId> {
+    const escrow = await this.escrowModel.create({
       slug: await this.counterService.nextSlug('escrow', 'ESC', 4),
       transaction: params.transactionId,
       listing: params.listingId,
@@ -34,6 +35,7 @@ export class EscrowService {
       amount: params.amount,
       status: EscrowStatus.HELD,
     });
+    return escrow._id;
   }
 
   // No-op if no Escrow row exists for this transaction (e.g. it never left

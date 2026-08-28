@@ -1,4 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  forwardRef,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -27,6 +33,8 @@ import {
   BROADCAST_QUEUE,
   BroadcastJobData,
 } from './queues/broadcast-queue.constants';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { toCsv } from '../common/utils/csv.util';
 
 interface ChannelOutcome {
   status: NotificationChannelStatus;
@@ -55,6 +63,10 @@ export class NotificationsService {
     private broadcastModel: Model<NotificationBroadcastDocument>,
     @InjectQueue(BROADCAST_QUEUE)
     private broadcastQueue: Queue<BroadcastJobData>,
+    // forwardRef: AuditLogService needs AdminAuthService, which already
+    // forwardRef()s NotificationsService — this closes the loop.
+    @Inject(forwardRef(() => AuditLogService))
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   async registerTokens(userId: string, tokens: string[]): Promise<void> {
@@ -252,6 +264,63 @@ export class NotificationsService {
       this.broadcastModel.countDocuments(filter),
     ]);
     return { results, total, page, limit };
+  }
+
+  // Unpaginated (full matching set) and flattened, same convention as every other export in this app.
+  async exportBroadcastsCsv(
+    status?: NotificationBroadcastStatus,
+  ): Promise<string> {
+    const filter = status ? { status } : {};
+    const rows = await this.broadcastModel
+      .find(filter)
+      .sort({ createdAt: -1 })
+      .exec();
+
+    return toCsv(
+      rows.map((r) => ({
+        title: r.title,
+        trigger: r.trigger,
+        recipientDescription: r.recipientDescription,
+        channel: r.channel,
+        status: r.status,
+        startDate: r.startDate,
+        sentAt: r.sentAt ?? '',
+        recipientCount: r.recipientCount,
+        sentCount: r.sentCount,
+        failedCount: r.failedCount,
+        createdAt: (r as unknown as { createdAt: Date }).createdAt,
+      })),
+      [
+        'title',
+        'trigger',
+        'recipientDescription',
+        'channel',
+        'status',
+        'startDate',
+        'sentAt',
+        'recipientCount',
+        'sentCount',
+        'failedCount',
+        'createdAt',
+      ],
+    );
+  }
+
+  // Hard delete — a broadcast log row, not money/audit-trail-bearing the way Listings/Transactions are, so no soft-delete needed. Doesn't touch the Notification rows it fanned out (those stay in each recipient's inbox regardless).
+  async removeBroadcast(id: string, adminId: string): Promise<void> {
+    const broadcast = await this.broadcastModel.findById(id).exec();
+    if (!broadcast) {
+      throw new NotFoundException('Notification broadcast not found');
+    }
+    await broadcast.deleteOne();
+
+    await this.auditLogService.record({
+      entityType: 'notification_broadcast',
+      entityId: id,
+      event: 'notification_broadcast.removed',
+      actor: adminId,
+      oldState: broadcast.status,
+    });
   }
 
   // Used only by NotificationBroadcastProcessor to update counts/status.

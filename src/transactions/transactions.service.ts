@@ -232,14 +232,19 @@ export class TransactionsService {
     await transaction.save();
 
     // One Escrow per Transaction, created the moment payment is verified —
-    // a standalone collection owned by EscrowModule, not a field on Transaction.
-    await this.escrowService.createForTransaction({
+    // a standalone collection owned by EscrowModule. The two documents
+    // reference each other: Escrow already points back at transactionId
+    // (set above), and the returned id is written onto Transaction.escrow
+    // here so either side can be reached from the other via .populate().
+    const escrowId = await this.escrowService.createForTransaction({
       transactionId: transaction._id,
       listingId: transaction.listing,
       buyerId: transaction.buyer,
       sellerId: transaction.seller,
       amount: transaction.amount,
     });
+    transaction.escrow = escrowId;
+    await transaction.save();
 
     await this.audit(
       transaction._id.toString(),

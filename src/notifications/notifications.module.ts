@@ -23,6 +23,7 @@ import { BROADCAST_QUEUE } from './queues/broadcast-queue.constants';
 import { FcmService } from './fcm.service';
 // forwardRef with AdminAuthModule: this module needs PermissionsGuard (which needs AdminAuthService) for NotificationBroadcastsController, and AdminAuthModule needs NotificationsService for the role-updated notification and the logout socket-disconnect — a genuine two-way dependency, not one the usual "register the schema directly" workaround covers, since guards need real DI-resolved services, not just a raw model.
 import { AdminAuthModule } from '../admin-auth/admin-auth.module';
+import { AuditLogModule } from '../audit-log/audit-log.module';
 
 @Module({
   imports: [
@@ -36,6 +37,11 @@ import { AdminAuthModule } from '../admin-auth/admin-auth.module';
     BullModule.registerQueue({ name: BROADCAST_QUEUE }),
     UsersModule,
     EmailModule,
+    // forwardRef: AuditLogModule itself imports AdminAuthModule, which
+    // forwardRef()s back to this module — without deferring this edge too,
+    // the 3-hop file-level require cycle resolves AdminAuthModule to
+    // undefined mid-load (confirmed live: "UndefinedModuleException").
+    forwardRef(() => AuditLogModule),
     forwardRef(() => AdminAuthModule),
   ],
   controllers: [

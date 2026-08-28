@@ -80,6 +80,13 @@ export class Transaction {
   @Prop({ unique: true, sparse: true })
   reference?: string;
 
+  // Set once, at the same moment EscrowService.createForTransaction() creates
+  // the Escrow row (payment verified) — mirrors Escrow.transaction so either
+  // side can be reached from the other via .populate(). Absent for a
+  // transaction still at pending_payment, which never got an Escrow.
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Escrow' })
+  escrow?: Types.ObjectId;
+
   @Prop({
     type: String,
     enum: InspectionStatus,

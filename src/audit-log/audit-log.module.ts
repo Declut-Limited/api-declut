@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuditLog, AuditLogSchema } from './schemas/audit-log.schema';
 import { Listing, ListingSchema } from '../listings/schemas/listing.schema';
@@ -17,7 +17,12 @@ import { CounterModule } from '../common/counter/counter.module';
       // Same workaround CategoriesService/TrustScoreService already use.
       { name: Listing.name, schema: ListingSchema },
     ]),
-    AdminAuthModule,
+    // forwardRef: NotificationsModule now imports AuditLogModule (for the
+    // broadcast-delete audit log) and NotificationsModule <-> AdminAuthModule
+    // is already a forwardRef cycle — without deferring this edge too, the
+    // resulting 3-hop file-level require cycle resolves AdminAuthModule to
+    // undefined mid-load (confirmed live: "UndefinedModuleException").
+    forwardRef(() => AdminAuthModule),
     UsersModule,
     CounterModule,
   ],

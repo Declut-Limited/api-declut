@@ -4986,9 +4986,74 @@
                     }
                   ]
                 },
-                "description": "Paginated, optional status filter (draft|scheduled|sending|sent|failed|cancelled)."
+                "description": "Paginated, optional status filter (draft|scheduled|sending|sent|failed|cancelled). Export and delete added 2026-08-28, gated notifications/view and notifications/delete respectively."
               },
               "response": []
+            },
+            {
+              "name": "Export notification broadcasts (CSV)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/notification-broadcasts/export?status=sent",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "notification-broadcasts",
+                    "export"
+                  ],
+                  "query": [
+                    {
+                      "key": "status",
+                      "value": "sent",
+                      "disabled": true,
+                      "description": "draft, scheduled, sending, sent, failed, or cancelled."
+                    }
+                  ]
+                },
+                "description": "Unpaginated CSV, same status filter as the list endpoint."
+              },
+              "response": []
+            },
+            {
+              "name": "{broadcastId}",
+              "item": [
+                {
+                  "name": "Remove notification broadcast",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/notification-broadcasts/{{broadcastId}}",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "notification-broadcasts",
+                        "{{broadcastId}}"
+                      ]
+                    },
+                    "description": "Hard delete — a log row, not money/audit-trail-bearing. Does not touch the individual Notification rows already fanned out to recipients."
+                  },
+                  "response": []
+                }
+              ]
             }
           ]
         },
@@ -5437,6 +5502,11 @@
     {
       "key": "notificationId",
       "value": ""
+    },
+    {
+      "key": "broadcastId",
+      "value": "",
+      "type": "string"
     },
     {
       "key": "waitlistId",
