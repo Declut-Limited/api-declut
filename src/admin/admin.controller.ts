@@ -234,22 +234,6 @@ export class AdminController {
     return this.adminService.listTransactions(dto);
   }
 
-  // Trimmed 2026-08-28 (explicit instruction) to list/get-by-id/get-by-slug
-  // only — release/refund removed for now (deferred, not abandoned;
-  // TransactionsService.adminRelease()/adminRefund() still exist, just
-  // unreachable via HTTP until this is revisited).
-  @Get('transactions/reference/:reference')
-  @RequirePermission('transactions', 'view')
-  getTransactionByReference(@Param('reference') reference: string) {
-    return this.adminService.getTransactionByReference(reference);
-  }
-
-  @Get('transactions/:id')
-  @RequirePermission('transactions', 'view')
-  getTransaction(@Param('id') id: string) {
-    return this.adminService.getTransaction(id);
-  }
-
   @Get('reviews')
   @RequirePermission('reviews', 'view')
   listReviews(@Query() dto: AdminListReviewsDto) {

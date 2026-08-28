@@ -446,6 +446,7 @@ export class TransactionsService {
         .populate('buyer', PARTY_POPULATE_FIELDS)
         .populate('seller', PARTY_POPULATE_FIELDS)
         .populate('listing', LISTING_POPULATE_FIELDS)
+        .populate('escrow', '_id status')
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
@@ -469,129 +470,6 @@ export class TransactionsService {
       { path: 'listing', select: LISTING_POPULATE_FIELDS },
     ]);
     return this.toAdminResponseShape(transaction);
-  }
-
-  // Rich admin detail view: populated buyer/seller/listing, a computed progress-stage timeline, a placeholder escrow summary (deferred — see adminListEscrows() for the real Escrow-collection-backed view), and the generalized AuditLog as the event timeline.
-  async adminFindByIdDetailed(transactionId: string) {
-    const transaction = await this.findRaw(transactionId);
-    return this.buildAdminDetailView(transaction);
-  }
-
-  async adminFindByReferenceDetailed(reference: string) {
-    const transaction = await this.transactionModel.findOne({ reference });
-    if (!transaction) {
-      throw new NotFoundException('Transaction not found');
-    }
-    return this.buildAdminDetailView(transaction);
-  }
-
-  private async buildAdminDetailView(transaction: TransactionDocument) {
-    const transactionId = transaction._id.toString();
-    const [buyer, seller, listing, settings, timeline] = await Promise.all([
-      this.usersService.findById(transaction.buyer.toString()),
-      this.usersService.findById(transaction.seller.toString()),
-      this.listingsService.adminFindByIdWithCategory(
-        transaction.listing.toString(),
-      ),
-      this.settingsService.get(),
-      this.auditLogService.findForEntity('transaction', transactionId, 20),
-    ]);
-
-    const status = transaction.status;
-    const isTerminalBranch = [
-      TransactionStatus.STALLED,
-      TransactionStatus.DISPUTED,
-      TransactionStatus.REFUNDED,
-      TransactionStatus.CANCELLED,
-    ].includes(status);
-
-    const stages = [
-      {
-        key: 'payment_initiated',
-        completed: true,
-        at: (transaction as unknown as { createdAt: Date }).createdAt,
-      },
-      {
-        // Minimal placeholder pending a full rework of this detail view
-        // (deferred) — escrowActiveAt is gone, so this stage no longer has
-        // its own precise timestamp; inspectionDeadlineAt's presence is an
-        // equivalent "did escrow become active" signal since both are set
-        // at the same moment.
-        key: 'escrow_active',
-        completed: Boolean(transaction.inspectionDeadlineAt),
-        at: undefined as Date | undefined,
-      },
-      {
-        key: 'completed',
-        completed: status === TransactionStatus.COMPLETED,
-        at:
-          status === TransactionStatus.COMPLETED
-            ? (transaction as unknown as { updatedAt: Date }).updatedAt
-            : undefined,
-      },
-    ];
-    if (isTerminalBranch) {
-      stages.push({
-        key: status,
-        completed: true,
-        at: (transaction as unknown as { updatedAt: Date }).updatedAt,
-      });
-    }
-
-    const commissionAmount =
-      transaction.commissionAmount ??
-      Math.round(
-        ((transaction.amount * transaction.commissionPercentage) / 100) * 100,
-      ) / 100;
-
-    return {
-      reference: transaction.reference,
-      status,
-      amount: transaction.amount,
-      buyer: buyer ? shapeParty(buyer, 'buyer') : null,
-      seller: seller ? shapeParty(seller, 'seller') : null,
-      // "defect summary text" from the spec has no home yet — Listing tracks nothing beyond `description` for this, so it's left out rather than guessed.
-      listing: {
-        id: listing._id.toString(),
-        title: listing.title,
-        slug: listing.slug,
-        description: listing.description,
-        brand: listing.specs?.brand,
-        condition: listing.condition,
-        price: listing.price,
-        location: listing.locationLabel,
-        status: listing.status,
-        createdAt: (listing as unknown as { createdAt: Date }).createdAt,
-        category:
-          listing.category && typeof listing.category === 'object'
-            ? {
-                name: (listing.category as unknown as { title: string }).title,
-                slug: (listing.category as unknown as { slug: string }).slug,
-              }
-            : null,
-      },
-      stages,
-      payment: {
-        paystackReference: transaction.paystackReference,
-        platformFeePercentage: transaction.commissionPercentage,
-        platformFeeAmount: commissionAmount,
-        sellerPayoutAmount:
-          transaction.sellerPayoutAmount ??
-          Math.round((transaction.amount - commissionAmount) * 100) / 100,
-        // Honesty flag: Paystack's own processing fee isn't captured anywhere in this codebase (only the platform commission is), so this is reported as unknown rather than guessed.
-        processingFee: null,
-      },
-      // Minimal placeholder pending a full rework of this detail view (deferred) — heldSince dropped since escrowActiveAt is gone.
-      escrow: {
-        active: [
-          TransactionStatus.ESCROW_ACTIVE,
-          TransactionStatus.AWAITING_INSPECTION,
-        ].includes(status),
-        stalledThresholdDays: settings.inspectionWindow.inspectionPeriod,
-        inspectionDeadlineAt: transaction.inspectionDeadlineAt,
-      },
-      timeline,
-    };
   }
 
   // Used by the admin Users detail view's "Insights" panel.

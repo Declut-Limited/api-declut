@@ -50,10 +50,6 @@ export class EscrowService {
     );
   }
 
-  // buyer/seller/listing are the Escrow row's own denormalized refs, not
-  // reached through transaction — platformFee/sellerPayoutAmount are money
-  // math already computed on Transaction though, so those are read off a
-  // populated transaction rather than duplicated onto Escrow.
   async adminList(page: number, limit: number) {
     const [escrows, total] = await Promise.all([
       this.escrowModel
@@ -63,7 +59,8 @@ export class EscrowService {
         .populate('listing', LISTING_POPULATE_FIELDS)
         .populate(
           'transaction',
-          'commissionAmount sellerPayoutAmount commissionPercentage amount',
+          // 'reference commissionAmount sellerPayoutAmount commissionPercentage amount',
+          'reference amount',
         )
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
@@ -83,6 +80,7 @@ export class EscrowService {
   private shapeEscrowRow(escrow: EscrowDocument): Record<string, unknown> {
     const transaction = escrow.transaction as unknown as {
       _id: Types.ObjectId;
+      reference?: string;
       commissionAmount?: number;
       sellerPayoutAmount?: number;
       commissionPercentage: number;
@@ -102,7 +100,10 @@ export class EscrowService {
     } | null;
 
     return {
-      transactionId: transaction._id.toString(),
+      transaction: {
+        _id: transaction._id.toString(),
+        reference: transaction.reference,
+      },
       slug: escrow.slug,
       buyer: shapeParty(
         escrow.buyer as unknown as PopulatedParty | null,
@@ -112,11 +113,16 @@ export class EscrowService {
         escrow.seller as unknown as PopulatedParty | null,
         'seller',
       ),
-      product: listing
+      listing: listing
         ? { id: listing._id.toString(), title: listing.title }
         : null,
       amountPaid: escrow.amount,
-      amountHeld: escrow.status === EscrowStatus.HELD ? escrow.amount : 0,
+      // Frozen money hasn't left the platform either — held and frozen both count.
+      amountHeld:
+        escrow.status === EscrowStatus.HELD ||
+        escrow.status === EscrowStatus.FROZEN
+          ? escrow.amount
+          : 0,
       platformFee: commissionAmount,
       sellerPayoutAmount,
       status: escrow.status,

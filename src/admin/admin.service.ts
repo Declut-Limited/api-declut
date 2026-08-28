@@ -418,14 +418,6 @@ export class AdminService {
     );
   }
 
-  getTransaction(transactionId: string) {
-    return this.transactionsService.adminFindByIdDetailed(transactionId);
-  }
-
-  getTransactionByReference(reference: string) {
-    return this.transactionsService.adminFindByReferenceDetailed(reference);
-  }
-
   listReviews(dto: AdminListReviewsDto) {
     return this.reviewsService.adminList(
       dto.page ?? 1,

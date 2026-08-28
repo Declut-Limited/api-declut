@@ -2838,78 +2838,9 @@
                     }
                   ]
                 },
-                "description": "tab groups related statuses (active/completed/disputed/stalled/refunded); status is an exact single-status override, taking precedence over tab. Trimmed 2026-08-28 to list/get-by-id/get-by-reference only — release/refund are deferred (service methods still exist, just unreachable via HTTP for now)."
+                "description": "tab groups related statuses (active/completed/disputed/stalled/refunded); status is an exact single-status override, taking precedence over tab. Get-by-id and get-by-reference were removed 2026-08-28 (explicit instruction) — list is the only transaction read endpoint now; release/refund were already deferred. escrow is now populated ({_id, status}) on each row, and EscrowStatus gained FROZEN (held/refunded/released/frozen)."
               },
               "response": []
-            },
-            {
-              "name": "reference",
-              "item": [
-                {
-                  "name": "{transactionReference}",
-                  "item": [
-                    {
-                      "name": "Get transaction by reference",
-                      "request": {
-                        "method": "GET",
-                        "header": [
-                          {
-                            "key": "Authorization",
-                            "value": "Bearer {{adminAccessToken}}",
-                            "type": "text"
-                          }
-                        ],
-                        "url": {
-                          "raw": "{{baseUrl}}/admin/transactions/reference/{{transactionReference}}",
-                          "host": [
-                            "{{baseUrl}}"
-                          ],
-                          "path": [
-                            "admin",
-                            "transactions",
-                            "reference",
-                            "{{transactionReference}}"
-                          ]
-                        },
-                        "description": "Same rich detail view as get-by-ID, looked up by the TXN-{year}-{5-digit} reference instead."
-                      },
-                      "response": []
-                    }
-                  ]
-                }
-              ]
-            },
-            {
-              "name": "{transactionId}",
-              "description": "",
-              "item": [
-                {
-                  "name": "Get transaction by ID (admin)",
-                  "request": {
-                    "method": "GET",
-                    "header": [
-                      {
-                        "key": "Authorization",
-                        "value": "Bearer {{adminAccessToken}}",
-                        "type": "text"
-                      }
-                    ],
-                    "url": {
-                      "raw": "{{baseUrl}}/admin/transactions/{{transactionId}}",
-                      "host": [
-                        "{{baseUrl}}"
-                      ],
-                      "path": [
-                        "admin",
-                        "transactions",
-                        "{{transactionId}}"
-                      ]
-                    },
-                    "description": "Rich detail: buyer/seller/listing, stages timeline, payment/escrow breakdown, AuditLog timeline."
-                  },
-                  "response": []
-                }
-              ]
             }
           ]
         },
@@ -2951,7 +2882,7 @@
                     }
                   ]
                 },
-                "description": "Escrow is its own collection/module (src/escrow/) as of 2026-08-28 — one row per Transaction, created once payment is verified. Gated under the transactions permission bucket, no dedicated RBAC bucket of its own."
+                "description": "Escrow is its own collection/module (src/escrow/) as of 2026-08-28 — one row per Transaction, created once payment is verified. Gated under the transactions permission bucket, no dedicated RBAC bucket of its own. transaction is now populated ({_id, reference}) on each row (was a flat transactionId string); the listing field was renamed from product; status gained FROZEN."
               },
               "response": []
             }
@@ -5476,11 +5407,6 @@
     },
     {
       "key": "transactionId",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "transactionReference",
       "value": "",
       "type": "string"
     },

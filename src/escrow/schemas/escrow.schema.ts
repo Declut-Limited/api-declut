@@ -7,6 +7,7 @@ export enum EscrowStatus {
   HELD = 'held',
   REFUNDED = 'refunded',
   RELEASED = 'released',
+  FROZEN = 'frozen',
 }
 
 // A standalone collection, not a sub-document on Transaction — a Transaction
