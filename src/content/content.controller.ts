@@ -7,8 +7,10 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ContentService } from './content.service';
 import { CreateContentDto } from './dto/create-content.dto';
 import { UpdateContentDto } from './dto/update-content.dto';
@@ -37,6 +39,16 @@ export class ContentController {
   @RequirePermission('content', 'view')
   list(@Query() dto: ListContentDto) {
     return this.contentService.list(dto);
+  }
+
+  // Must come before ':id' — otherwise Nest matches "export" as the id.
+  @Get('export')
+  @RequirePermission('content', 'view')
+  async export(@Query() dto: ListContentDto, @Res() res: Response) {
+    const csv = await this.contentService.exportCsv(dto);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="content.csv"');
+    res.send(csv);
   }
 
   @Get('slug/:slug')

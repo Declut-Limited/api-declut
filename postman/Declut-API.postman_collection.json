@@ -3832,7 +3832,7 @@
                 "description": "status defaults to draft if omitted.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"title\": \"Holiday Shipping FAQ\",\n  \"contentType\": \"faq\",\n  \"whereToAppear\": \"Home Page - Top Banner\",\n  \"status\": \"draft\",\n  \"body\": \"<p>During the December holiday period, pickups are available within 24 hours of payment confirmation.</p>\"\n}",
+                  "raw": "{\n  \"title\": \"Holiday Shipping FAQ\",\n  \"contentType\": \"faq\",\n  \"whereToAppear\": \"Home Page - Top Banner\",\n  \"status\": \"draft\",\n  \"contentBody\": \"<p>During the December holiday period, pickups are available within 24 hours of payment confirmation.</p>\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -3858,6 +3858,46 @@
                   }
                 }
               ]
+            },
+            {
+              "name": "Export content (CSV)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/content/export?status=published&contentType=faq",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "content",
+                    "export"
+                  ],
+                  "query": [
+                    {
+                      "key": "status",
+                      "value": "published",
+                      "disabled": true,
+                      "description": "draft or published."
+                    },
+                    {
+                      "key": "contentType",
+                      "value": "faq",
+                      "disabled": true,
+                      "description": "faq, banner, or page."
+                    }
+                  ]
+                },
+                "description": "Unpaginated CSV, same status/contentType filters as the list endpoint. contentBody is excluded from the export — an HTML blob doesn't belong in a CSV cell."
+              },
+              "response": []
             },
             {
               "name": "slug",
@@ -3952,7 +3992,7 @@
                         "{{contentId}}"
                       ]
                     },
-                    "description": "All fields optional (partial update).",
+                    "description": "Partial update — all fields optional: title, contentType (faq|banner|page), whereToAppear, status (draft|published), contentBody. Example body below only sends status/whereToAppear; any subset of the five can be sent.",
                     "body": {
                       "mode": "raw",
                       "raw": "{\n  \"status\": \"published\",\n  \"whereToAppear\": \"Home Page - Bottom Banner\"\n}",

@@ -30,7 +30,7 @@ export class Content {
   status: ContentStatus;
 
   @Prop({ required: true, maxlength: 20000 })
-  body: string;
+  contentBody: string;
 
   // Free text (e.g. "Home Page - Top Banner") — no fixed placement list was given.
   @Prop({ required: true, trim: true, maxlength: 160 })

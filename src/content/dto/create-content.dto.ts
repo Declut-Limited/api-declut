@@ -28,5 +28,5 @@ export class CreateContentDto {
   @IsString()
   @MinLength(1)
   @MaxLength(20000)
-  body: string;
+  contentBody: string;
 }

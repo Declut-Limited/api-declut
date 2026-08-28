@@ -32,5 +32,5 @@ export class UpdateContentDto {
   @IsString()
   @MinLength(1)
   @MaxLength(20000)
-  body?: string;
+  contentBody?: string;
 }

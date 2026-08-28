@@ -12,6 +12,7 @@ import { ListContentDto } from './dto/list-content.dto';
 import { CounterService } from '../common/counter/counter.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { toCsv } from '../common/utils/csv.util';
 
 // Admin has no `status` field of its own (unlike User's accountStatus), so that part of the populate ask is skipped.
 const CREATED_BY_POPULATE = {
@@ -39,7 +40,7 @@ export class ContentService {
       slug,
       contentType: dto.contentType,
       whereToAppear: dto.whereToAppear,
-      body: dto.body,
+      contentBody: dto.contentBody,
       status: dto.status,
       createdBy: adminId,
     });
@@ -88,6 +89,46 @@ export class ContentService {
     return { results, total, page, limit };
   }
 
+  // Unpaginated (full matching set) and flattened, same convention as every other export in this app.
+  async exportCsv(dto: ListContentDto): Promise<string> {
+    const filter: Record<string, unknown> = {};
+    if (dto.status) filter.status = dto.status;
+    if (dto.contentType) filter.contentType = dto.contentType;
+
+    const rows = await this.contentModel
+      .find(filter)
+      .populate({ path: 'createdBy', select: 'name email' })
+      .sort({ createdAt: -1 })
+      .exec();
+
+    return toCsv(
+      rows.map((r) => {
+        const createdBy = r.createdBy as unknown as
+          { name?: string; email?: string } | undefined;
+        return {
+          slug: r.slug,
+          title: r.title,
+          contentType: r.contentType,
+          whereToAppear: r.whereToAppear,
+          status: r.status,
+          createdByName: createdBy?.name ?? '',
+          createdByEmail: createdBy?.email ?? '',
+          createdAt: (r as unknown as { createdAt: Date }).createdAt,
+        };
+      }),
+      [
+        'slug',
+        'title',
+        'contentType',
+        'whereToAppear',
+        'status',
+        'createdByName',
+        'createdByEmail',
+        'createdAt',
+      ],
+    );
+  }
+
   async findById(id: string): Promise<ContentDocument> {
     if (!isValidObjectId(id)) {
       throw new NotFoundException('Content not found');
@@ -125,7 +166,7 @@ export class ContentService {
     if (dto.contentType !== undefined) content.contentType = dto.contentType;
     if (dto.whereToAppear !== undefined)
       content.whereToAppear = dto.whereToAppear;
-    if (dto.body !== undefined) content.body = dto.body;
+    if (dto.contentBody !== undefined) content.contentBody = dto.contentBody;
     if (dto.status !== undefined) content.status = dto.status;
 
     await content.save();
