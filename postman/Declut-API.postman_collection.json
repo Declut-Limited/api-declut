@@ -1794,45 +1794,6 @@
       ]
     },
     {
-      "name": "waitlist",
-      "description": "",
-      "item": [
-        {
-          "name": "Join waitlist",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/waitlist",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "waitlist"
-              ]
-            },
-            "description": "Public, unauthenticated — the marketing landing page signup form. Resubmitting an already-registered email is a silent success, not an error.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"chidinma.eze@gmail.com\",\n  \"interest\": \"buying\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
       "name": "public",
       "item": [
         {
@@ -1853,6 +1814,45 @@
                   ]
                 },
                 "description": "Public, unauthenticated — active categories only (hidden ones excluded), lean shape (id/title/slug). No pagination, no auth. For browse/filter UI."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "waitlist",
+          "description": "",
+          "item": [
+            {
+              "name": "Join waitlist",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/waitlist",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "waitlist"
+                  ]
+                },
+                "description": "Public, unauthenticated — the marketing landing page signup form. Resubmitting an already-registered email is a silent success, not an error.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"chidinma.eze@gmail.com\",\n  \"interest\": \"buying\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
               },
               "response": []
             }
