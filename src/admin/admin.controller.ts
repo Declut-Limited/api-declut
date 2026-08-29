@@ -27,6 +27,7 @@ import { DashboardInsightsDto, RevenueTrendsDto } from './dto/dashboard.dto';
 import { UpdateGeneralSettingsDto } from '../settings/dto/update-general-settings.dto';
 import { UpdatePaymentSettingsDto } from '../settings/dto/update-payment-settings.dto';
 import { UpdateFeesSettingsDto } from '../settings/dto/update-fees-settings.dto';
+import { DateRangeDto } from '../common/dto/date-range.dto';
 import { AdminJwtAuthGuard } from '../admin-auth/guards/admin-jwt-auth.guard';
 import { PermissionsGuard } from '../admin-auth/guards/permissions.guard';
 import { RequirePermission } from '../admin-auth/decorators/require-permission.decorator';
@@ -87,8 +88,8 @@ export class AdminController {
   // Must come before 'users/:id' — otherwise Nest matches "export" as :id.
   @Get('users/export')
   @RequirePermission('users', 'view')
-  async exportUsers(@Res() res: Response) {
-    const csv = await this.adminService.exportUsersCsv();
+  async exportUsers(@Query() dto: DateRangeDto, @Res() res: Response) {
+    const csv = await this.adminService.exportUsersCsv(dto);
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="users.csv"');
     res.send(csv);
@@ -136,7 +137,11 @@ export class AdminController {
     @Res() res: Response,
   ) {
     const status = dto.status && dto.status !== 'all' ? dto.status : undefined;
-    const csv = await this.adminService.exportListingsCsv(status, dto.search);
+    const csv = await this.adminService.exportListingsCsv(
+      status,
+      dto.search,
+      dto,
+    );
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="listings.csv"');
     res.send(csv);
@@ -152,6 +157,7 @@ export class AdminController {
       idOrSlug,
       dto.page ?? 1,
       dto.limit ?? 20,
+      dto,
     );
   }
 
@@ -243,7 +249,7 @@ export class AdminController {
   @Get('reviews/export')
   @RequirePermission('reviews', 'view')
   async exportReviews(@Query() dto: AdminListReviewsDto, @Res() res: Response) {
-    const csv = await this.adminService.exportReviewsCsv(dto.status);
+    const csv = await this.adminService.exportReviewsCsv(dto.status, dto);
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="reviews.csv"');
     res.send(csv);

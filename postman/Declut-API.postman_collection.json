@@ -1833,6 +1833,34 @@
       ]
     },
     {
+      "name": "public",
+      "item": [
+        {
+          "name": "categories",
+          "item": [
+            {
+              "name": "List categories",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/categories",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "categories"
+                  ]
+                },
+                "description": "Public, unauthenticated — active categories only (hidden ones excluded), lean shape (id/title/slug). No pagination, no auth. For browse/filter UI."
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "admin",
       "description": "",
       "item": [
@@ -2077,7 +2105,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/admin/users?page=1&limit=20&status=active&search=amaka",
+                  "raw": "{{baseUrl}}/admin/users?page=1&limit=20&status=active&search=amaka&startDate=2026-08-01&endDate=2026-08-29",
                   "host": [
                     "{{baseUrl}}"
                   ],
@@ -2115,10 +2143,22 @@
                       "value": "amaka",
                       "disabled": true,
                       "description": "Matches name or email (case-insensitive)."
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-08-01",
+                      "disabled": true,
+                      "description": "Filter to records created on/after this date (YYYY-MM-DD). Optional, combinable with endDate."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-08-29",
+                      "disabled": true,
+                      "description": "Filter to records created on/through this date (YYYY-MM-DD), inclusive of the full day. Must not be earlier than startDate; same-day is valid."
                     }
                   ]
                 },
-                "description": "Federated view — merges Users and Admins into one list, sorted by joinedAt. status filter narrows to Users only. type explicitly picks all/user/admin (default all) — type=admin/type=user skip the other collection's query entirely. User rows carry slug (USR-####); Admin rows carry roleId (the assigned Role's id, see the roles folder) instead."
+                "description": "Federated view — merges Users and Admins into one list, sorted by joinedAt. status filter narrows to Users only. type explicitly picks all/user/admin (default all) — type=admin/type=user skip the other collection's query entirely. User rows carry slug (USR-####); Admin rows carry roleId (the assigned Role's id, see the roles folder) instead. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
               },
               "response": []
             },
@@ -2138,7 +2178,7 @@
                       }
                     ],
                     "url": {
-                      "raw": "{{baseUrl}}/admin/users/export",
+                      "raw": "{{baseUrl}}/admin/users/export?startDate=2026-08-01&endDate=2026-08-29",
                       "host": [
                         "{{baseUrl}}"
                       ],
@@ -2146,9 +2186,23 @@
                         "admin",
                         "users",
                         "export"
+                      ],
+                      "query": [
+                        {
+                          "key": "startDate",
+                          "value": "2026-08-01",
+                          "disabled": true,
+                          "description": "Filter to records created on/after this date (YYYY-MM-DD). Optional, combinable with endDate."
+                        },
+                        {
+                          "key": "endDate",
+                          "value": "2026-08-29",
+                          "disabled": true,
+                          "description": "Filter to records created on/through this date (YYYY-MM-DD), inclusive of the full day. Must not be earlier than startDate; same-day is valid."
+                        }
                       ]
                     },
-                    "description": "Same federated set as List users, as CSV."
+                    "description": "Same federated set as List users, as CSV. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
                   },
                   "response": []
                 }
@@ -2331,7 +2385,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/admin/listings?page=1&limit=20&status=all&search=sofa",
+                  "raw": "{{baseUrl}}/admin/listings?page=1&limit=20&status=all&search=sofa&startDate=2026-08-01&endDate=2026-08-29",
                   "host": [
                     "{{baseUrl}}"
                   ],
@@ -2363,10 +2417,22 @@
                       "value": "sofa",
                       "disabled": true,
                       "description": "Matches listing title (case-insensitive)."
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-08-01",
+                      "disabled": true,
+                      "description": "Filter to records created on/after this date (YYYY-MM-DD). Optional, combinable with endDate."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-08-29",
+                      "disabled": true,
+                      "description": "Filter to records created on/through this date (YYYY-MM-DD), inclusive of the full day. Must not be earlier than startDate; same-day is valid."
                     }
                   ]
                 },
-                "description": "status accepts 'all' alongside the real statuses (active/archived/deleted/flagged/sold). Lean row shape — no location, views, saves, priceHistory, or condition (detail-view-only fields); category is trimmed to {_id, title} (no slug), seller to {_id, name, company}."
+                "description": "status accepts 'all' alongside the real statuses (active/archived/deleted/flagged/sold). Lean row shape — no location, views, saves, priceHistory, or condition (detail-view-only fields); category is trimmed to {_id, title} (no slug), seller to {_id, name, company}. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
               },
               "response": []
             },
@@ -2385,7 +2451,7 @@
                       }
                     ],
                     "url": {
-                      "raw": "{{baseUrl}}/admin/listings/export?",
+                      "raw": "{{baseUrl}}/admin/listings/export?startDate=2026-08-01&endDate=2026-08-29",
                       "host": [
                         "{{baseUrl}}"
                       ],
@@ -2406,10 +2472,22 @@
                           "value": "sofa",
                           "disabled": true,
                           "description": "Matches listing title (case-insensitive)."
+                        },
+                        {
+                          "key": "startDate",
+                          "value": "2026-08-01",
+                          "disabled": true,
+                          "description": "Filter to records created on/after this date (YYYY-MM-DD). Optional, combinable with endDate."
+                        },
+                        {
+                          "key": "endDate",
+                          "value": "2026-08-29",
+                          "disabled": true,
+                          "description": "Filter to records created on/through this date (YYYY-MM-DD), inclusive of the full day. Must not be earlier than startDate; same-day is valid."
                         }
                       ]
                     },
-                    "description": ""
+                    "description": "startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
                   },
                   "response": []
                 }
@@ -2504,7 +2582,7 @@
                           }
                         ],
                         "url": {
-                          "raw": "{{baseUrl}}/admin/listings/by-user/{{userId}}?page=1&limit=20",
+                          "raw": "{{baseUrl}}/admin/listings/by-user/{{userId}}?page=1&limit=20&startDate=2026-08-01&endDate=2026-08-29",
                           "host": [
                             "{{baseUrl}}"
                           ],
@@ -2526,10 +2604,22 @@
                               "value": "20",
                               "disabled": false,
                               "description": "Results per page, 1-100. Default 20."
+                            },
+                            {
+                              "key": "startDate",
+                              "value": "2026-08-01",
+                              "disabled": true,
+                              "description": "Filter to records created on/after this date (YYYY-MM-DD). Optional, combinable with endDate."
+                            },
+                            {
+                              "key": "endDate",
+                              "value": "2026-08-29",
+                              "disabled": true,
+                              "description": "Filter to records created on/through this date (YYYY-MM-DD), inclusive of the full day. Must not be earlier than startDate; same-day is valid."
                             }
                           ]
                         },
-                        "description": "idOrSlug accepts either a raw user id or a USR-#### slug."
+                        "description": "idOrSlug accepts either a raw user id or a USR-#### slug. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
                       },
                       "response": []
                     }
@@ -2803,7 +2893,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/admin/transactions?page=1&limit=20&status=disputed&tab=active",
+                  "raw": "{{baseUrl}}/admin/transactions?page=1&limit=20&status=disputed&tab=active&startDate=2026-08-01&endDate=2026-08-29",
                   "host": [
                     "{{baseUrl}}"
                   ],
@@ -2835,10 +2925,22 @@
                       "value": "active",
                       "disabled": true,
                       "description": "Grouped tab filter — all, active, completed, disputed, stalled, or refunded (refunded also folds in cancelled). Ignored if status is given."
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-08-01",
+                      "disabled": true,
+                      "description": "Filter to records created on/after this date (YYYY-MM-DD). Optional, combinable with endDate."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-08-29",
+                      "disabled": true,
+                      "description": "Filter to records created on/through this date (YYYY-MM-DD), inclusive of the full day. Must not be earlier than startDate; same-day is valid."
                     }
                   ]
                 },
-                "description": "tab groups related statuses (active/completed/disputed/stalled/refunded); status is an exact single-status override, taking precedence over tab. Get-by-id and get-by-reference were removed 2026-08-28 (explicit instruction) — list is the only transaction read endpoint now; release/refund were already deferred. escrow is now populated ({_id, status}) on each row, and EscrowStatus gained FROZEN (held/refunded/released/frozen)."
+                "description": "tab groups related statuses (active/completed/disputed/stalled/refunded); status is an exact single-status override, taking precedence over tab. Get-by-id and get-by-reference were removed 2026-08-28 (explicit instruction) — list is the only transaction read endpoint now; release/refund were already deferred. escrow is now populated ({_id, status}) on each row, and EscrowStatus gained FROZEN (held/refunded/released/frozen). startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
               },
               "response": []
             }
@@ -2859,7 +2961,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/admin/escrows?page=1&limit=20",
+                  "raw": "{{baseUrl}}/admin/escrows?page=1&limit=20&startDate=2026-08-01&endDate=2026-08-29",
                   "host": [
                     "{{baseUrl}}"
                   ],
@@ -2879,10 +2981,22 @@
                       "value": "20",
                       "disabled": false,
                       "description": "Results per page, 1-100. Default 20."
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-08-01",
+                      "disabled": true,
+                      "description": "Filter to records created on/after this date (YYYY-MM-DD). Optional, combinable with endDate."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-08-29",
+                      "disabled": true,
+                      "description": "Filter to records created on/through this date (YYYY-MM-DD), inclusive of the full day. Must not be earlier than startDate; same-day is valid."
                     }
                   ]
                 },
-                "description": "Escrow is its own collection/module (src/escrow/) as of 2026-08-28 — one row per Transaction, created once payment is verified. Gated under the transactions permission bucket, no dedicated RBAC bucket of its own. transaction is now populated ({_id, reference}) on each row (was a flat transactionId string); the listing field was renamed from product; status gained FROZEN."
+                "description": "Escrow is its own collection/module (src/escrow/) as of 2026-08-28 — one row per Transaction, created once payment is verified. Gated under the transactions permission bucket, no dedicated RBAC bucket of its own. transaction is now populated ({_id, reference}) on each row (was a flat transactionId string); the listing field was renamed from product; status gained FROZEN. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
               },
               "response": []
             }
@@ -2904,7 +3018,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/admin/reviews?page=1&limit=20&status=flagged",
+                  "raw": "{{baseUrl}}/admin/reviews?page=1&limit=20&status=flagged&startDate=2026-08-01&endDate=2026-08-29",
                   "host": [
                     "{{baseUrl}}"
                   ],
@@ -2930,10 +3044,22 @@
                       "value": "flagged",
                       "disabled": true,
                       "description": "visible, flagged, or resolved."
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-08-01",
+                      "disabled": true,
+                      "description": "Filter to records created on/after this date (YYYY-MM-DD). Optional, combinable with endDate."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-08-29",
+                      "disabled": true,
+                      "description": "Filter to records created on/through this date (YYYY-MM-DD), inclusive of the full day. Must not be earlier than startDate; same-day is valid."
                     }
                   ]
                 },
-                "description": "Populates reviewer (name, email) and listing (title, slug)."
+                "description": "Populates reviewer (name, email) and listing (title, slug). startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
               },
               "response": []
             },
@@ -2952,7 +3078,7 @@
                       }
                     ],
                     "url": {
-                      "raw": "{{baseUrl}}/admin/reviews/export?",
+                      "raw": "{{baseUrl}}/admin/reviews/export?startDate=2026-08-01&endDate=2026-08-29",
                       "host": [
                         "{{baseUrl}}"
                       ],
@@ -2967,10 +3093,22 @@
                           "value": "flagged",
                           "disabled": true,
                           "description": "visible, flagged, or resolved."
+                        },
+                        {
+                          "key": "startDate",
+                          "value": "2026-08-01",
+                          "disabled": true,
+                          "description": "Filter to records created on/after this date (YYYY-MM-DD). Optional, combinable with endDate."
+                        },
+                        {
+                          "key": "endDate",
+                          "value": "2026-08-29",
+                          "disabled": true,
+                          "description": "Filter to records created on/through this date (YYYY-MM-DD), inclusive of the full day. Must not be earlier than startDate; same-day is valid."
                         }
                       ]
                     },
-                    "description": ""
+                    "description": "startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
                   },
                   "response": []
                 }
@@ -3243,16 +3381,42 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/admin/categories",
+                  "raw": "{{baseUrl}}/admin/categories?page=1&limit=20&startDate=2026-08-01&endDate=2026-08-29",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "admin",
                     "categories"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "disabled": false,
+                      "description": "Page number, >= 1. Default 1."
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "disabled": false,
+                      "description": "Results per page, 1-100. Default 20."
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-08-01",
+                      "disabled": true,
+                      "description": "Filter to records created on/after this date (YYYY-MM-DD). Optional, combinable with endDate."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-08-29",
+                      "disabled": true,
+                      "description": "Filter to records created on/through this date (YYYY-MM-DD), inclusive of the full day. Must not be earlier than startDate; same-day is valid."
+                    }
                   ]
                 },
-                "description": "Includes a computed listingCount per category."
+                "description": "Includes a computed listingCount per category. Now paginated (page/limit), same as every other admin list. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
               },
               "response": []
             },
@@ -3325,7 +3489,7 @@
                       }
                     ],
                     "url": {
-                      "raw": "{{baseUrl}}/admin/categories/export",
+                      "raw": "{{baseUrl}}/admin/categories/export?startDate=2026-08-01&endDate=2026-08-29",
                       "host": [
                         "{{baseUrl}}"
                       ],
@@ -3333,9 +3497,23 @@
                         "admin",
                         "categories",
                         "export"
+                      ],
+                      "query": [
+                        {
+                          "key": "startDate",
+                          "value": "2026-08-01",
+                          "disabled": true,
+                          "description": "Filter to records created on/after this date (YYYY-MM-DD). Optional, combinable with endDate."
+                        },
+                        {
+                          "key": "endDate",
+                          "value": "2026-08-29",
+                          "disabled": true,
+                          "description": "Filter to records created on/through this date (YYYY-MM-DD), inclusive of the full day. Must not be earlier than startDate; same-day is valid."
+                        }
                       ]
                     },
-                    "description": ""
+                    "description": "startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
                   },
                   "response": []
                 }
@@ -3464,7 +3642,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/admin/reports?page=1&limit=20&status=new",
+                  "raw": "{{baseUrl}}/admin/reports?page=1&limit=20&status=new&startDate=2026-08-01&endDate=2026-08-29",
                   "host": [
                     "{{baseUrl}}"
                   ],
@@ -3490,10 +3668,22 @@
                       "value": "new",
                       "disabled": true,
                       "description": "new, investigating, or resolved."
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-08-01",
+                      "disabled": true,
+                      "description": "Filter to records created on/after this date (YYYY-MM-DD). Optional, combinable with endDate."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-08-29",
+                      "disabled": true,
+                      "description": "Filter to records created on/through this date (YYYY-MM-DD), inclusive of the full day. Must not be earlier than startDate; same-day is valid."
                     }
                   ]
                 },
-                "description": ""
+                "description": "startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
               },
               "response": []
             },
@@ -3568,7 +3758,7 @@
                       }
                     ],
                     "url": {
-                      "raw": "{{baseUrl}}/admin/reports/export?",
+                      "raw": "{{baseUrl}}/admin/reports/export?startDate=2026-08-01&endDate=2026-08-29",
                       "host": [
                         "{{baseUrl}}"
                       ],
@@ -3583,10 +3773,22 @@
                           "value": "new",
                           "disabled": true,
                           "description": "new, investigating, or resolved."
+                        },
+                        {
+                          "key": "startDate",
+                          "value": "2026-08-01",
+                          "disabled": true,
+                          "description": "Filter to records created on/after this date (YYYY-MM-DD). Optional, combinable with endDate."
+                        },
+                        {
+                          "key": "endDate",
+                          "value": "2026-08-29",
+                          "disabled": true,
+                          "description": "Filter to records created on/through this date (YYYY-MM-DD), inclusive of the full day. Must not be earlier than startDate; same-day is valid."
                         }
                       ]
                     },
-                    "description": ""
+                    "description": "startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
                   },
                   "response": []
                 }
@@ -3695,7 +3897,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/admin/content?page=1&limit=20",
+                  "raw": "{{baseUrl}}/admin/content?page=1&limit=20&startDate=2026-08-01&endDate=2026-08-29",
                   "host": [
                     "{{baseUrl}}"
                   ],
@@ -3727,10 +3929,22 @@
                       "value": "faq",
                       "disabled": true,
                       "description": "faq, banner, or page."
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-08-01",
+                      "disabled": true,
+                      "description": "Filter to records created on/after this date (YYYY-MM-DD). Optional, combinable with endDate."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-08-29",
+                      "disabled": true,
+                      "description": "Filter to records created on/through this date (YYYY-MM-DD), inclusive of the full day. Must not be earlier than startDate; same-day is valid."
                     }
                   ]
                 },
-                "description": "createdBy is populated: name, email, title, createdAt, role.name."
+                "description": "createdBy is populated: name, email, title, createdAt, role.name. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
               },
               "response": []
             },
@@ -3802,7 +4016,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/admin/content/export?status=published&contentType=faq",
+                  "raw": "{{baseUrl}}/admin/content/export?status=published&contentType=faq&startDate=2026-08-01&endDate=2026-08-29",
                   "host": [
                     "{{baseUrl}}"
                   ],
@@ -3823,10 +4037,22 @@
                       "value": "faq",
                       "disabled": true,
                       "description": "faq, banner, or page."
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-08-01",
+                      "disabled": true,
+                      "description": "Filter to records created on/after this date (YYYY-MM-DD). Optional, combinable with endDate."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-08-29",
+                      "disabled": true,
+                      "description": "Filter to records created on/through this date (YYYY-MM-DD), inclusive of the full day. Must not be earlier than startDate; same-day is valid."
                     }
                   ]
                 },
-                "description": "Unpaginated CSV, same status/contentType filters as the list endpoint. contentBody is excluded from the export — an HTML blob doesn't belong in a CSV cell."
+                "description": "Unpaginated CSV, same status/contentType filters as the list endpoint. contentBody is excluded from the export — an HTML blob doesn't belong in a CSV cell. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
               },
               "response": []
             },
@@ -3982,7 +4208,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/admin/activity-log?page=1&limit=20&entityType=listing",
+                  "raw": "{{baseUrl}}/admin/activity-log?page=1&limit=20&entityType=listing&startDate=2026-08-01&endDate=2026-08-29",
                   "host": [
                     "{{baseUrl}}"
                   ],
@@ -4008,10 +4234,22 @@
                       "value": "listing",
                       "disabled": true,
                       "description": "transaction, listing, review, report, content, or campaign."
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-08-01",
+                      "disabled": true,
+                      "description": "Filter to records created on/after this date (YYYY-MM-DD). Optional, combinable with endDate."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-08-29",
+                      "disabled": true,
+                      "description": "Filter to records created on/through this date (YYYY-MM-DD), inclusive of the full day. Must not be earlier than startDate; same-day is valid."
                     }
                   ]
                 },
-                "description": "Each entry includes: label (readable event text), actor (id, name, role, image), and target (entityType/entityId)."
+                "description": "Each entry includes: label (readable event text), actor (id, name, role, image), and target (entityType/entityId). startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
               },
               "response": [],
               "event": [
@@ -4041,7 +4279,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/admin/activity-log/export?entityType=listing",
+                  "raw": "{{baseUrl}}/admin/activity-log/export?entityType=listing&startDate=2026-08-01&endDate=2026-08-29",
                   "host": [
                     "{{baseUrl}}"
                   ],
@@ -4056,10 +4294,22 @@
                       "value": "listing",
                       "disabled": true,
                       "description": "Filter to one entityType."
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-08-01",
+                      "disabled": true,
+                      "description": "Filter to records created on/after this date (YYYY-MM-DD). Optional, combinable with endDate."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-08-29",
+                      "disabled": true,
+                      "description": "Filter to records created on/through this date (YYYY-MM-DD), inclusive of the full day. Must not be earlier than startDate; same-day is valid."
                     }
                   ]
                 },
-                "description": "CSV, unpaginated. Optional entityType query param. Must be requested before {id} — otherwise Nest would match \"export\" as the id."
+                "description": "CSV, unpaginated. Optional entityType query param. Must be requested before {id} — otherwise Nest would match \"export\" as the id. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
               },
               "response": []
             },
@@ -4156,7 +4406,7 @@
                     "description": "Bootstrap the first admin with: npm run seed:admin -- <email> <password> [name]",
                     "body": {
                       "mode": "raw",
-                      "raw": "{\n  \"email\": \"admin@declut.com\",\n  \"password\": \"Password123@\"\n}",
+                      "raw": "{\n  \"email\": \"admin@declut.com.ng\",\n  \"password\": \"Password123@!\"\n}",
                       "options": {
                         "raw": {
                           "language": "json"
@@ -4747,16 +4997,30 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/admin/roles",
+                  "raw": "{{baseUrl}}/admin/roles?page=1&limit=20",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "admin",
                     "roles"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "disabled": false,
+                      "description": "Page number, >= 1. Default 1."
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "disabled": false,
+                      "description": "Results per page, 1-100. Default 20."
+                    }
                   ]
                 },
-                "description": "Every role, newest first. userCount is computed live (how many admins currently point at each role), not stored."
+                "description": "Every role, newest first. Now paginated (page/limit) — no date-range filtering here (excluded on instruction). userCount is computed live (how many admins currently point at each role), not stored."
               },
               "response": []
             },
@@ -4928,7 +5192,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/admin/notification-broadcasts?page=1&limit=20",
+                  "raw": "{{baseUrl}}/admin/notification-broadcasts?page=1&limit=20&startDate=2026-08-01&endDate=2026-08-29",
                   "host": [
                     "{{baseUrl}}"
                   ],
@@ -4954,10 +5218,22 @@
                       "value": "sent",
                       "disabled": true,
                       "description": "Filter to one status."
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-08-01",
+                      "disabled": true,
+                      "description": "Filter to records created on/after this date (YYYY-MM-DD). Optional, combinable with endDate."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-08-29",
+                      "disabled": true,
+                      "description": "Filter to records created on/through this date (YYYY-MM-DD), inclusive of the full day. Must not be earlier than startDate; same-day is valid."
                     }
                   ]
                 },
-                "description": "Paginated, optional status filter (draft|scheduled|sending|sent|failed|cancelled). Export and delete added 2026-08-28, gated notifications/view and notifications/delete respectively."
+                "description": "Paginated, optional status filter (draft|scheduled|sending|sent|failed|cancelled). Export and delete added 2026-08-28, gated notifications/view and notifications/delete respectively. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
               },
               "response": []
             },
@@ -4973,7 +5249,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/admin/notification-broadcasts/export?status=sent",
+                  "raw": "{{baseUrl}}/admin/notification-broadcasts/export?status=sent&startDate=2026-08-01&endDate=2026-08-29",
                   "host": [
                     "{{baseUrl}}"
                   ],
@@ -4988,10 +5264,22 @@
                       "value": "sent",
                       "disabled": true,
                       "description": "draft, scheduled, sending, sent, failed, or cancelled."
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-08-01",
+                      "disabled": true,
+                      "description": "Filter to records created on/after this date (YYYY-MM-DD). Optional, combinable with endDate."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-08-29",
+                      "disabled": true,
+                      "description": "Filter to records created on/through this date (YYYY-MM-DD), inclusive of the full day. Must not be earlier than startDate; same-day is valid."
                     }
                   ]
                 },
-                "description": "Unpaginated CSV, same status filter as the list endpoint."
+                "description": "Unpaginated CSV, same status filter as the list endpoint. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
               },
               "response": []
             },
@@ -5044,7 +5332,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/admin/waitlist?page=1&limit=20&status=waiting&interest=buying&inviteStatus=not_sent&search=chidinma",
+                  "raw": "{{baseUrl}}/admin/waitlist?page=1&limit=20&status=waiting&interest=buying&inviteStatus=not_sent&search=chidinma&startDate=2026-08-01&endDate=2026-08-29",
                   "host": [
                     "{{baseUrl}}"
                   ],
@@ -5088,10 +5376,22 @@
                       "value": "chidinma",
                       "disabled": true,
                       "description": "matches email, case-insensitive"
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-08-01",
+                      "disabled": true,
+                      "description": "Filter to records created on/after this date (YYYY-MM-DD). Optional, combinable with endDate."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-08-29",
+                      "disabled": true,
+                      "description": "Filter to records created on/through this date (YYYY-MM-DD), inclusive of the full day. Must not be earlier than startDate; same-day is valid."
                     }
                   ]
                 },
-                "description": "Paginated, filterable by status/interest/inviteStatus, searchable by email."
+                "description": "Paginated, filterable by status/interest/inviteStatus, searchable by email. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
               },
               "response": []
             },
@@ -5133,7 +5433,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/admin/waitlist/export?status=waiting&interest=buying&inviteStatus=not_sent&search=chidinma",
+                  "raw": "{{baseUrl}}/admin/waitlist/export?status=waiting&interest=buying&inviteStatus=not_sent&search=chidinma&startDate=2026-08-01&endDate=2026-08-29",
                   "host": [
                     "{{baseUrl}}"
                   ],
@@ -5166,10 +5466,22 @@
                       "value": "chidinma",
                       "disabled": true,
                       "description": "matches email, case-insensitive"
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-08-01",
+                      "disabled": true,
+                      "description": "Filter to records created on/after this date (YYYY-MM-DD). Optional, combinable with endDate."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-08-29",
+                      "disabled": true,
+                      "description": "Filter to records created on/through this date (YYYY-MM-DD), inclusive of the full day. Must not be earlier than startDate; same-day is valid."
                     }
                   ]
                 },
-                "description": "Unpaginated CSV of every matching waitlist entry: email, interest, status, inviteStatus, createdAt."
+                "description": "Unpaginated CSV of every matching waitlist entry: email, interest, status, inviteStatus, createdAt. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
               },
               "response": []
             },
@@ -5185,7 +5497,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/admin/waitlist/uninvited?page=1&limit=20&search=chidinma",
+                  "raw": "{{baseUrl}}/admin/waitlist/uninvited?page=1&limit=20&search=chidinma&startDate=2026-08-01&endDate=2026-08-29",
                   "host": [
                     "{{baseUrl}}"
                   ],
@@ -5212,10 +5524,22 @@
                       "value": "chidinma",
                       "disabled": true,
                       "description": ""
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-08-01",
+                      "disabled": true,
+                      "description": "Filter to records created on/after this date (YYYY-MM-DD). Optional, combinable with endDate."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-08-29",
+                      "disabled": true,
+                      "description": "Filter to records created on/through this date (YYYY-MM-DD), inclusive of the full day. Must not be earlier than startDate; same-day is valid."
                     }
                   ]
                 },
-                "description": "Same shape as List waitlist, but status/inviteStatus are pinned server-side to 'waiting'/'not_sent' — backs a \"select all eligible\" bulk-invite action."
+                "description": "Same shape as List waitlist, but status/inviteStatus are pinned server-side to 'waiting'/'not_sent' — backs a \"select all eligible\" bulk-invite action. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
               },
               "response": []
             },

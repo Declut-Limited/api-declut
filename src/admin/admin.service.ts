@@ -30,6 +30,7 @@ import { EmailSellerDto } from './dto/email-seller.dto';
 import type { DashboardInsightsFilter } from './dto/dashboard.dto';
 import { toCsv } from '../common/utils/csv.util';
 import { countTrend } from '../common/utils/trend.util';
+import { DateRangeDto } from '../common/dto/date-range.dto';
 
 /**
  * Thin orchestration layer over services that already exist — every method
@@ -72,10 +73,12 @@ export class AdminService {
         ? this.usersService.adminSearchUsers({
             status: dto.status,
             search: dto.search,
+            startDate: dto.startDate,
+            endDate: dto.endDate,
           })
         : Promise.resolve([]),
       includeAdmins
-        ? this.adminAuthService.searchAdmins(dto.search)
+        ? this.adminAuthService.searchAdmins(dto.search, dto)
         : Promise.resolve<AdminDocument[]>([]),
     ]);
 
@@ -140,8 +143,12 @@ export class AdminService {
     return { results, total, page, limit };
   }
 
-  async exportUsersCsv(): Promise<string> {
-    const { results } = await this.listUsers({ page: 1, limit: 10_000 });
+  async exportUsersCsv(dateRange: DateRangeDto = {}): Promise<string> {
+    const { results } = await this.listUsers({
+      page: 1,
+      limit: 10_000,
+      ...dateRange,
+    });
     return toCsv(results, [
       'type',
       'id',
@@ -266,6 +273,7 @@ export class AdminService {
       dto.limit ?? 20,
       status,
       dto.search,
+      dto,
     );
   }
 
@@ -336,8 +344,12 @@ export class AdminService {
     return this.listingsService.adminUpdate(id, adminId, dto);
   }
 
-  exportListingsCsv(status?: ListingStatus, search?: string) {
-    return this.listingsService.exportCsv(status, search);
+  exportListingsCsv(
+    status?: ListingStatus,
+    search?: string,
+    dateRange?: DateRangeDto,
+  ) {
+    return this.listingsService.exportCsv(status, search, dateRange);
   }
 
   async emailSeller(listingId: string, dto: EmailSellerDto) {
@@ -376,12 +388,22 @@ export class AdminService {
     return { removed: true };
   }
 
-  async getListingsByUser(idOrSlug: string, page: number, limit: number) {
+  async getListingsByUser(
+    idOrSlug: string,
+    page: number,
+    limit: number,
+    dateRange?: DateRangeDto,
+  ) {
     const user = await this.usersService.findByIdOrSlug(idOrSlug);
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    return this.listingsService.byUser(user._id.toString(), page, limit);
+    return this.listingsService.byUser(
+      user._id.toString(),
+      page,
+      limit,
+      dateRange,
+    );
   }
 
   // `status` is an exact override; `tab` groups related statuses for an
@@ -415,6 +437,7 @@ export class AdminService {
       dto.page ?? 1,
       dto.limit ?? 20,
       statuses,
+      dto,
     );
   }
 
@@ -423,11 +446,12 @@ export class AdminService {
       dto.page ?? 1,
       dto.limit ?? 20,
       dto.status,
+      dto,
     );
   }
 
-  exportReviewsCsv(status?: ReviewStatus) {
-    return this.reviewsService.exportCsv(status);
+  exportReviewsCsv(status?: ReviewStatus, dateRange?: DateRangeDto) {
+    return this.reviewsService.exportCsv(status, dateRange);
   }
 
   flagReview(reviewId: string, adminId: string) {

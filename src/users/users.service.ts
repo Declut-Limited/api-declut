@@ -15,6 +15,7 @@ import {
 } from './interfaces/user-profile.interface';
 import { CounterService } from '../common/counter/counter.service';
 import { escapeRegex } from '../common/utils/regex.util';
+import { buildDateRangeFilter } from '../common/utils/date-range.util';
 
 @Injectable()
 export class UsersService {
@@ -223,8 +224,12 @@ export class UsersService {
   adminSearchUsers(filters: {
     status?: AccountStatus;
     search?: string;
+    startDate?: string;
+    endDate?: string;
   }): Promise<UserDocument[]> {
-    const query: Record<string, unknown> = {};
+    const query: Record<string, unknown> = {
+      ...buildDateRangeFilter(filters),
+    };
     if (filters.status) query.accountStatus = filters.status;
     if (filters.search) {
       const re = new RegExp(escapeRegex(filters.search), 'i');

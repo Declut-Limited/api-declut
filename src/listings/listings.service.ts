@@ -22,6 +22,8 @@ import { NotificationRecipientType } from '../notifications/schemas/notification
 import { escapeRegex } from '../common/utils/regex.util';
 import { MONTH_ABBREVIATIONS } from '../common/utils/date.util';
 import { toCsv } from '../common/utils/csv.util';
+import { buildDateRangeFilter } from '../common/utils/date-range.util';
+import { DateRangeDto } from '../common/dto/date-range.dto';
 
 const CATEGORY_POPULATE_FIELDS = 'title slug';
 const SELLER_POPULATE_FIELDS =
@@ -379,13 +381,17 @@ export class ListingsService {
     limit: number,
     status?: ListingStatus,
     search?: string,
+    dateRange: DateRangeDto = {},
   ): Promise<{
     results: Record<string, unknown>[];
     total: number;
     page: number;
     limit: number;
   }> {
-    const filter: Record<string, unknown> = status ? { status } : {};
+    const filter: Record<string, unknown> = {
+      ...(status ? { status } : {}),
+      ...buildDateRangeFilter(dateRange),
+    };
     if (search) {
       const re = new RegExp(escapeRegex(search), 'i');
       filter.title = re;
@@ -437,8 +443,15 @@ export class ListingsService {
   }
 
   // Unpaginated (full matching set) and flattened rather than reusing attachSellerSummaries() — a nested-object CSV cell is unreadable.
-  async exportCsv(status?: ListingStatus, search?: string): Promise<string> {
-    const filter: Record<string, unknown> = status ? { status } : {};
+  async exportCsv(
+    status?: ListingStatus,
+    search?: string,
+    dateRange: DateRangeDto = {},
+  ): Promise<string> {
+    const filter: Record<string, unknown> = {
+      ...(status ? { status } : {}),
+      ...buildDateRangeFilter(dateRange),
+    };
     if (search) {
       filter.title = new RegExp(escapeRegex(search), 'i');
     }
@@ -790,13 +803,18 @@ export class ListingsService {
     sellerId: string,
     page: number,
     limit: number,
+    dateRange: DateRangeDto = {},
   ): Promise<{
     results: Record<string, unknown>[];
     total: number;
     page: number;
     limit: number;
   }> {
-    const filter = { seller: sellerId, status: { $ne: ListingStatus.DELETED } };
+    const filter = {
+      seller: sellerId,
+      status: { $ne: ListingStatus.DELETED },
+      ...buildDateRangeFilter(dateRange),
+    };
     const [found, total] = await Promise.all([
       this.listingModel
         .find(filter)

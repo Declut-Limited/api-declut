@@ -29,6 +29,7 @@ export class NotificationBroadcastsController {
       dto.page ?? 1,
       dto.limit ?? 20,
       dto.status,
+      dto,
     );
   }
 
@@ -39,7 +40,10 @@ export class NotificationBroadcastsController {
     @Query() dto: ListNotificationBroadcastsDto,
     @Res() res: Response,
   ) {
-    const csv = await this.notificationsService.exportBroadcastsCsv(dto.status);
+    const csv = await this.notificationsService.exportBroadcastsCsv(
+      dto.status,
+      dto,
+    );
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader(
       'Content-Disposition',

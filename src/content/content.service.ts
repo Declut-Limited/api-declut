@@ -13,6 +13,7 @@ import { CounterService } from '../common/counter/counter.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { toCsv } from '../common/utils/csv.util';
+import { buildDateRangeFilter } from '../common/utils/date-range.util';
 
 // Admin has no `status` field of its own (unlike User's accountStatus), so that part of the populate ask is skipped.
 const CREATED_BY_POPULATE = {
@@ -71,7 +72,7 @@ export class ContentService {
   }> {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = { ...buildDateRangeFilter(dto) };
     if (dto.status) filter.status = dto.status;
     if (dto.contentType) filter.contentType = dto.contentType;
 
@@ -91,7 +92,7 @@ export class ContentService {
 
   // Unpaginated (full matching set) and flattened, same convention as every other export in this app.
   async exportCsv(dto: ListContentDto): Promise<string> {
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = { ...buildDateRangeFilter(dto) };
     if (dto.status) filter.status = dto.status;
     if (dto.contentType) filter.contentType = dto.contentType;
 

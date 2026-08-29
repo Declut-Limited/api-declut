@@ -16,6 +16,6 @@ export class AdminEscrowController {
   @Get()
   @RequirePermission('transactions', 'view')
   list(@Query() dto: ListEscrowsDto) {
-    return this.escrowService.adminList(dto.page ?? 1, dto.limit ?? 20);
+    return this.escrowService.adminList(dto.page ?? 1, dto.limit ?? 20, dto);
   }
 }

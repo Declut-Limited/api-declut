@@ -11,7 +11,8 @@ import { NotificationBroadcastStatus } from '../schemas/notification-broadcast.s
 import { BROADCAST_QUEUE, BroadcastJobData } from './broadcast-queue.constants';
 
 // Fans one content-published broadcast out to every User and Admin, streaming both collections via a lean Mongo cursor rather than loading them into memory — one long-running job, not sub-batched into parallel jobs; revisit with BullMQ's flow producer if recipient counts get large.
-@Processor(BROADCAST_QUEUE)
+// drainDelay/stalledInterval raised to 30 min (defaults are 5s/30s) — this queue fires rarely, so on stock defaults nearly all its Redis traffic is idle re-polling, not real jobs. A new job still wakes the worker instantly (BullMQ unblocks on add, independent of this timer); this only slows how often the worker re-arms its "nothing to do" wait and re-scans for stalled jobs while idle.
+@Processor(BROADCAST_QUEUE, { drainDelay: 1800, stalledInterval: 1_800_000 })
 export class NotificationBroadcastProcessor extends WorkerHost {
   private readonly logger = new Logger(NotificationBroadcastProcessor.name);
 

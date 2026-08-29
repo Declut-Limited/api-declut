@@ -11,7 +11,13 @@ import {
 // WaitlistService.getInvitableEntry()/deliverInvite() can throw (missing
 // entry, id/email mismatch, already joined, email-send failure), and one
 // bad or failed recipient in a batch of hundreds must not abort the rest.
-@Processor(WAITLIST_INVITE_QUEUE)
+// drainDelay/stalledInterval raised to 30 min — same reasoning as
+// NotificationBroadcastProcessor: this queue fires rarely, real jobs still
+// wake the worker instantly, this only cuts idle-poll Redis commands.
+@Processor(WAITLIST_INVITE_QUEUE, {
+  drainDelay: 1800,
+  stalledInterval: 1_800_000,
+})
 export class WaitlistBulkInviteProcessor extends WorkerHost {
   private readonly logger = new Logger(WaitlistBulkInviteProcessor.name);
 

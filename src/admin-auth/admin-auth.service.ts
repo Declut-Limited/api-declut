@@ -41,6 +41,8 @@ import { AdminPermissions } from './interfaces/admin-permissions.interface';
 import { CounterService } from '../common/counter/counter.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationRecipientType } from '../notifications/schemas/notification.schema';
+import { buildDateRangeFilter } from '../common/utils/date-range.util';
+import { DateRangeDto } from '../common/dto/date-range.dto';
 
 export interface AdminTokenPair {
   accessToken: string;
@@ -282,8 +284,13 @@ export class AdminAuthService {
   // accountStatus, so status filters only ever narrow the User side.
   // Populates role with just its name (not the full permissions object —
   // this list view only needs it for display, unlike getProfile()/findById()).
-  searchAdmins(search?: string): Promise<AdminDocument[]> {
-    const query: Record<string, unknown> = {};
+  searchAdmins(
+    search?: string,
+    dateRange: DateRangeDto = {},
+  ): Promise<AdminDocument[]> {
+    const query: Record<string, unknown> = {
+      ...buildDateRangeFilter(dateRange),
+    };
     if (search) {
       const re = new RegExp(escapeRegex(search), 'i');
       query.$or = [{ name: re }, { email: re }];

@@ -6,11 +6,13 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { RolesService } from './roles.service';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
+import { ListRolesDto } from './dto/list-roles.dto';
 import { AdminJwtAuthGuard } from '../admin-auth/guards/admin-jwt-auth.guard';
 import { PermissionsGuard } from '../admin-auth/guards/permissions.guard';
 import { RequirePermission } from '../admin-auth/decorators/require-permission.decorator';
@@ -33,8 +35,8 @@ export class RolesController {
 
   @Get()
   @RequirePermission('roles', 'view')
-  findAll() {
-    return this.rolesService.findAll();
+  findAll(@Query() dto: ListRolesDto) {
+    return this.rolesService.findAll(dto);
   }
 
   @Patch(':id')

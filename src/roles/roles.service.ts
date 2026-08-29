@@ -8,6 +8,7 @@ import { Model } from 'mongoose';
 import { Role, RoleDocument } from './schemas/role.schema';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
+import { ListRolesDto } from './dto/list-roles.dto';
 import {
   ADMIN_PERMISSION_MODULES,
   AdminPermissions,
@@ -38,15 +39,31 @@ export class RolesService {
   }
 
   // userCount is computed here, never stored — see the schema comment.
-  async findAll(): Promise<Array<Role & { userCount: number }>> {
-    const roles = await this.roleModel.find().sort({ createdAt: -1 }).exec();
+  async findAll(dto: ListRolesDto = {}): Promise<{
+    results: Array<Role & { userCount: number }>;
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const page = dto.page ?? 1;
+    const limit = dto.limit ?? 20;
+    const [roles, total] = await Promise.all([
+      this.roleModel
+        .find()
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .exec(),
+      this.roleModel.countDocuments(),
+    ]);
     const counts = await Promise.all(
       roles.map((r) => this.adminAuthService.countByRole(r._id.toString())),
     );
-    return roles.map((r, i) => ({
+    const results = roles.map((r, i) => ({
       ...(r.toObject() as unknown as Role),
       userCount: counts[i],
     }));
+    return { results, total, page, limit };
   }
 
   async update(id: string, dto: UpdateRoleDto): Promise<Role> {

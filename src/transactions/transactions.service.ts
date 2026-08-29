@@ -37,6 +37,8 @@ import {
 import { pctTrend, breachTrend, Trend } from '../common/utils/trend.util';
 import { MONTH_ABBREVIATIONS } from '../common/utils/date.util';
 import { PopulatedParty, shapeParty } from '../common/utils/party.util';
+import { buildDateRangeFilter } from '../common/utils/date-range.util';
+import { DateRangeDto } from '../common/dto/date-range.dto';
 
 interface PaystackWebhookPayload {
   event: string;
@@ -437,9 +439,16 @@ export class TransactionsService {
 
   // Admin-only surface — always strips confirmationCode, same "only ever returned to the buyer" invariant as toResponseShape().
   // `statuses` (plural) so AdminService's tab-vs-status filtering can pass either a single status or a grouped set (e.g. the "active" tab) through the same query path.
-  async adminList(page: number, limit: number, statuses?: TransactionStatus[]) {
-    const filter =
-      statuses && statuses.length ? { status: { $in: statuses } } : {};
+  async adminList(
+    page: number,
+    limit: number,
+    statuses?: TransactionStatus[],
+    dateRange: DateRangeDto = {},
+  ) {
+    const filter = {
+      ...(statuses && statuses.length ? { status: { $in: statuses } } : {}),
+      ...buildDateRangeFilter(dateRange),
+    };
     const [results, total] = await Promise.all([
       this.transactionModel
         .find(filter)

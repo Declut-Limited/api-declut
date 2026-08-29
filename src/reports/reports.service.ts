@@ -13,6 +13,8 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { toCsv } from '../common/utils/csv.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationRecipientType } from '../notifications/schemas/notification.schema';
+import { buildDateRangeFilter } from '../common/utils/date-range.util';
+import { DateRangeDto } from '../common/dto/date-range.dto';
 
 // Proposed field sets, not explicitly pinned down beyond "populated" —
 // flag back if these need adjusting once a real UI consumes them.
@@ -69,7 +71,10 @@ export class ReportsService {
   }> {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
-    const filter = dto.status ? { status: dto.status } : {};
+    const filter = {
+      ...(dto.status ? { status: dto.status } : {}),
+      ...buildDateRangeFilter(dto),
+    };
 
     const [found, total] = await Promise.all([
       this.reportModel
@@ -93,8 +98,14 @@ export class ReportsService {
   }
 
   // Unpaginated (full matching set) and flattened rather than reusing shapeReport() — a nested-object CSV cell is unreadable.
-  async exportCsv(status?: ReportStatus): Promise<string> {
-    const filter = status ? { status } : {};
+  async exportCsv(
+    status?: ReportStatus,
+    dateRange: DateRangeDto = {},
+  ): Promise<string> {
+    const filter = {
+      ...(status ? { status } : {}),
+      ...buildDateRangeFilter(dateRange),
+    };
     const found = await this.reportModel
       .find(filter)
       .populate('listing', POPULATE_FIELDS.listing)

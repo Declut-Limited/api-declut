@@ -9,6 +9,8 @@ import { UsersService } from '../users/users.service';
 import { AdminAuthService } from '../admin-auth/admin-auth.service';
 import { CounterService } from '../common/counter/counter.service';
 import { toCsv } from '../common/utils/csv.util';
+import { buildDateRangeFilter } from '../common/utils/date-range.util';
+import { DateRangeDto } from '../common/dto/date-range.dto';
 
 interface ActorSummary {
   id: string;
@@ -71,13 +73,17 @@ export class AuditLogService {
     page: number,
     limit: number,
     entityType?: string,
+    dateRange: DateRangeDto = {},
   ): Promise<{
     results: AuditLogDocument[];
     total: number;
     page: number;
     limit: number;
   }> {
-    const filter = entityType ? { entityType } : {};
+    const filter = {
+      ...(entityType ? { entityType } : {}),
+      ...buildDateRangeFilter(dateRange),
+    };
     const [results, total] = await Promise.all([
       this.auditLogModel
         .find(filter)
@@ -108,13 +114,19 @@ export class AuditLogService {
     page: number,
     limit: number,
     entityType?: string,
+    dateRange: DateRangeDto = {},
   ): Promise<{
     results: Record<string, unknown>[];
     total: number;
     page: number;
     limit: number;
   }> {
-    const { results, total } = await this.list(page, limit, entityType);
+    const { results, total } = await this.list(
+      page,
+      limit,
+      entityType,
+      dateRange,
+    );
     const shaped = await Promise.all(results.map((r) => this.shapeSummary(r)));
     return { results: shaped, total, page, limit };
   }
@@ -136,8 +148,14 @@ export class AuditLogService {
   }
 
   // Unpaginated and flattened, same convention as every other export in this app. Actor stays a raw id/string rather than resolved to a name — resolving each row would mean an N+1 lookup per row across a potentially large unpaginated set; the paginated list view already pays that cost at 20 rows/page, this export doesn't.
-  async exportCsv(entityType?: string): Promise<string> {
-    const filter = entityType ? { entityType } : {};
+  async exportCsv(
+    entityType?: string,
+    dateRange: DateRangeDto = {},
+  ): Promise<string> {
+    const filter = {
+      ...(entityType ? { entityType } : {}),
+      ...buildDateRangeFilter(dateRange),
+    };
     const rows = await this.auditLogModel
       .find(filter)
       .sort({ createdAt: -1 })

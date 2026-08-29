@@ -4,6 +4,8 @@ import { Model, Types } from 'mongoose';
 import { Escrow, EscrowDocument, EscrowStatus } from './schemas/escrow.schema';
 import { CounterService } from '../common/counter/counter.service';
 import { PopulatedParty, shapeParty } from '../common/utils/party.util';
+import { buildDateRangeFilter } from '../common/utils/date-range.util';
+import { DateRangeDto } from '../common/dto/date-range.dto';
 
 const PARTY_POPULATE_FIELDS = 'name email accountStatus slug company';
 const LISTING_POPULATE_FIELDS = 'title';
@@ -50,23 +52,23 @@ export class EscrowService {
     );
   }
 
-  async adminList(page: number, limit: number) {
+  async adminList(page: number, limit: number, dateRange: DateRangeDto = {}) {
+    const filter = buildDateRangeFilter(dateRange);
     const [escrows, total] = await Promise.all([
       this.escrowModel
-        .find({})
+        .find(filter)
         .populate('buyer', PARTY_POPULATE_FIELDS)
         .populate('seller', PARTY_POPULATE_FIELDS)
         .populate('listing', LISTING_POPULATE_FIELDS)
         .populate(
           'transaction',
-          // 'reference commissionAmount sellerPayoutAmount commissionPercentage amount',
-          'reference amount',
+          'reference commissionAmount sellerPayoutAmount commissionPercentage amount',
         )
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
         .exec(),
-      this.escrowModel.countDocuments({}),
+      this.escrowModel.countDocuments(filter),
     ]);
 
     return {

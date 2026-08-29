@@ -18,6 +18,8 @@ import { TransactionsService } from '../transactions/transactions.service';
 import { TransactionStatus } from '../transactions/schemas/transaction.schema';
 import { UsersService } from '../users/users.service';
 import { TrustScoreService } from '../trust-score/trust-score.service';
+import { buildDateRangeFilter } from '../common/utils/date-range.util';
+import { DateRangeDto } from '../common/dto/date-range.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationRecipientType } from '../notifications/schemas/notification.schema';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -167,8 +169,14 @@ export class ReviewsService {
   }
 
   // Unpaginated (full matching set) and flattened rather than reusing shapeReview() — a nested-object CSV cell is unreadable.
-  async exportCsv(status?: ReviewStatus): Promise<string> {
-    const filter = status ? { status } : {};
+  async exportCsv(
+    status?: ReviewStatus,
+    dateRange: DateRangeDto = {},
+  ): Promise<string> {
+    const filter = {
+      ...(status ? { status } : {}),
+      ...buildDateRangeFilter(dateRange),
+    };
     const found = await this.reviewModel
       .find(filter)
       .populate('reviewer', REVIEWER_POPULATE_FIELDS)
@@ -213,13 +221,17 @@ export class ReviewsService {
     page: number,
     limit: number,
     status?: ReviewStatus,
+    dateRange: DateRangeDto = {},
   ): Promise<{
     results: Record<string, unknown>[];
     total: number;
     page: number;
     limit: number;
   }> {
-    const filter = status ? { status } : {};
+    const filter = {
+      ...(status ? { status } : {}),
+      ...buildDateRangeFilter(dateRange),
+    };
     const [found, total] = await Promise.all([
       this.reviewModel
         .find(filter)

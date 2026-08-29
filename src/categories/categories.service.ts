@@ -14,8 +14,11 @@ import {
 import { Listing, ListingDocument } from '../listings/schemas/listing.schema';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
+import { ListCategoriesDto } from './dto/list-categories.dto';
 import { slugify } from '../common/utils/slugify.util';
 import { toCsv } from '../common/utils/csv.util';
+import { buildDateRangeFilter } from '../common/utils/date-range.util';
+import { DateRangeDto } from '../common/dto/date-range.dto';
 
 export interface CategoryWithCount {
   id: string;
@@ -24,6 +27,12 @@ export interface CategoryWithCount {
   status: CategoryStatus;
   listingCount: number;
   createdAt: Date;
+}
+
+export interface PublicCategory {
+  id: string;
+  title: string;
+  slug: string;
 }
 
 @Injectable()
@@ -57,12 +66,39 @@ export class CategoriesService {
     return this.withCount(category);
   }
 
-  async list(): Promise<CategoryWithCount[]> {
+  async list(dto: ListCategoriesDto = {}): Promise<{
+    results: CategoryWithCount[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const page = dto.page ?? 1;
+    const limit = dto.limit ?? 20;
+    const filter = buildDateRangeFilter(dto);
+    const [categories, total] = await Promise.all([
+      this.categoryModel
+        .find(filter)
+        .sort({ title: 1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .exec(),
+      this.categoryModel.countDocuments(filter),
+    ]);
+    const results = await this.withCounts(categories);
+    return { results, total, page, limit };
+  }
+
+  // Public, unauthenticated browse endpoint — active categories only, lean shape.
+  async listPublic(): Promise<PublicCategory[]> {
     const categories = await this.categoryModel
-      .find()
+      .find({ status: CategoryStatus.ACTIVE })
       .sort({ title: 1 })
       .exec();
-    return this.withCounts(categories);
+    return categories.map((c) => ({
+      id: c._id.toString(),
+      title: c.title,
+      slug: c.slug,
+    }));
   }
 
   async toggleStatus(id: string): Promise<CategoryWithCount> {
@@ -112,9 +148,16 @@ export class CategoriesService {
     await category.deleteOne();
   }
 
-  async exportCsv(): Promise<string> {
-    const categories = await this.list();
-    return toCsv(categories as unknown as Record<string, unknown>[], [
+  // Unpaginated (full matching set) — list() is now paginated, so this
+  // queries directly rather than going through it, same as every other
+  // export in this app.
+  async exportCsv(dateRange: DateRangeDto = {}): Promise<string> {
+    const categories = await this.categoryModel
+      .find(buildDateRangeFilter(dateRange))
+      .sort({ title: 1 })
+      .exec();
+    const withCounts = await this.withCounts(categories);
+    return toCsv(withCounts as unknown as Record<string, unknown>[], [
       'id',
       'title',
       'slug',

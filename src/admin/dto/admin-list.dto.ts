@@ -1,32 +1,13 @@
-import { Type } from 'class-transformer';
-import {
-  IsEnum,
-  IsIn,
-  IsInt,
-  IsOptional,
-  IsString,
-  Max,
-  Min,
-} from 'class-validator';
+import { IsEnum, IsIn, IsOptional, IsString } from 'class-validator';
 import { ListingStatus } from '../../listings/schemas/listing.schema';
 import { TransactionStatus } from '../../transactions/schemas/transaction.schema';
 import { AccountStatus } from '../../users/schemas/user.schema';
 import { ReviewStatus } from '../../reviews/schemas/review.schema';
+import { PaginatedDateRangeDto } from '../../common/dto/date-range.dto';
 
-export class PageDto {
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page?: number = 1;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  limit?: number = 20;
-}
+// Kept as its own name (rather than inlining PaginatedDateRangeDto everywhere)
+// since every admin list DTO below already extends PageDto.
+export class PageDto extends PaginatedDateRangeDto {}
 
 export class AdminListUsersDto extends PageDto {
   @IsOptional()

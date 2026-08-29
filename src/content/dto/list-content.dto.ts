@@ -1,21 +1,8 @@
-import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsEnum, IsOptional } from 'class-validator';
 import { ContentStatus, ContentType } from '../schemas/content.schema';
+import { PaginatedDateRangeDto } from '../../common/dto/date-range.dto';
 
-export class ListContentDto {
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page?: number = 1;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  limit?: number = 20;
-
+export class ListContentDto extends PaginatedDateRangeDto {
   @IsOptional()
   @IsEnum(ContentStatus)
   status?: ContentStatus;

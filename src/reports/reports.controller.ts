@@ -44,7 +44,7 @@ export class ReportsController {
   @Get('export')
   @RequirePermission('reports', 'view')
   async export(@Query() dto: ListReportsDto, @Res() res: Response) {
-    const csv = await this.reportsService.exportCsv(dto.status);
+    const csv = await this.reportsService.exportCsv(dto.status, dto);
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="reports.csv"');
     res.send(csv);

@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Res,
   UseGuards,
 } from '@nestjs/common';
@@ -13,6 +14,7 @@ import type { Response } from 'express';
 import { CategoriesService } from './categories.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
+import { ListCategoriesDto } from './dto/list-categories.dto';
 import { AdminJwtAuthGuard } from '../admin-auth/guards/admin-jwt-auth.guard';
 import { PermissionsGuard } from '../admin-auth/guards/permissions.guard';
 import { RequirePermission } from '../admin-auth/decorators/require-permission.decorator';
@@ -26,14 +28,14 @@ export class CategoriesController {
 
   @Get()
   @RequirePermission('categories', 'view')
-  list() {
-    return this.categoriesService.list();
+  list(@Query() dto: ListCategoriesDto) {
+    return this.categoriesService.list(dto);
   }
 
   @Get('export')
   @RequirePermission('categories', 'view')
-  async export(@Res() res: Response) {
-    const csv = await this.categoriesService.exportCsv();
+  async export(@Query() dto: ListCategoriesDto, @Res() res: Response) {
+    const csv = await this.categoriesService.exportCsv(dto);
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader(
       'Content-Disposition',

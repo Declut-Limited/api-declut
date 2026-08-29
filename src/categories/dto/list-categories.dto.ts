@@ -1,3 +1,3 @@
 import { PaginatedDateRangeDto } from '../../common/dto/date-range.dto';
 
-export class ListEscrowsDto extends PaginatedDateRangeDto {}
+export class ListCategoriesDto extends PaginatedDateRangeDto {}

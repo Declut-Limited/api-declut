@@ -35,6 +35,8 @@ import {
 } from './queues/broadcast-queue.constants';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { toCsv } from '../common/utils/csv.util';
+import { buildDateRangeFilter } from '../common/utils/date-range.util';
+import { DateRangeDto } from '../common/dto/date-range.dto';
 
 interface ChannelOutcome {
   status: NotificationChannelStatus;
@@ -247,13 +249,17 @@ export class NotificationsService {
     page: number,
     limit: number,
     status?: NotificationBroadcastStatus,
+    dateRange: DateRangeDto = {},
   ): Promise<{
     results: NotificationBroadcastDocument[];
     total: number;
     page: number;
     limit: number;
   }> {
-    const filter = status ? { status } : {};
+    const filter = {
+      ...(status ? { status } : {}),
+      ...buildDateRangeFilter(dateRange),
+    };
     const [results, total] = await Promise.all([
       this.broadcastModel
         .find(filter)
@@ -269,8 +275,12 @@ export class NotificationsService {
   // Unpaginated (full matching set) and flattened, same convention as every other export in this app.
   async exportBroadcastsCsv(
     status?: NotificationBroadcastStatus,
+    dateRange: DateRangeDto = {},
   ): Promise<string> {
-    const filter = status ? { status } : {};
+    const filter = {
+      ...(status ? { status } : {}),
+      ...buildDateRangeFilter(dateRange),
+    };
     const rows = await this.broadcastModel
       .find(filter)
       .sort({ createdAt: -1 })

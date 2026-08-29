@@ -22,6 +22,7 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { EmailService } from '../email/email.service';
 import { escapeRegex } from '../common/utils/regex.util';
 import { toCsv } from '../common/utils/csv.util';
+import { buildDateRangeFilter } from '../common/utils/date-range.util';
 import {
   WAITLIST_INVITE_QUEUE,
   WaitlistBulkInviteJobData,
@@ -76,7 +77,7 @@ export class WaitlistService {
   }
 
   private buildFilter(dto: ListWaitlistDto): Record<string, unknown> {
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = { ...buildDateRangeFilter(dto) };
     if (dto.status) filter.status = dto.status;
     if (dto.interest) filter.interest = dto.interest;
     if (dto.inviteStatus) filter.inviteStatus = dto.inviteStatus;

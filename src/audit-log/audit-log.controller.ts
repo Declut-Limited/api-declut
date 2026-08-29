@@ -26,6 +26,7 @@ export class AuditLogController {
       dto.page ?? 1,
       dto.limit ?? 20,
       dto.entityType,
+      dto,
     );
   }
 
@@ -33,7 +34,7 @@ export class AuditLogController {
   @Get('export')
   @RequirePermission('activity', 'view')
   async export(@Query() dto: ListActivityLogDto, @Res() res: Response) {
-    const csv = await this.auditLogService.exportCsv(dto.entityType);
+    const csv = await this.auditLogService.exportCsv(dto.entityType, dto);
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader(
       'Content-Disposition',

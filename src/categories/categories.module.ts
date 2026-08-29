@@ -4,6 +4,7 @@ import { Category, CategorySchema } from './schemas/category.schema';
 import { Listing, ListingSchema } from '../listings/schemas/listing.schema';
 import { CategoriesService } from './categories.service';
 import { CategoriesController } from './categories.controller';
+import { PublicCategoriesController } from './public-categories.controller';
 import { AdminAuthModule } from '../admin-auth/admin-auth.module';
 
 @Module({
@@ -14,7 +15,7 @@ import { AdminAuthModule } from '../admin-auth/admin-auth.module';
     ]),
     AdminAuthModule,
   ],
-  controllers: [CategoriesController],
+  controllers: [CategoriesController, PublicCategoriesController],
   providers: [CategoriesService],
   exports: [CategoriesService],
 })
