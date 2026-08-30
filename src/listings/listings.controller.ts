@@ -13,6 +13,8 @@ import { ListingsService } from './listings.service';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { SearchListingsDto } from './dto/search-listings.dto';
+import { NearbyListingsDto } from './dto/nearby-listings.dto';
+import { RecentListingsDto } from './dto/recent-listings.dto';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -34,6 +36,17 @@ export class ListingsController {
   @Get()
   search(@Query() dto: SearchListingsDto) {
     return this.listingsService.search(dto);
+  }
+
+  // Must come before ':id' — otherwise Nest would match "nearby"/"new" as the id.
+  @Get('nearby')
+  nearby(@Query() dto: NearbyListingsDto) {
+    return this.listingsService.nearby(dto);
+  }
+
+  @Get('new')
+  recent(@Query() dto: RecentListingsDto) {
+    return this.listingsService.recent(dto);
   }
 
   @Get(':id')

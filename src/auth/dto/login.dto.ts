@@ -1,4 +1,4 @@
-import { IsString, MinLength } from 'class-validator';
+import { IsOptional, IsString, MinLength } from 'class-validator';
 
 export class LoginDto {
   @IsString()
@@ -7,4 +7,10 @@ export class LoginDto {
 
   @IsString()
   password: string;
+
+  // FCM device token — registered into deviceTokens if present, same as POST /notifications/register-token.
+  @IsOptional()
+  @IsString()
+  @MinLength(10)
+  pushToken?: string;
 }

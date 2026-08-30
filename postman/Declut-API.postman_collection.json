@@ -59,10 +59,10 @@
                     "register"
                   ]
                 },
-                "description": "Sends a 6-digit email verification OTP. Response includes emailVerified and kycStatus.",
+                "description": "Sends a 6-digit email verification OTP. Response includes emailVerified and kycStatus. pushToken is optional — if present, added to deviceTokens (deduped, same as POST /notifications/register-token).",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"email\": \"damolaidowudavid+2@gmail.com\",\n  \"name\": \"Damola Idowu\",\n  \"password\": \"Password123@\",\n  \"phone\": \"08012345678\"\n}",
+                  "raw": "{\n  \"email\": \"damolaidowudavid+2@gmail.com\",\n  \"name\": \"Damola Idowu\",\n  \"password\": \"Password123@\",\n  \"phone\": \"08012345678\",\n  \"pushToken\": \"ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -117,10 +117,10 @@
                     "login"
                   ]
                 },
-                "description": "identifier is email or phone. Logging in elsewhere invalidates the previous refresh token (one active session at a time).",
+                "description": "identifier is email or phone. Logging in elsewhere invalidates the previous refresh token (one active session at a time). pushToken is optional — if present, added to deviceTokens (deduped, same as POST /notifications/register-token).",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"identifier\": \"damolaidowudavid+2@gmail.com\",\n  \"password\": \"Password123@\"\n}",
+                  "raw": "{\n  \"identifier\": \"damolaidowudavid@gmail.com\",\n  \"password\": \"Password123@\",\n  \"pushToken\": \"ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -830,6 +830,102 @@
               ]
             },
             "description": "All params optional. lat/lng runs a radius search."
+          },
+          "response": []
+        },
+        {
+          "name": "Nearby listings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/listings/nearby?lat=6.5244&lng=3.3792&radiusKm=5&page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "listings",
+                "nearby"
+              ],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "6.5244",
+                  "disabled": false,
+                  "description": "Latitude of the search origin, -90 to 90. Required."
+                },
+                {
+                  "key": "lng",
+                  "value": "3.3792",
+                  "disabled": false,
+                  "description": "Longitude of the search origin, -180 to 180. Required."
+                },
+                {
+                  "key": "radiusKm",
+                  "value": "5",
+                  "disabled": false,
+                  "description": "Max distance in km, >= 0.1. Defaults to 5 if omitted."
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false,
+                  "description": "Page number, >= 1. Default 1."
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false,
+                  "description": "Results per page, 1-50. Default 20."
+                }
+              ]
+            },
+            "description": "Active listings within radiusKm of (lat, lng), closest first. Unlike the main search endpoint's radiusKm, this one is actually enforced (via $geoNear's maxDistance)."
+          },
+          "response": []
+        },
+        {
+          "name": "New listings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/listings/new?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "listings",
+                "new"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false,
+                  "description": "Page number, >= 1. Default 1."
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false,
+                  "description": "Results per page, 1-50. Default 20."
+                }
+              ]
+            },
+            "description": "Active listings created in the last 7 days, newest first. The window is fixed (not admin-configurable)."
           },
           "response": []
         },

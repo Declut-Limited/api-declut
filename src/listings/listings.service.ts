@@ -14,6 +14,8 @@ import {
 import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { SearchListingsDto } from './dto/search-listings.dto';
+import { NearbyListingsDto } from './dto/nearby-listings.dto';
+import { RecentListingsDto } from './dto/recent-listings.dto';
 import { CategoriesService } from '../categories/categories.service';
 import { CounterService } from '../common/counter/counter.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -28,6 +30,8 @@ import { DateRangeDto } from '../common/dto/date-range.dto';
 const CATEGORY_POPULATE_FIELDS = 'title slug';
 const SELLER_POPULATE_FIELDS =
   'name phone accountStatus company avgRating createdAt slug';
+// Fixed, not admin-configurable — the "new" feed's spec is literally "last 7 days", not a tunable setting like the App Settings values elsewhere.
+const RECENT_LISTINGS_WINDOW_DAYS = 7;
 
 interface PopulatedSeller {
   _id: Types.ObjectId;
@@ -371,6 +375,125 @@ export class ListingsService {
     const results = await this.attachSellerSummaries(found);
 
     return { results, page, limit };
+  }
+
+  // Pure proximity feed (no keyword/category/price filters); $facet forks one $geoNear into page + total since countDocuments() can't use $near.
+  async nearby(dto: NearbyListingsDto): Promise<{
+    results: Record<string, unknown>[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const page = dto.page ?? 1;
+    const limit = dto.limit ?? 20;
+    const radiusKm = dto.radiusKm ?? 5;
+
+    const [agg] = await this.listingModel.aggregate<{
+      results: (ListingDocument & { seller?: PopulatedSeller })[];
+      totalCount: { count: number }[];
+    }>([
+      {
+        $geoNear: {
+          near: { type: 'Point', coordinates: [dto.lng, dto.lat] },
+          distanceField: 'distanceMeters',
+          maxDistance: radiusKm * 1000,
+          spherical: true,
+          query: { status: ListingStatus.ACTIVE },
+        },
+      },
+      {
+        $facet: {
+          results: [
+            { $skip: (page - 1) * limit },
+            { $limit: limit },
+            {
+              $lookup: {
+                from: 'categories',
+                localField: 'category',
+                foreignField: '_id',
+                as: 'category',
+                pipeline: [{ $project: { _id: 1, title: 1, slug: 1 } }],
+              },
+            },
+            // preserveNullAndEmptyArrays keeps a listing with a dangling ref, matching .populate()'s null-not-dropped behavior elsewhere.
+            {
+              $unwind: { path: '$category', preserveNullAndEmptyArrays: true },
+            },
+            {
+              $lookup: {
+                from: 'users',
+                localField: 'seller',
+                foreignField: '_id',
+                as: 'seller',
+                pipeline: [
+                  {
+                    $project: {
+                      name: 1,
+                      phone: 1,
+                      accountStatus: 1,
+                      company: 1,
+                      avgRating: 1,
+                      createdAt: 1,
+                    },
+                  },
+                ],
+              },
+            },
+            { $unwind: { path: '$seller', preserveNullAndEmptyArrays: true } },
+          ],
+          totalCount: [{ $count: 'count' }],
+        },
+      },
+    ]);
+
+    const total = agg.totalCount[0]?.count ?? 0;
+    const sellerIds = agg.results
+      .map((r) => r.seller?._id?.toString())
+      .filter((id): id is string => !!id);
+    const counts = await this.countsBySeller([...new Set(sellerIds)]);
+    const results = agg.results.map((r) => ({
+      ...r,
+      seller: this.shapeSellerSummary(
+        r.seller ?? null,
+        r.seller ? (counts.get(r.seller._id.toString())?.total ?? 0) : 0,
+      ),
+    }));
+
+    return { results, total, page, limit };
+  }
+
+  // Recently posted feed — createdAt within the last 7 days, newest first.
+  async recent(dto: RecentListingsDto): Promise<{
+    results: Record<string, unknown>[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const page = dto.page ?? 1;
+    const limit = dto.limit ?? 20;
+
+    const since = new Date();
+    since.setDate(since.getDate() - RECENT_LISTINGS_WINDOW_DAYS);
+
+    const filter: Record<string, unknown> = {
+      status: ListingStatus.ACTIVE,
+      createdAt: { $gte: since },
+    };
+
+    const [found, total] = await Promise.all([
+      this.listingModel
+        .find(filter)
+        .populate('category', CATEGORY_POPULATE_FIELDS)
+        .populate('seller', SELLER_POPULATE_FIELDS)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .exec(),
+      this.listingModel.countDocuments(filter),
+    ]);
+    const results = await this.attachSellerSummaries(found);
+
+    return { results, total, page, limit };
   }
 
   // Unlike search()/findById(), admin visibility includes every status —

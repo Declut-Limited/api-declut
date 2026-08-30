@@ -1,5 +1,6 @@
 import {
   IsEmail,
+  IsOptional,
   IsString,
   Matches,
   MaxLength,
@@ -33,4 +34,10 @@ export class RegisterDto {
     message: 'password must contain at least one letter and one number',
   })
   password: string;
+
+  // FCM device token — registered into deviceTokens if present, same as POST /notifications/register-token.
+  @IsOptional()
+  @IsString()
+  @MinLength(10)
+  pushToken?: string;
 }

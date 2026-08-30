@@ -85,6 +85,12 @@ export class AuthService {
       password,
     });
 
+    if (dto.pushToken) {
+      await this.usersService.addDeviceTokens(user._id.toString(), [
+        dto.pushToken,
+      ]);
+    }
+
     // A waitlist side effect must never fail a real registration.
     try {
       await this.waitlistService.markJoinedIfInvited(user.email);
@@ -141,6 +147,12 @@ export class AuthService {
     const matches = await bcrypt.compare(dto.password, user.password);
     if (!matches) {
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (dto.pushToken) {
+      await this.usersService.addDeviceTokens(user._id.toString(), [
+        dto.pushToken,
+      ]);
     }
 
     return this.issueTokens(user);
