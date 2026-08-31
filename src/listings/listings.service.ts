@@ -8,14 +8,15 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, isValidObjectId } from 'mongoose';
 import {
   Listing,
+  ListingCondition,
   ListingDocument,
   ListingStatus,
 } from './schemas/listing.schema';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
-import { SearchListingsDto } from './dto/search-listings.dto';
 import { NearbyListingsDto } from './dto/nearby-listings.dto';
 import { RecentListingsDto } from './dto/recent-listings.dto';
+import { FilterListingsDto, ListingFilterDto } from './dto/filter-listings.dto';
 import { CategoriesService } from '../categories/categories.service';
 import { CounterService } from '../common/counter/counter.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -269,114 +270,6 @@ export class ListingsService {
     });
   }
 
-  async search(dto: SearchListingsDto): Promise<{
-    results: Record<string, unknown>[];
-    page: number;
-    limit: number;
-  }> {
-    const page = dto.page ?? 1;
-    const limit = dto.limit ?? 20;
-
-    const filter: Record<string, unknown> = { status: ListingStatus.ACTIVE };
-    // A real ObjectId instance, not the raw string — aggregation pipelines
-    // (the $geoNear path below) don't auto-cast query filters the way
-    // .find() does, so a bare string would silently match nothing.
-    if (dto.category) filter.category = new Types.ObjectId(dto.category);
-    if (dto.condition) filter.condition = dto.condition;
-    if (dto.minPrice !== undefined || dto.maxPrice !== undefined) {
-      filter.price = {
-        ...(dto.minPrice !== undefined && { $gte: dto.minPrice }),
-        ...(dto.maxPrice !== undefined && { $lte: dto.maxPrice }),
-      };
-    }
-    if (dto.keyword) {
-      filter.$text = { $search: dto.keyword };
-    }
-
-    // Radius search: $geoNear must be the pipeline's first stage, and folds
-    // our other filters into its own `query` option (Mongo supports $text
-    // there too) rather than a separate $match. $lookup replaces .populate()
-    // here since aggregation pipelines don't support it.
-    if (dto.lat !== undefined && dto.lng !== undefined) {
-      const rows = await this.listingModel.aggregate<
-        ListingDocument & { seller: PopulatedSeller }
-      >([
-        {
-          $geoNear: {
-            near: { type: 'Point', coordinates: [dto.lng, dto.lat] },
-            distanceField: 'distanceMeters',
-            spherical: true,
-            query: filter,
-          },
-        },
-        { $skip: (page - 1) * limit },
-        { $limit: limit },
-        {
-          $lookup: {
-            from: 'categories',
-            localField: 'category',
-            foreignField: '_id',
-            as: 'category',
-            pipeline: [{ $project: { _id: 1, title: 1, slug: 1 } }],
-          },
-        },
-        { $unwind: '$category' },
-        {
-          $lookup: {
-            from: 'users',
-            localField: 'seller',
-            foreignField: '_id',
-            as: 'seller',
-            pipeline: [
-              {
-                $project: {
-                  name: 1,
-                  phone: 1,
-                  accountStatus: 1,
-                  company: 1,
-                  avgRating: 1,
-                  createdAt: 1,
-                },
-              },
-            ],
-          },
-        },
-        { $unwind: '$seller' },
-      ]);
-
-      const counts = await this.countsBySeller([
-        ...new Set(rows.map((r) => r.seller._id.toString())),
-      ]);
-      const results = rows.map((r) => ({
-        ...r,
-        seller: this.shapeSellerSummary(
-          r.seller,
-          counts.get(r.seller._id.toString())?.total ?? 0,
-        ),
-      }));
-      return { results, page, limit };
-    }
-
-    // No location — plain keyword/filter search, ranked by text relevance
-    // when a keyword is given, otherwise newest first.
-    const query = this.listingModel
-      .find(filter)
-      .populate('category', CATEGORY_POPULATE_FIELDS)
-      .populate('seller', SELLER_POPULATE_FIELDS);
-    if (dto.keyword) {
-      query.sort({ score: { $meta: 'textScore' } });
-    } else {
-      query.sort({ createdAt: -1 });
-    }
-    const found = await query
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .exec();
-    const results = await this.attachSellerSummaries(found);
-
-    return { results, page, limit };
-  }
-
   // Pure proximity feed (no keyword/category/price filters); $facet forks one $geoNear into page + total since countDocuments() can't use $near.
   async nearby(dto: NearbyListingsDto): Promise<{
     results: Record<string, unknown>[];
@@ -388,17 +281,40 @@ export class ListingsService {
     const limit = dto.limit ?? 20;
     const radiusKm = dto.radiusKm ?? 5;
 
+    const { results, total } = await this.geoPaginatedListings(
+      dto.lat,
+      dto.lng,
+      radiusKm * 1000,
+      { status: ListingStatus.ACTIVE },
+      page,
+      limit,
+    );
+
+    return { results, total, page, limit };
+  }
+
+  // Shared by nearby() and filterListings() — one $geoNear+$facet pipeline, so a bug fix here never has to be repeated elsewhere.
+  private async geoPaginatedListings(
+    lat: number,
+    lng: number,
+    maxDistanceMeters: number | undefined,
+    baseFilter: Record<string, unknown>,
+    page: number,
+    limit: number,
+  ): Promise<{ results: Record<string, unknown>[]; total: number }> {
     const [agg] = await this.listingModel.aggregate<{
       results: (ListingDocument & { seller?: PopulatedSeller })[];
       totalCount: { count: number }[];
     }>([
       {
         $geoNear: {
-          near: { type: 'Point', coordinates: [dto.lng, dto.lat] },
+          near: { type: 'Point', coordinates: [lng, lat] },
           distanceField: 'distanceMeters',
-          maxDistance: radiusKm * 1000,
+          ...(maxDistanceMeters !== undefined && {
+            maxDistance: maxDistanceMeters,
+          }),
           spherical: true,
-          query: { status: ListingStatus.ACTIVE },
+          query: baseFilter,
         },
       },
       {
@@ -459,7 +375,7 @@ export class ListingsService {
       ),
     }));
 
-    return { results, total, page, limit };
+    return { results, total };
   }
 
   // Recently posted feed — createdAt within the last 7 days, newest first.
@@ -490,6 +406,121 @@ export class ListingsService {
         .limit(limit)
         .exec(),
       this.listingModel.countDocuments(filter),
+    ]);
+    const results = await this.attachSellerSummaries(found);
+
+    return { results, total, page, limit };
+  }
+
+  // useMyLocation has no stored fallback (no location on User) — lat/lng must come from the client's device GPS.
+  private assertLocationParams(dto: ListingFilterDto): void {
+    if (dto.useMyLocation && (dto.lat === undefined || dto.lng === undefined)) {
+      throw new BadRequestException(
+        'lat and lng are required when useMyLocation is true',
+      );
+    }
+  }
+
+  // Shared by countFiltered() and filterListings() so the two can never drift out of sync on what counts as a match.
+  private buildListingFilterQuery(
+    dto: ListingFilterDto,
+  ): Record<string, unknown> {
+    const filter: Record<string, unknown> = { status: ListingStatus.ACTIVE };
+
+    if (dto.categoryId) filter.category = new Types.ObjectId(dto.categoryId);
+
+    // new -> NEW; neatlyUsed -> LIKE_NEW + GOOD (fair/poor aren't "neat").
+    const conditions: ListingCondition[] = [];
+    if (dto.itemCondition?.new) conditions.push(ListingCondition.NEW);
+    if (dto.itemCondition?.neatlyUsed) {
+      conditions.push(ListingCondition.LIKE_NEW, ListingCondition.GOOD);
+    }
+    if (conditions.length > 0) filter.condition = { $in: conditions };
+
+    if (
+      dto.priceRange?.min !== undefined ||
+      dto.priceRange?.max !== undefined
+    ) {
+      filter.price = {
+        ...(dto.priceRange.min !== undefined && { $gte: dto.priceRange.min }),
+        ...(dto.priceRange.max !== undefined && { $lte: dto.priceRange.max }),
+      };
+    }
+
+    if (dto.search) filter.$text = { $search: dto.search };
+
+    // Text location fields only apply on the non-geo path — useMyLocation switches to $geoNear instead.
+    if (!dto.useMyLocation) {
+      if (dto.address)
+        filter.address = new RegExp(escapeRegex(dto.address), 'i');
+      if (dto.state) filter.state = new RegExp(escapeRegex(dto.state), 'i');
+      if (dto.city) filter.city = new RegExp(escapeRegex(dto.city), 'i');
+      if (dto.area) filter.area = new RegExp(escapeRegex(dto.area), 'i');
+    }
+
+    return filter;
+  }
+
+  // Count of active listings within radiusKm (default 5) of (lat, lng) — the count endpoint's whole job now, not a mirror of every /listings filter.
+  async countNearby(
+    lat: number,
+    lng: number,
+    radiusKm: number,
+  ): Promise<{ count: number }> {
+    const [row] = await this.listingModel.aggregate<{ count: number }>([
+      {
+        $geoNear: {
+          near: { type: 'Point', coordinates: [lng, lat] },
+          distanceField: 'distanceMeters',
+          maxDistance: radiusKm * 1000,
+          spherical: true,
+          query: { status: ListingStatus.ACTIVE },
+        },
+      },
+      { $count: 'count' },
+    ]);
+    return { count: row?.count ?? 0 };
+  }
+
+  // Backs GET /listings' pagination — the search/filter data endpoint.
+  async filterListings(dto: FilterListingsDto): Promise<{
+    results: Record<string, unknown>[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    this.assertLocationParams(dto);
+    const page = dto.page ?? 1;
+    const limit = dto.limit ?? 20;
+    const baseFilter = this.buildListingFilterQuery(dto);
+
+    if (dto.useMyLocation) {
+      const { results, total } = await this.geoPaginatedListings(
+        dto.lat!,
+        dto.lng!,
+        dto.searchWithin !== undefined ? dto.searchWithin * 1000 : undefined,
+        baseFilter,
+        page,
+        limit,
+      );
+      return { results, total, page, limit };
+    }
+
+    const query = this.listingModel
+      .find(baseFilter)
+      .populate('category', CATEGORY_POPULATE_FIELDS)
+      .populate('seller', SELLER_POPULATE_FIELDS);
+    if (dto.search) {
+      query.sort({ score: { $meta: 'textScore' } });
+    } else {
+      query.sort({ createdAt: -1 });
+    }
+    const [found, total] = await Promise.all([
+      query
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .exec(),
+      this.listingModel.countDocuments(baseFilter),
     ]);
     const results = await this.attachSellerSummaries(found);
 

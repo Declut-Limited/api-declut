@@ -12,9 +12,10 @@ import {
 import { ListingsService } from './listings.service';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
-import { SearchListingsDto } from './dto/search-listings.dto';
 import { NearbyListingsDto } from './dto/nearby-listings.dto';
+import { NearbyLocationDto } from './dto/nearby-location.dto';
 import { RecentListingsDto } from './dto/recent-listings.dto';
+import { FilterListingsDto } from './dto/filter-listings.dto';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -33,9 +34,20 @@ export class ListingsController {
     return this.cloudinaryService.generateUploadSignature();
   }
 
+  // Search and filter — categoryId/useMyLocation/itemCondition/priceRange/search/etc, see FilterListingsDto. Replaces the old flat-param search().
   @Get()
-  search(@Query() dto: SearchListingsDto) {
-    return this.listingsService.search(dto);
+  search(@Query() dto: FilterListingsDto) {
+    return this.listingsService.filterListings(dto);
+  }
+
+  // Count of active listings within radiusKm (default 5) of (lat, lng) — not a mirror of every /listings filter.
+  @Get('count')
+  count(@Query() dto: NearbyLocationDto) {
+    return this.listingsService.countNearby(
+      dto.lat,
+      dto.lng,
+      dto.radiusKm ?? 5,
+    );
   }
 
   // Must come before ':id' — otherwise Nest would match "nearby"/"new" as the id.

@@ -106,6 +106,19 @@ export class Listing {
   @Prop({ required: true, trim: true, maxlength: 200 })
   locationLabel: string;
 
+  // Structured location fields — not yet wired into listing creation (holding until that's asked for), added now so search/filter can query them.
+  @Prop({ trim: true, maxlength: 200 })
+  address?: string;
+
+  @Prop({ trim: true, maxlength: 100, index: true })
+  state?: string;
+
+  @Prop({ trim: true, maxlength: 100, index: true })
+  city?: string;
+
+  @Prop({ trim: true, maxlength: 100, index: true })
+  area?: string;
+
   @Prop({ type: String, enum: ListingStatus, default: ListingStatus.ACTIVE })
   status: ListingStatus;
 

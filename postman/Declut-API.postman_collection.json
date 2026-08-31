@@ -748,7 +748,7 @@
       "description": "",
       "item": [
         {
-          "name": "Search / browse listings",
+          "name": "Search / filter listings",
           "request": {
             "method": "GET",
             "header": [
@@ -759,7 +759,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/listings?keyword=sofa&category=furniture&condition=good&minPrice=5000&maxPrice=50000&lat=6.5244&lng=3.3792&radiusKm=15&page=1&limit=20",
+              "raw": "{{baseUrl}}/listings?page=1&limit=20",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -768,52 +768,88 @@
               ],
               "query": [
                 {
-                  "key": "keyword",
-                  "value": "sofa",
-                  "disabled": false,
-                  "description": "Free-text match against title/description (Mongo text search)."
-                },
-                {
-                  "key": "category",
-                  "value": "furniture",
-                  "disabled": false,
+                  "key": "categoryId",
+                  "value": "6a83949f262e3e3a8173981d",
+                  "disabled": true,
                   "description": "Category id to filter by."
                 },
                 {
-                  "key": "condition",
-                  "value": "good",
-                  "disabled": false,
-                  "description": "Listing condition — new, like_new, good, fair, or poor."
-                },
-                {
-                  "key": "minPrice",
-                  "value": "5000",
-                  "disabled": false,
-                  "description": "Minimum price, >= 0."
-                },
-                {
-                  "key": "maxPrice",
-                  "value": "50000",
-                  "disabled": false,
-                  "description": "Maximum price, >= 0."
+                  "key": "useMyLocation",
+                  "value": "true",
+                  "disabled": true,
+                  "description": "When true, location filtering switches to lat/lng + searchWithin ($geoNear). When false/omitted, address/state/city/area text filters apply instead."
                 },
                 {
                   "key": "lat",
                   "value": "6.5244",
-                  "disabled": false,
-                  "description": "Latitude for radius search, -90 to 90 — requires lng."
+                  "disabled": true,
+                  "description": "Required when useMyLocation is true (device GPS), -90 to 90."
                 },
                 {
                   "key": "lng",
                   "value": "3.3792",
-                  "disabled": false,
-                  "description": "Longitude for radius search, -180 to 180 — requires lat."
+                  "disabled": true,
+                  "description": "Required when useMyLocation is true (device GPS), -180 to 180."
                 },
                 {
-                  "key": "radiusKm",
-                  "value": "15",
+                  "key": "searchWithin",
+                  "value": "5",
                   "disabled": true,
-                  "description": "Currently unread by the backend — defaultSearchRadiusKm and the $geoNear maxDistance cap were removed 2026-08-27 while work is focused on the admin side. Radius search has no distance limit right now."
+                  "description": "Radius in km, only applied when useMyLocation is true. Omitted = unlimited distance, still proximity-sorted."
+                },
+                {
+                  "key": "address",
+                  "value": "Opebi",
+                  "disabled": true,
+                  "description": "Free-text match against Listing.address. Only applied when useMyLocation is false/omitted."
+                },
+                {
+                  "key": "state",
+                  "value": "Lagos",
+                  "disabled": true,
+                  "description": "Free-text match against Listing.state. Only applied when useMyLocation is false/omitted."
+                },
+                {
+                  "key": "city",
+                  "value": "Ikeja",
+                  "disabled": true,
+                  "description": "Free-text match against Listing.city. Only applied when useMyLocation is false/omitted."
+                },
+                {
+                  "key": "area",
+                  "value": "Opebi",
+                  "disabled": true,
+                  "description": "Free-text match against Listing.area. Only applied when useMyLocation is false/omitted."
+                },
+                {
+                  "key": "itemCondition[new]",
+                  "value": "true",
+                  "disabled": true,
+                  "description": "Matches Listing.condition = new."
+                },
+                {
+                  "key": "itemCondition[neatlyUsed]",
+                  "value": "true",
+                  "disabled": true,
+                  "description": "Matches Listing.condition in [like_new, good] — fair/poor are excluded."
+                },
+                {
+                  "key": "priceRange[min]",
+                  "value": "5000",
+                  "disabled": true,
+                  "description": "Minimum price, >= 0."
+                },
+                {
+                  "key": "priceRange[max]",
+                  "value": "100000",
+                  "disabled": true,
+                  "description": "Maximum price, >= 0."
+                },
+                {
+                  "key": "search",
+                  "value": "sofa",
+                  "disabled": true,
+                  "description": "Free-text match against title/description (Mongo text search)."
                 },
                 {
                   "key": "page",
@@ -829,7 +865,52 @@
                 }
               ]
             },
-            "description": "All params optional. lat/lng runs a radius search."
+            "description": "Paginated. All params optional and combinable. Replaces the old flat category/condition/minPrice/maxPrice/lat/lng/radiusKm shape entirely — shares its filter logic with GET /listings/count, so the two always agree on what matches."
+          },
+          "response": []
+        },
+        {
+          "name": "Listings count (by location)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/listings/count?lat=6.5244&lng=3.3792&radiusKm=5",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "listings",
+                "count"
+              ],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "6.5244",
+                  "disabled": false,
+                  "description": "Latitude of the search origin, -90 to 90. Required."
+                },
+                {
+                  "key": "lng",
+                  "value": "3.3792",
+                  "disabled": false,
+                  "description": "Longitude of the search origin, -180 to 180. Required."
+                },
+                {
+                  "key": "radiusKm",
+                  "value": "5",
+                  "disabled": false,
+                  "description": "Max distance in km, >= 0.1. Defaults to 5 if omitted."
+                }
+              ]
+            },
+            "description": "Count of active listings within radiusKm (default 5) of (lat, lng) — not a mirror of every GET /listings filter, just location."
           },
           "response": []
         },

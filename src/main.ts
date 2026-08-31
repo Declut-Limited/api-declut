@@ -18,6 +18,9 @@ async function bootstrap() {
   // Every HTTP route lives under /api (e.g. /api/auth/login).
   app.setGlobalPrefix('api');
 
+  // Express 5 defaults to the 'simple' query parser (no bracket-notation nesting) — 'extended' restores it, needed for ListingFilterDto's itemCondition[new]/priceRange[min] style query params.
+  app.set('query parser', 'extended');
+
   app.use(helmet());
 
   app.useBodyParser('json', { limit: '20mb' });

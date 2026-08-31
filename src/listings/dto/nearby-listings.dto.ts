@@ -1,25 +1,8 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsNumber, IsOptional, Max, Min } from 'class-validator';
+import { IsInt, IsOptional, Max, Min } from 'class-validator';
+import { NearbyLocationDto } from './nearby-location.dto';
 
-export class NearbyListingsDto {
-  @Type(() => Number)
-  @IsNumber()
-  @Min(-90)
-  @Max(90)
-  lat: number;
-
-  @Type(() => Number)
-  @IsNumber()
-  @Min(-180)
-  @Max(180)
-  lng: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  @Min(0.1)
-  radiusKm?: number = 5;
-
+export class NearbyListingsDto extends NearbyLocationDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
