@@ -1128,6 +1128,50 @@
       ]
     },
     {
+      "name": "categories",
+      "item": [
+        {
+          "name": "List categories (paginated)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/categories/all?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "categories",
+                "all"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false,
+                  "description": "Page number, >= 1. Default 1."
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false,
+                  "description": "Results per page, 1-100. Default 20."
+                }
+              ]
+            },
+            "description": "Authenticated, paginated category list — active categories only, lean shape (id, title, slug). Distinct from the unauthenticated, unpaginated GET /categories under public."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "favorites",
       "description": "",
       "item": [

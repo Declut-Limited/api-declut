@@ -101,6 +101,34 @@ export class CategoriesService {
     }));
   }
 
+  // User-end (JwtAuthGuard), paginated — same lean shape/active-only filter as listPublic(), just with paging.
+  async listForUser(
+    page: number,
+    limit: number,
+  ): Promise<{
+    results: PublicCategory[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const filter = { status: CategoryStatus.ACTIVE };
+    const [categories, total] = await Promise.all([
+      this.categoryModel
+        .find(filter)
+        .sort({ title: 1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .exec(),
+      this.categoryModel.countDocuments(filter),
+    ]);
+    const results = categories.map((c) => ({
+      id: c._id.toString(),
+      title: c.title,
+      slug: c.slug,
+    }));
+    return { results, total, page, limit };
+  }
+
   async toggleStatus(id: string): Promise<CategoryWithCount> {
     const category = await this.findByIdOrThrow(id);
     category.status =
