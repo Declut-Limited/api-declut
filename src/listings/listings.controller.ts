@@ -16,6 +16,7 @@ import { NearbyListingsDto } from './dto/nearby-listings.dto';
 import { NearbyLocationDto } from './dto/nearby-location.dto';
 import { RecentListingsDto } from './dto/recent-listings.dto';
 import { FilterListingsDto } from './dto/filter-listings.dto';
+import { PaginationDto } from '../common/dto/pagination.dto';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -61,10 +62,20 @@ export class ListingsController {
     return this.listingsService.recent(dto);
   }
 
-  @Get(':id')
-  async findOne(@Param('id') id: string) {
-    const listing = await this.listingsService.findByIdForDisplay(id);
-    this.listingsService.incrementViews(id);
+  // Must come before ':idOrSlug' — otherwise Nest would match "mine" as the id/slug.
+  @Get('mine')
+  mine(@CurrentUser() user: AccessTokenPayload, @Query() dto: PaginationDto) {
+    return this.listingsService.byUser(
+      user.sub,
+      dto.page ?? 1,
+      dto.limit ?? 20,
+    );
+  }
+
+  @Get(':idOrSlug')
+  async findOne(@Param('idOrSlug') idOrSlug: string) {
+    const listing = await this.listingsService.findByIdForDisplay(idOrSlug);
+    this.listingsService.incrementViews(String(listing._id));
     return listing;
   }
 

@@ -59,22 +59,32 @@ export class ListingsService {
     sellerId: string,
     dto: CreateListingDto,
   ): Promise<ListingDocument> {
-    await this.categoriesService.findById(dto.category);
+    await this.categoriesService.findById(dto.categoryId);
+    const { hasDefect, defectDescription } = this.resolveDefectFields(dto, {
+      hasDefect: false,
+      defectDescription: null,
+    });
     const slug = await this.counterService.nextSlug('listing', 'LST', 4);
     const listing = await this.listingModel.create({
       seller: sellerId,
       title: dto.title,
       description: dto.description,
-      category: dto.category,
+      category: dto.categoryId,
       condition: dto.condition,
       price: dto.price,
       images: dto.images,
+      video: dto.video,
       location: {
         type: 'Point',
         coordinates: [dto.location.lng, dto.location.lat],
       },
-      locationLabel: dto.locationLabel,
-      specs: dto.specs,
+      locationLabel: `${dto.city}, ${dto.state}`,
+      address: dto.address,
+      state: dto.state,
+      city: dto.city,
+      hasDefect,
+      defectDescription,
+      specs: dto.brand ? { brand: dto.brand } : undefined,
       slug,
       priceHistory: [{ price: dto.price, changedAt: new Date() }],
     });
@@ -101,18 +111,19 @@ export class ListingsService {
     return listing;
   }
 
-  // Display-only variant of findById() — seller populated and reshaped for
-  // the public single-listing GET. Deliberately separate from findById()
-  // itself: TransactionsService/FavoritesService both call findById()
-  // internally and read listing.seller as a raw ObjectId (ownership
-  // checks, seller lookups) — populating seller there would silently
-  // corrupt every one of those .toString() comparisons.
-  async findByIdForDisplay(id: string): Promise<Record<string, unknown>> {
-    if (!isValidObjectId(id)) {
-      throw new NotFoundException('Listing not found');
-    }
+  // Display-only variant of findById() — accepts either a raw id or a
+  // LST-#### slug, seller populated and reshaped for the public
+  // single-listing GET. Deliberately separate from findById() itself:
+  // TransactionsService/FavoritesService both call findById() internally
+  // and read listing.seller as a raw ObjectId (ownership checks, seller
+  // lookups) — populating seller there would silently corrupt every one of
+  // those .toString() comparisons.
+  async findByIdForDisplay(idOrSlug: string): Promise<Record<string, unknown>> {
+    const filter = isValidObjectId(idOrSlug)
+      ? { _id: idOrSlug, status: { $ne: ListingStatus.DELETED } }
+      : { slug: idOrSlug, status: { $ne: ListingStatus.DELETED } };
     const listing = await this.listingModel
-      .findOne({ _id: id, status: { $ne: ListingStatus.DELETED } })
+      .findOne(filter)
       .populate('category', CATEGORY_POPULATE_FIELDS)
       .populate('seller', SELLER_POPULATE_FIELDS);
     if (!listing) {
@@ -166,8 +177,8 @@ export class ListingsService {
     listing: ListingDocument,
     dto: UpdateListingDto,
   ): Promise<string[]> {
-    if (dto.category !== undefined) {
-      await this.categoriesService.findById(dto.category);
+    if (dto.categoryId !== undefined) {
+      await this.categoriesService.findById(dto.categoryId);
     }
 
     const changedFields: string[] = [];
@@ -179,8 +190,8 @@ export class ListingsService {
       listing.description = dto.description;
       changedFields.push('description');
     }
-    if (dto.category !== undefined) {
-      listing.category = new Types.ObjectId(dto.category);
+    if (dto.categoryId !== undefined) {
+      listing.category = new Types.ObjectId(dto.categoryId);
       changedFields.push('category');
     }
     if (dto.condition !== undefined) {
@@ -196,8 +207,29 @@ export class ListingsService {
       listing.images = dto.images;
       changedFields.push('images');
     }
-    if (dto.locationLabel !== undefined) {
-      listing.locationLabel = dto.locationLabel;
+    if (dto.video !== undefined) {
+      listing.video = dto.video;
+      changedFields.push('video');
+    }
+    if (dto.brand !== undefined) {
+      listing.specs = { ...listing.specs, brand: dto.brand };
+      changedFields.push('specs');
+    }
+    if (dto.address !== undefined) {
+      listing.address = dto.address;
+      changedFields.push('address');
+    }
+    if (dto.state !== undefined) {
+      listing.state = dto.state;
+      changedFields.push('state');
+    }
+    if (dto.city !== undefined) {
+      listing.city = dto.city;
+      changedFields.push('city');
+    }
+    // Recomputed whenever either half changes — the other half falls back to its already-stored value.
+    if (dto.city !== undefined || dto.state !== undefined) {
+      listing.locationLabel = `${dto.city ?? listing.city}, ${dto.state ?? listing.state}`;
       changedFields.push('locationLabel');
     }
     if (dto.location !== undefined) {
@@ -207,13 +239,40 @@ export class ListingsService {
       };
       changedFields.push('location');
     }
-    if (dto.specs !== undefined) {
-      listing.specs = dto.specs;
-      changedFields.push('specs');
+    if (dto.hasDefect !== undefined || dto.defectDescription !== undefined) {
+      const { hasDefect, defectDescription } = this.resolveDefectFields(dto, {
+        hasDefect: listing.hasDefect,
+        defectDescription: listing.defectDescription,
+      });
+      listing.hasDefect = hasDefect;
+      listing.defectDescription = defectDescription;
+      changedFields.push('hasDefect', 'defectDescription');
     }
 
     await listing.save();
     return changedFields;
+  }
+
+  // Shared by create() and applyUpdate() — hasDefect:false always clears defectDescription; hasDefect:true requires one (falling back to what's already stored, if any).
+  private resolveDefectFields(
+    dto: { hasDefect?: boolean; defectDescription?: string | null },
+    current: { hasDefect: boolean; defectDescription: string | null },
+  ): { hasDefect: boolean; defectDescription: string | null } {
+    const hasDefect = dto.hasDefect ?? current.hasDefect;
+    if (!hasDefect) {
+      return { hasDefect: false, defectDescription: null };
+    }
+
+    const defectDescription =
+      dto.defectDescription !== undefined
+        ? dto.defectDescription
+        : current.defectDescription;
+    if (!defectDescription) {
+      throw new BadRequestException(
+        'defectDescription is required when hasDefect is true',
+      );
+    }
+    return { hasDefect: true, defectDescription };
   }
 
   // Fire-and-forget from the public single-listing GET — never blocks or
@@ -429,11 +488,10 @@ export class ListingsService {
 
     if (dto.categoryId) filter.category = new Types.ObjectId(dto.categoryId);
 
-    // new -> NEW; neatlyUsed -> LIKE_NEW + GOOD (fair/poor aren't "neat").
     const conditions: ListingCondition[] = [];
     if (dto.itemCondition?.new) conditions.push(ListingCondition.NEW);
     if (dto.itemCondition?.neatlyUsed) {
-      conditions.push(ListingCondition.LIKE_NEW, ListingCondition.GOOD);
+      conditions.push(ListingCondition.NEATLY_USED);
     }
     if (conditions.length > 0) filter.condition = { $in: conditions };
 

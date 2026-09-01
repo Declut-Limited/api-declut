@@ -2,8 +2,8 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsEnum,
-  IsInt,
   IsMongoId,
   IsNumber,
   IsOptional,
@@ -30,23 +30,6 @@ class LocationDto {
   lng: number;
 }
 
-class SpecsDto {
-  @IsOptional()
-  @IsString()
-  @MaxLength(60)
-  brand?: string;
-
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  quantity?: number;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(60)
-  sku?: string;
-}
-
 export class CreateListingDto {
   @IsString()
   @MinLength(3)
@@ -59,32 +42,56 @@ export class CreateListingDto {
   description: string;
 
   @IsMongoId()
-  category: string;
-
-  @IsEnum(ListingCondition)
-  condition: ListingCondition;
+  categoryId: string;
 
   @IsNumber()
   @Min(0)
   price: number;
 
-  @IsArray()
-  @ArrayMinSize(1)
-  @ArrayMaxSize(10)
-  @IsUrl({}, { each: true })
-  images: string[];
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  brand?: string;
+
+  @IsString()
+  @MinLength(2)
+  @MaxLength(100)
+  state: string;
+
+  @IsString()
+  @MinLength(2)
+  @MaxLength(100)
+  city: string;
+
+  @IsString()
+  @MinLength(3)
+  @MaxLength(200)
+  address: string;
 
   @ValidateNested()
   @Type(() => LocationDto)
   location: LocationDto;
 
-  @IsString()
-  @MinLength(3)
-  @MaxLength(200)
-  locationLabel: string;
+  @IsEnum(ListingCondition)
+  condition: ListingCondition;
 
   @IsOptional()
-  @ValidateNested()
-  @Type(() => SpecsDto)
-  specs?: SpecsDto;
+  @IsBoolean()
+  hasDefect?: boolean;
+
+  // string|null via @IsOptional() — it treats both undefined and null as "skip validation".
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  defectDescription?: string | null;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(3)
+  @IsUrl({}, { each: true })
+  images: string[];
+
+  @IsOptional()
+  @IsUrl()
+  video?: string;
 }

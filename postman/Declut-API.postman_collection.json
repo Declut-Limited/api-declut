@@ -1035,16 +1035,55 @@
                 "listings"
               ]
             },
-            "description": "category: furniture|electronics|appliances|kitchenware|clothing|decor|books|other. condition: new|like_new|good|fair|poor.",
+            "description": "categoryId is a real Category _id (GET /categories/all). condition: new|neatly_used. hasDefect requires defectDescription when true. images max 3, video is a single URL (max 1). locationLabel is computed server-side as \"city, state\" — not sent by the client.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Comfortable 3-seater sofa\",\n  \"description\": \"Barely used, no stains, smoke-free home.\",\n  \"category\": \"furniture\",\n  \"condition\": \"good\",\n  \"price\": 45000,\n  \"images\": [\n    \"https://res.cloudinary.com/example/image/upload/v1/sofa.jpg\"\n  ],\n  \"location\": {\n    \"lat\": 6.5244,\n    \"lng\": 3.3792\n  },\n  \"locationLabel\": \"Lekki, Lagos\"\n}",
+              "raw": "{\n  \"title\": \"Comfortable 3-seater sofa\",\n  \"description\": \"Barely used, no stains, smoke-free home.\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"price\": 45000,\n  \"brand\": \"Mouka\",\n  \"state\": \"Lagos\",\n  \"city\": \"Lekki\",\n  \"address\": \"12 Admiralty Way\",\n  \"location\": {\n    \"lat\": 6.5244,\n    \"lng\": 3.3792\n  },\n  \"condition\": \"neatly_used\",\n  \"hasDefect\": false,\n  \"defectDescription\": null,\n  \"images\": [\n    \"https://res.cloudinary.com/example/image/upload/v1/sofa.jpg\"\n  ],\n  \"video\": \"https://res.cloudinary.com/example/video/upload/v1/sofa.mp4\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             }
+          },
+          "response": []
+        },
+        {
+          "name": "Get my listings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/listings/mine?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "listings",
+                "mine"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false,
+                  "description": "Page number, >= 1. Default 1."
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false,
+                  "description": "Results per page, 1-100. Default 20."
+                }
+              ]
+            },
+            "description": "The caller's own listings, any status except deleted, paginated, newest first."
           },
           "response": []
         },
@@ -1084,7 +1123,7 @@
           "description": "",
           "item": [
             {
-              "name": "Get listing by ID",
+              "name": "Get listing by ID or slug",
               "request": {
                 "method": "GET",
                 "header": [
@@ -1104,7 +1143,7 @@
                     "{{listingId}}"
                   ]
                 },
-                "description": ""
+                "description": "{{listingId}} accepts either a raw listing id or an LST-#### slug. Seller is populated."
               },
               "response": []
             },
@@ -1134,10 +1173,10 @@
                     "{{listingId}}"
                   ]
                 },
-                "description": "Owner-only.",
+                "description": "Owner-only, partial update — every field optional, same shape as Create listing (all fields shown here, send only what changed). categoryId must be a real Category _id. Changing city/state recomputes locationLabel. Setting hasDefect:false clears defectDescription. locationLabel itself still can't be sent directly (computed server-side).",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"price\": 42000,\n  \"description\": \"Price reduced — barely used, no stains.\"\n}",
+                  "raw": "{\n  \"title\": \"Comfortable 3-seater sofa (updated)\",\n  \"description\": \"Price reduced — barely used, no stains.\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"price\": 42000,\n  \"brand\": \"Mouka\",\n  \"state\": \"Lagos\",\n  \"city\": \"Lekki\",\n  \"address\": \"12 Admiralty Way\",\n  \"location\": {\n    \"lat\": 6.5244,\n    \"lng\": 3.3792\n  },\n  \"condition\": \"neatly_used\",\n  \"hasDefect\": true,\n  \"defectDescription\": \"Small scuff on the left armrest\",\n  \"images\": [\n    \"https://res.cloudinary.com/example/image/upload/v1/sofa.jpg\"\n  ],\n  \"video\": \"https://res.cloudinary.com/example/video/upload/v1/sofa.mp4\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"

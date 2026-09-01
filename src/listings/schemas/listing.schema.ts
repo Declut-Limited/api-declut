@@ -5,10 +5,7 @@ export type ListingDocument = HydratedDocument<Listing>;
 
 export enum ListingCondition {
   NEW = 'new',
-  LIKE_NEW = 'like_new',
-  GOOD = 'good',
-  FAIR = 'fair',
-  POOR = 'poor',
+  NEATLY_USED = 'neatly_used',
 }
 
 export enum ListingStatus {
@@ -17,7 +14,6 @@ export enum ListingStatus {
   DELETED = 'deleted',
   FLAGGED = 'flagged',
   SOLD = 'sold',
-  // Admin-initiated hide, distinct from ARCHIVED (seller's own action) and FLAGGED (moderation) — reversible via relist().
   DELISTED = 'delisted',
 }
 
@@ -44,12 +40,6 @@ class PriceHistoryEntry {
 class ListingSpecs {
   @Prop()
   brand?: string;
-
-  @Prop()
-  quantity?: number;
-
-  @Prop()
-  sku?: string;
 }
 
 /**
@@ -103,10 +93,10 @@ export class Listing {
   @Prop({ type: GeoPoint, required: true })
   location: GeoPoint;
 
+  // Computed server-side as "${city}, ${state}" — not client-supplied.
   @Prop({ required: true, trim: true, maxlength: 200 })
   locationLabel: string;
 
-  // Structured location fields — not yet wired into listing creation (holding until that's asked for), added now so search/filter can query them.
   @Prop({ trim: true, maxlength: 200 })
   address?: string;
 
@@ -118,6 +108,16 @@ export class Listing {
 
   @Prop({ trim: true, maxlength: 100, index: true })
   area?: string;
+
+  // Cloudinary URL, same never-touch-the-bytes pattern as images — a single video, not an array.
+  @Prop()
+  video?: string;
+
+  @Prop({ default: false })
+  hasDefect: boolean;
+
+  @Prop({ type: String, default: null })
+  defectDescription: string | null;
 
   @Prop({ type: String, enum: ListingStatus, default: ListingStatus.ACTIVE })
   status: ListingStatus;

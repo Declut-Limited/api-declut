@@ -319,8 +319,6 @@ export class AdminService {
       specs: {
         brand: listing.specs?.brand,
         condition: listing.condition,
-        quantity: listing.specs?.quantity,
-        sku: listing.specs?.sku,
       },
       priceHistory: listing.priceHistory,
       recentActivity,
