@@ -11,8 +11,9 @@ import {
   ListingCondition,
   ListingDocument,
   ListingStatus,
+  MediaAsset,
 } from './schemas/listing.schema';
-import { CreateListingDto } from './dto/create-listing.dto';
+import { CreateListingDto, MediaAssetDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { NearbyListingsDto } from './dto/nearby-listings.dto';
 import { RecentListingsDto } from './dto/recent-listings.dto';
@@ -65,6 +66,7 @@ export class ListingsService {
       defectDescription: null,
     });
     const slug = await this.counterService.nextSlug('listing', 'LST', 4);
+    const images = this.resolveMediaAssets(dto.images);
     const listing = await this.listingModel.create({
       seller: sellerId,
       title: dto.title,
@@ -72,8 +74,9 @@ export class ListingsService {
       category: dto.categoryId,
       condition: dto.condition,
       price: dto.price,
-      images: dto.images,
-      video: dto.video,
+      images,
+      mainImageUrl: this.pickMainImageUrl(images),
+      video: dto.video ? this.resolveMediaAsset(dto.video) : undefined,
       location: {
         type: 'Point',
         coordinates: [dto.location.lng, dto.location.lat],
@@ -204,11 +207,12 @@ export class ListingsService {
       changedFields.push('price');
     }
     if (dto.images !== undefined) {
-      listing.images = dto.images;
-      changedFields.push('images');
+      listing.images = this.resolveMediaAssets(dto.images);
+      listing.mainImageUrl = this.pickMainImageUrl(listing.images);
+      changedFields.push('images', 'mainImageUrl');
     }
     if (dto.video !== undefined) {
-      listing.video = dto.video;
+      listing.video = this.resolveMediaAsset(dto.video);
       changedFields.push('video');
     }
     if (dto.brand !== undefined) {
@@ -273,6 +277,27 @@ export class ListingsService {
       );
     }
     return { hasDefect: true, defectDescription };
+  }
+
+  // sortOrder defaults to array index, isPrimary to false, createdAt to now — only when the client didn't already supply them.
+  private resolveMediaAsset(dto: MediaAssetDto, sortOrder = 0): MediaAsset {
+    return {
+      publicId: dto.publicId,
+      url: dto.url,
+      secureUrl: dto.secureUrl,
+      sortOrder: dto.sortOrder ?? sortOrder,
+      isPrimary: dto.isPrimary ?? false,
+      createdAt: dto.createdAt ? new Date(dto.createdAt) : new Date(),
+    };
+  }
+
+  private resolveMediaAssets(items: MediaAssetDto[]): MediaAsset[] {
+    return items.map((item, index) => this.resolveMediaAsset(item, index));
+  }
+
+  // Whichever image is isPrimary (first one, if more than one is marked), falling back to the first image if none are.
+  private pickMainImageUrl(images: MediaAsset[]): string | undefined {
+    return (images.find((i) => i.isPrimary) ?? images[0])?.secureUrl;
   }
 
   // Fire-and-forget from the public single-listing GET — never blocks or

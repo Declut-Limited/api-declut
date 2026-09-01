@@ -42,6 +42,30 @@ class ListingSpecs {
   brand?: string;
 }
 
+// Cloudinary's own upload-response shape (publicId/url/secureUrl) plus our
+// own ordering/primary-flag fields — used for both `images` (array) and
+// `video` (single, not an array).
+@Schema({ _id: false })
+export class MediaAsset {
+  @Prop({ required: true })
+  publicId: string;
+
+  @Prop({ required: true })
+  url: string;
+
+  @Prop({ required: true })
+  secureUrl: string;
+
+  @Prop({ default: 0 })
+  sortOrder: number;
+
+  @Prop({ default: false })
+  isPrimary: boolean;
+
+  @Prop({ default: Date.now })
+  createdAt: Date;
+}
+
 /**
  * timestamps: true gives createdAt/updatedAt automatically. The 2dsphere
  * index on `location` powers radius search; the text index on
@@ -80,15 +104,19 @@ export class Listing {
   @Prop({ required: true, min: 0 })
   price: number;
 
-  // Cloudinary URLs — the mobile app uploads directly to Cloudinary using a
-  // signed payload from GET /listings/upload-signature, then sends us the
-  // resulting URLs. We never receive or store raw image bytes.
+  // The mobile app uploads directly to Cloudinary using a signed payload
+  // from GET /media/upload-signature, then sends us Cloudinary's own
+  // response shape. We never receive or store raw image bytes.
   @Prop({
-    type: [String],
+    type: [MediaAsset],
     required: true,
-    validate: (v: string[]) => v.length > 0,
+    validate: (v: MediaAsset[]) => v.length > 0 && v.length <= 3,
   })
-  images: string[];
+  images: MediaAsset[];
+
+  // Denormalized from images — whichever is isPrimary (or the first if none marked), set server-side, never client-supplied.
+  @Prop()
+  mainImageUrl?: string;
 
   @Prop({ type: GeoPoint, required: true })
   location: GeoPoint;
@@ -109,9 +137,9 @@ export class Listing {
   @Prop({ trim: true, maxlength: 100, index: true })
   area?: string;
 
-  // Cloudinary URL, same never-touch-the-bytes pattern as images — a single video, not an array.
-  @Prop()
-  video?: string;
+  // Same shape/pattern as images, but a single video, not an array.
+  @Prop({ type: MediaAsset })
+  video?: MediaAsset;
 
   @Prop({ default: false })
   hasDefect: boolean;

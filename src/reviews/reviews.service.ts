@@ -26,7 +26,7 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { toCsv } from '../common/utils/csv.util';
 
 const REVIEWER_POPULATE_FIELDS = 'name email slug company accountStatus image';
-const REVIEW_LISTING_POPULATE_FIELDS = 'title images slug createdAt';
+const REVIEW_LISTING_POPULATE_FIELDS = 'title mainImageUrl slug createdAt';
 
 interface PopulatedReviewer {
   _id: Types.ObjectId;
@@ -41,7 +41,7 @@ interface PopulatedReviewer {
 interface PopulatedReviewListing {
   _id: Types.ObjectId;
   title: string;
-  images: string[];
+  mainImageUrl?: string;
   slug?: string;
   createdAt: Date;
 }
@@ -357,7 +357,7 @@ export class ReviewsService {
     obj.listing = {
       id: listing._id.toString(),
       title: listing.title,
-      mainImage: listing.images?.[0],
+      mainImage: listing.mainImageUrl,
       slug: listing.slug,
       createdAt: listing.createdAt,
     };

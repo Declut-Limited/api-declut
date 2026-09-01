@@ -19,7 +19,7 @@ import { DateRangeDto } from '../common/dto/date-range.dto';
 // Proposed field sets, not explicitly pinned down beyond "populated" —
 // flag back if these need adjusting once a real UI consumes them.
 const POPULATE_FIELDS = {
-  listing: 'title slug images',
+  listing: 'title slug mainImageUrl',
   user: 'name slug email',
   // No "role" here — User has no role field (only Admin does); status/rating map to accountStatus/avgRating, reshaped in shapeReport().
   reporter: 'name slug accountStatus createdAt avgRating company',
@@ -189,13 +189,13 @@ export class ReportsService {
     return report;
   }
 
-  // Requires listing/user/reporter already populated on the query that fetched `report`. mainImage is derived (Listing has no single-image field, just an images array) — not a Mongoose populate concern by itself.
+  // Requires listing/user/reporter already populated on the query that fetched `report`.
   private shapeReport(report: ReportDocument): Record<string, unknown> {
     const obj = report.toObject() as unknown as Record<string, unknown>;
     if (obj.listing && typeof obj.listing === 'object') {
-      const listing = obj.listing as { images?: string[] };
-      const { images, ...rest } = listing;
-      obj.listing = { ...rest, mainImage: images?.[0] };
+      const listing = obj.listing as { mainImageUrl?: string };
+      const { mainImageUrl, ...rest } = listing;
+      obj.listing = { ...rest, mainImage: mainImageUrl };
     }
     if (obj.reporter && typeof obj.reporter === 'object') {
       const reporter = obj.reporter as {

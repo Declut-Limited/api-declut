@@ -17,7 +17,6 @@ import { NearbyLocationDto } from './dto/nearby-location.dto';
 import { RecentListingsDto } from './dto/recent-listings.dto';
 import { FilterListingsDto } from './dto/filter-listings.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
-import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AccessTokenPayload } from '../auth/interfaces/jwt-payload.interface';
@@ -25,15 +24,7 @@ import type { AccessTokenPayload } from '../auth/interfaces/jwt-payload.interfac
 @Controller('listings')
 @UseGuards(JwtAuthGuard)
 export class ListingsController {
-  constructor(
-    private readonly listingsService: ListingsService,
-    private readonly cloudinaryService: CloudinaryService,
-  ) {}
-
-  @Get('upload-signature')
-  getUploadSignature() {
-    return this.cloudinaryService.generateUploadSignature();
-  }
+  constructor(private readonly listingsService: ListingsService) {}
 
   // Search and filter — categoryId/useMyLocation/itemCondition/priceRange/search/etc, see FilterListingsDto. Replaces the old flat-param search().
   @Get()

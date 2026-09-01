@@ -304,7 +304,9 @@ export class AdminService {
     return {
       id: listing._id.toString(),
       slug: listing.slug,
-      images: listing.images.map((url) => ({ url })),
+      images: listing.images,
+      video: listing.video,
+      mainImageUrl: listing.mainImageUrl,
       title: listing.title,
       status: listing.status,
       category: listing.category,

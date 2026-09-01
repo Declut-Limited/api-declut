@@ -1035,10 +1035,10 @@
                 "listings"
               ]
             },
-            "description": "categoryId is a real Category _id (GET /categories/all). condition: new|neatly_used. hasDefect requires defectDescription when true. images max 3, video is a single URL (max 1). locationLabel is computed server-side as \"city, state\" — not sent by the client.",
+            "description": "categoryId is a real Category _id (GET /categories/all). condition: new|neatly_used. hasDefect requires defectDescription when true. images/video use Cloudinary's own upload-response shape (publicId/url/secureUrl), obtained via GET /media/upload-signature(/bulk) — sortOrder/isPrimary/createdAt are optional per item, defaulted server-side if omitted. images max 3, video is a single object (max 1). mainImageUrl is computed server-side from whichever image has isPrimary:true (falling back to the first) — never sent by the client. locationLabel is also computed server-side as \"city, state\".",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Comfortable 3-seater sofa\",\n  \"description\": \"Barely used, no stains, smoke-free home.\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"price\": 45000,\n  \"brand\": \"Mouka\",\n  \"state\": \"Lagos\",\n  \"city\": \"Lekki\",\n  \"address\": \"12 Admiralty Way\",\n  \"location\": {\n    \"lat\": 6.5244,\n    \"lng\": 3.3792\n  },\n  \"condition\": \"neatly_used\",\n  \"hasDefect\": false,\n  \"defectDescription\": null,\n  \"images\": [\n    \"https://res.cloudinary.com/example/image/upload/v1/sofa.jpg\"\n  ],\n  \"video\": \"https://res.cloudinary.com/example/video/upload/v1/sofa.mp4\"\n}",
+              "raw": "{\n  \"title\": \"Comfortable 3-seater sofa\",\n  \"description\": \"Barely used, no stains, smoke-free home.\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"price\": 45000,\n  \"brand\": \"Mouka\",\n  \"state\": \"Lagos\",\n  \"city\": \"Lekki\",\n  \"address\": \"12 Admiralty Way\",\n  \"location\": {\n    \"lat\": 6.5244,\n    \"lng\": 3.3792\n  },\n  \"condition\": \"neatly_used\",\n  \"hasDefect\": false,\n  \"defectDescription\": null,\n  \"images\": [\n    {\n      \"publicId\": \"listings/file_au9f4o\",\n      \"url\": \"http://res.cloudinary.com/example/image/upload/v1/listings/file_au9f4o.jpg\",\n      \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/listings/file_au9f4o.jpg\",\n      \"sortOrder\": 0,\n      \"isPrimary\": true\n    },\n    {\n      \"publicId\": \"listings/file_bz2k9p\",\n      \"url\": \"http://res.cloudinary.com/example/image/upload/v1/listings/file_bz2k9p.jpg\",\n      \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/listings/file_bz2k9p.jpg\",\n      \"sortOrder\": 1,\n      \"isPrimary\": false\n    }\n  ],\n  \"video\": {\n    \"publicId\": \"listings/file_vid001\",\n    \"url\": \"http://res.cloudinary.com/example/video/upload/v1/listings/file_vid001.mp4\",\n    \"secureUrl\": \"https://res.cloudinary.com/example/video/upload/v1/listings/file_vid001.mp4\"\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1086,37 +1086,6 @@
             "description": "The caller's own listings, any status except deleted, paginated, newest first."
           },
           "response": []
-        },
-        {
-          "name": "upload-signature",
-          "description": "",
-          "item": [
-            {
-              "name": "Get Cloudinary upload signature",
-              "request": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{accessToken}}",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/listings/upload-signature",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "listings",
-                    "upload-signature"
-                  ]
-                },
-                "description": ""
-              },
-              "response": []
-            }
-          ]
         },
         {
           "name": "{listingId}",
@@ -1173,10 +1142,10 @@
                     "{{listingId}}"
                   ]
                 },
-                "description": "Owner-only, partial update — every field optional, same shape as Create listing (all fields shown here, send only what changed). categoryId must be a real Category _id. Changing city/state recomputes locationLabel. Setting hasDefect:false clears defectDescription. locationLabel itself still can't be sent directly (computed server-side).",
+                "description": "Owner-only, partial update — every field optional, same shape as Create listing (all fields shown here, send only what changed). categoryId must be a real Category _id. images/video use the same Cloudinary upload-response shape as Create listing — sending images recomputes mainImageUrl from whichever item is isPrimary:true. Changing city/state recomputes locationLabel. Setting hasDefect:false clears defectDescription. locationLabel/mainImageUrl still can't be sent directly (both computed server-side).",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"title\": \"Comfortable 3-seater sofa (updated)\",\n  \"description\": \"Price reduced — barely used, no stains.\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"price\": 42000,\n  \"brand\": \"Mouka\",\n  \"state\": \"Lagos\",\n  \"city\": \"Lekki\",\n  \"address\": \"12 Admiralty Way\",\n  \"location\": {\n    \"lat\": 6.5244,\n    \"lng\": 3.3792\n  },\n  \"condition\": \"neatly_used\",\n  \"hasDefect\": true,\n  \"defectDescription\": \"Small scuff on the left armrest\",\n  \"images\": [\n    \"https://res.cloudinary.com/example/image/upload/v1/sofa.jpg\"\n  ],\n  \"video\": \"https://res.cloudinary.com/example/video/upload/v1/sofa.mp4\"\n}",
+                  "raw": "{\n  \"title\": \"Comfortable 3-seater sofa (updated)\",\n  \"description\": \"Price reduced — barely used, no stains.\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"price\": 42000,\n  \"brand\": \"Mouka\",\n  \"state\": \"Lagos\",\n  \"city\": \"Lekki\",\n  \"address\": \"12 Admiralty Way\",\n  \"location\": {\n    \"lat\": 6.5244,\n    \"lng\": 3.3792\n  },\n  \"condition\": \"neatly_used\",\n  \"hasDefect\": true,\n  \"defectDescription\": \"Small scuff on the left armrest\",\n  \"images\": [\n    {\n      \"publicId\": \"listings/file_au9f4o\",\n      \"url\": \"http://res.cloudinary.com/example/image/upload/v1/listings/file_au9f4o.jpg\",\n      \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/listings/file_au9f4o.jpg\",\n      \"sortOrder\": 0,\n      \"isPrimary\": true\n    },\n    {\n      \"publicId\": \"listings/file_bz2k9p\",\n      \"url\": \"http://res.cloudinary.com/example/image/upload/v1/listings/file_bz2k9p.jpg\",\n      \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/listings/file_bz2k9p.jpg\",\n      \"sortOrder\": 1,\n      \"isPrimary\": false\n    }\n  ],\n  \"video\": {\n    \"publicId\": \"listings/file_vid001\",\n    \"url\": \"http://res.cloudinary.com/example/video/upload/v1/listings/file_vid001.mp4\",\n    \"secureUrl\": \"https://res.cloudinary.com/example/video/upload/v1/listings/file_vid001.mp4\"\n  }\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -1244,6 +1213,103 @@
               ]
             }
           ]
+        }
+      ]
+    },
+    {
+      "name": "media",
+      "item": [
+        {
+          "name": "Get upload signature (single)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/media/upload-signature",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "media",
+                "upload-signature"
+              ]
+            },
+            "description": "Never touches raw bytes — hand this signed payload to the client, which uploads directly to Cloudinary. Same {signature, timestamp, apiKey, cloudName, folder} shape works for a video too (post to Cloudinary's /video/upload endpoint instead of /image/upload — resource type isn't part of what's signed)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get upload signatures (bulk)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/media/upload-signature/bulk?count=3",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "media",
+                "upload-signature",
+                "bulk"
+              ],
+              "query": [
+                {
+                  "key": "count",
+                  "value": "3",
+                  "disabled": false,
+                  "description": "How many signed payloads to return, 1-3 (matches images' max of 3 on a listing). Defaults to 3."
+                }
+              ]
+            },
+            "description": "Returns an array of independently-generated signed payloads, one per image slot. Backs Create/Update listing's images (max 3)."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete image",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/media/image?publicId=listings/abc123",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "media",
+                "image"
+              ],
+              "query": [
+                {
+                  "key": "publicId",
+                  "value": "listings/abc123",
+                  "disabled": false,
+                  "description": "Cloudinary's own public_id (returned to the client directly in Cloudinary's own upload response) — not the hosted URL."
+                }
+              ]
+            },
+            "description": "The one media operation that runs server-side, since only the backend holds CLOUDINARY_API_SECRET. Returns {deleted: false} rather than 404 for an id that no longer exists on Cloudinary."
+          },
+          "response": []
         }
       ]
     },
