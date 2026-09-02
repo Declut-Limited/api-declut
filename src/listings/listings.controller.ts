@@ -65,9 +65,18 @@ export class ListingsController {
 
   @Get(':idOrSlug')
   async findOne(@Param('idOrSlug') idOrSlug: string) {
-    const listing = await this.listingsService.findByIdForDisplay(idOrSlug);
-    this.listingsService.incrementViews(String(listing._id));
-    return listing;
+    return this.listingsService.findByIdForDisplay(idOrSlug);
+  }
+
+  // Registers a view — one counted per (viewer, listing) per hour; repeat
+  // opens within the window don't increment. Called separately from the
+  // detail GET above so the client controls exactly when a "view" happened.
+  @Post(':idOrSlug/view')
+  registerView(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param('idOrSlug') idOrSlug: string,
+  ) {
+    return this.listingsService.registerView(idOrSlug, user.sub);
   }
 
   @Post()

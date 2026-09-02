@@ -1112,7 +1112,33 @@
                     "{{listingId}}"
                   ]
                 },
-                "description": "{{listingId}} accepts either a raw listing id or an LST-#### slug. Seller is populated."
+                "description": "{{listingId}} accepts either a raw listing id or an LST-#### slug. Seller is populated. Does not increment views — call 'Register listing view' separately for that."
+              },
+              "response": []
+            },
+            {
+              "name": "Register listing view",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/listings/{{listingId}}/view",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "listings",
+                    "{{listingId}}",
+                    "view"
+                  ]
+                },
+                "description": "One counted view per (viewer, listing) per hour — repeat opens within the window return counted:false and leave views unchanged. Accepts either a raw listing id or an LST-#### slug."
               },
               "response": []
             },

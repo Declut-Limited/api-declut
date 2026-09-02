@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Listing, ListingSchema } from './schemas/listing.schema';
+import { ListingView, ListingViewSchema } from './schemas/listing-view.schema';
 import { ListingsService } from './listings.service';
 import { ListingsController } from './listings.controller';
 import { CategoriesModule } from '../categories/categories.module';
@@ -10,7 +11,10 @@ import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: Listing.name, schema: ListingSchema }]),
+    MongooseModule.forFeature([
+      { name: Listing.name, schema: ListingSchema },
+      { name: ListingView.name, schema: ListingViewSchema },
+    ]),
     CategoriesModule,
     NotificationsModule,
     CounterModule,

@@ -13,6 +13,10 @@ import {
   ListingStatus,
   MediaAsset,
 } from './schemas/listing.schema';
+import {
+  ListingView,
+  ListingViewDocument,
+} from './schemas/listing-view.schema';
 import { CreateListingDto, MediaAssetDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { NearbyListingsDto } from './dto/nearby-listings.dto';
@@ -50,6 +54,8 @@ interface PopulatedSeller {
 export class ListingsService {
   constructor(
     @InjectModel(Listing.name) private listingModel: Model<ListingDocument>,
+    @InjectModel(ListingView.name)
+    private listingViewModel: Model<ListingViewDocument>,
     private readonly categoriesService: CategoriesService,
     private readonly counterService: CounterService,
     private readonly auditLogService: AuditLogService,
@@ -300,13 +306,60 @@ export class ListingsService {
     return (images.find((i) => i.isPrimary) ?? images[0])?.secureUrl;
   }
 
-  // Fire-and-forget from the public single-listing GET — never blocks or
-  // fails the response over a view-count write.
-  incrementViews(id: string): void {
-    this.listingModel
-      .updateOne({ _id: id }, { $inc: { views: 1 } })
-      .exec()
-      .catch(() => undefined);
+  // One counted view per (user, listing) per 24 hrs — repeat opens within the window are no-ops, not a fresh increment. ListingView holds one row per (user, listing), updated in place rather than logged per-view.
+  async registerView(
+    idOrSlug: string,
+    userId: string,
+  ): Promise<{ counted: boolean; views: number }> {
+    const listing = await this.findRawByIdOrSlug(idOrSlug);
+    const listingId = listing._id;
+    const whenCanView = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    const existing = await this.listingViewModel.findOne({
+      user: userId,
+      listing: listingId,
+    });
+
+    if (existing) {
+      if (existing.lastViewedAt > whenCanView) {
+        return { counted: false, views: listing.views };
+      }
+      existing.lastViewedAt = new Date();
+      await existing.save();
+    } else {
+      try {
+        await this.listingViewModel.create({
+          user: userId,
+          listing: listingId,
+          lastViewedAt: new Date(),
+        });
+      } catch (err) {
+        // Duplicate-key race (two near-simultaneous opens creating the same (user, listing) row) — treat the loser as "not counted this call"
+        // rather than erroring, same pattern ReviewsService uses for 11000.
+        if ((err as { code?: number }).code === 11000) {
+          return { counted: false, views: listing.views };
+        }
+        throw err;
+      }
+    }
+
+    const updated = await this.listingModel
+      .findByIdAndUpdate(listingId, { $inc: { views: 1 } }, { new: true })
+      .select('views');
+    return { counted: true, views: updated?.views ?? listing.views + 1 };
+  }
+
+  // Raw variant of findByIdForDisplay() — no populate/reshape, for callers
+  // that only need the document itself.
+  private async findRawByIdOrSlug(idOrSlug: string): Promise<ListingDocument> {
+    const filter = isValidObjectId(idOrSlug)
+      ? { _id: idOrSlug, status: { $ne: ListingStatus.DELETED } }
+      : { slug: idOrSlug, status: { $ne: ListingStatus.DELETED } };
+    const listing = await this.listingModel.findOne(filter);
+    if (!listing) {
+      throw new NotFoundException('Listing not found');
+    }
+    return listing;
   }
 
   async incrementSaves(id: string): Promise<void> {
