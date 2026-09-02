@@ -843,7 +843,7 @@
                   "key": "search",
                   "value": "sofa",
                   "disabled": true,
-                  "description": "Free-text match against title/description (Mongo text search)."
+                  "description": "Case-insensitive substring match against title/description (regex, not Mongo text search) — e.g. \"snow\" matches \"Snowsea\"."
                 },
                 {
                   "key": "page",
@@ -948,6 +948,54 @@
                   "description": "Max distance in km, >= 0.1. Defaults to 5 if omitted."
                 },
                 {
+                  "key": "categoryId",
+                  "value": "6a83949f262e3e3a8173981d",
+                  "disabled": true,
+                  "description": "Category id to filter by."
+                },
+                {
+                  "key": "address",
+                  "value": "Opebi",
+                  "disabled": true,
+                  "description": "Free-text match against Listing.address. Only applied when useMyLocation is false/omitted."
+                },
+                {
+                  "key": "state",
+                  "value": "Lagos",
+                  "disabled": true,
+                  "description": "Free-text match against Listing.state. Only applied when useMyLocation is false/omitted."
+                },
+                {
+                  "key": "area",
+                  "value": "Opebi",
+                  "disabled": true,
+                  "description": "Free-text match against Listing.area. Only applied when useMyLocation is false/omitted."
+                },
+                {
+                  "key": "itemCondition[new]",
+                  "value": "true",
+                  "disabled": true,
+                  "description": "Matches Listing.condition = new."
+                },
+                {
+                  "key": "itemCondition[neatlyUsed]",
+                  "value": "true",
+                  "disabled": true,
+                  "description": "Matches Listing.condition in [like_new, good] — fair/poor are excluded."
+                },
+                {
+                  "key": "priceRange[min]",
+                  "value": "5000",
+                  "disabled": true,
+                  "description": "Minimum price, >= 0."
+                },
+                {
+                  "key": "priceRange[max]",
+                  "value": "100000",
+                  "disabled": true,
+                  "description": "Maximum price, >= 0."
+                },
+                {
                   "key": "page",
                   "value": "1",
                   "disabled": false,
@@ -961,7 +1009,7 @@
                 }
               ]
             },
-            "description": "Active listings within radiusKm of (lat, lng), closest first. Unlike the main search endpoint's radiusKm, this one is actually enforced (via $geoNear's maxDistance). Excludes the caller's own listings — use 'Get my listings' for those."
+            "description": "Active listings within radiusKm of (lat, lng), closest first. Unlike the main search endpoint's radiusKm, this one is actually enforced (via $geoNear's maxDistance). Excludes the caller's own listings — use 'Get my listings' for those. Also accepts categoryId/itemCondition/priceRange/address/state/area as additional narrowing filters (no search) — combined with the radius, not an alternative to it."
           },
           "response": []
         },
@@ -987,6 +1035,54 @@
               ],
               "query": [
                 {
+                  "key": "categoryId",
+                  "value": "6a83949f262e3e3a8173981d",
+                  "disabled": true,
+                  "description": "Category id to filter by."
+                },
+                {
+                  "key": "address",
+                  "value": "Opebi",
+                  "disabled": true,
+                  "description": "Free-text match against Listing.address. Only applied when useMyLocation is false/omitted."
+                },
+                {
+                  "key": "state",
+                  "value": "Lagos",
+                  "disabled": true,
+                  "description": "Free-text match against Listing.state. Only applied when useMyLocation is false/omitted."
+                },
+                {
+                  "key": "area",
+                  "value": "Opebi",
+                  "disabled": true,
+                  "description": "Free-text match against Listing.area. Only applied when useMyLocation is false/omitted."
+                },
+                {
+                  "key": "itemCondition[new]",
+                  "value": "true",
+                  "disabled": true,
+                  "description": "Matches Listing.condition = new."
+                },
+                {
+                  "key": "itemCondition[neatlyUsed]",
+                  "value": "true",
+                  "disabled": true,
+                  "description": "Matches Listing.condition in [like_new, good] — fair/poor are excluded."
+                },
+                {
+                  "key": "priceRange[min]",
+                  "value": "5000",
+                  "disabled": true,
+                  "description": "Minimum price, >= 0."
+                },
+                {
+                  "key": "priceRange[max]",
+                  "value": "100000",
+                  "disabled": true,
+                  "description": "Maximum price, >= 0."
+                },
+                {
                   "key": "page",
                   "value": "1",
                   "disabled": false,
@@ -1000,7 +1096,7 @@
                 }
               ]
             },
-            "description": "Active listings created in the last 7 days, newest first. The window is fixed (not admin-configurable). Excludes the caller's own listings — use 'Get my listings' for those."
+            "description": "Active listings created in the last 7 days, newest first. The window is fixed (not admin-configurable). Excludes the caller's own listings — use 'Get my listings' for those. Also accepts categoryId/itemCondition/priceRange/address/state/area as additional filters (no search)."
           },
           "response": []
         },

@@ -21,7 +21,11 @@ import { CreateListingDto, MediaAssetDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { NearbyListingsDto } from './dto/nearby-listings.dto';
 import { RecentListingsDto } from './dto/recent-listings.dto';
-import { FilterListingsDto, ListingFilterDto } from './dto/filter-listings.dto';
+import {
+  FilterListingsDto,
+  ListingExtraFiltersDto,
+  ListingFilterDto,
+} from './dto/filter-listings.dto';
 import { CategoriesService } from '../categories/categories.service';
 import { CounterService } from '../common/counter/counter.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -409,7 +413,7 @@ export class ListingsService {
     });
   }
 
-  // Pure proximity feed (no keyword/category/price filters); $facet forks one $geoNear into page + total since countDocuments() can't use $near.
+  // Proximity feed, now also accepting the shared categoryId/itemCondition/priceRange/address/state/area filters (no search); $facet forks one $geoNear into page + total since countDocuments() can't use $near.
   // Excludes the caller's own listings — a seller browses everyone else's, and gets their own via GET /listings/mine.
   async nearby(
     dto: NearbyListingsDto,
@@ -431,6 +435,7 @@ export class ListingsService {
       {
         status: ListingStatus.ACTIVE,
         seller: { $ne: new Types.ObjectId(currentUserId) },
+        ...this.buildExtraFilters(dto),
       },
       page,
       limit,
@@ -524,7 +529,7 @@ export class ListingsService {
     return { results, total };
   }
 
-  // Recently posted feed — createdAt within the last 7 days, newest first.
+  // Recently posted feed — createdAt within the last 7 days, newest first. Now also accepting the shared categoryId/itemCondition/priceRange/address/state/area filters (no search).
   // Excludes the caller's own listings — a seller browses everyone else's, and gets their own via GET /listings/mine.
   async recent(
     dto: RecentListingsDto,
@@ -545,6 +550,7 @@ export class ListingsService {
       status: ListingStatus.ACTIVE,
       createdAt: { $gte: since },
       seller: { $ne: new Types.ObjectId(currentUserId) },
+      ...this.buildExtraFilters(dto),
     };
 
     const [found, total] = await Promise.all([
@@ -572,16 +578,11 @@ export class ListingsService {
     }
   }
 
-  // Shared by countFiltered() and filterListings() so the two can never drift out of sync on what counts as a match.
-  // Excludes the caller's own listings — a seller browses everyone else's, and gets their own via GET /listings/mine.
-  private buildListingFilterQuery(
-    dto: ListingFilterDto,
-    currentUserId: string,
+  // Shared by every listing feed (search/filter, nearby, new) — categoryId/itemCondition/priceRange/address/state/area, so a bug fix here never has to be repeated across the three call sites.
+  private buildExtraFilters(
+    dto: ListingExtraFiltersDto,
   ): Record<string, unknown> {
-    const filter: Record<string, unknown> = {
-      status: ListingStatus.ACTIVE,
-      seller: { $ne: new Types.ObjectId(currentUserId) },
-    };
+    const filter: Record<string, unknown> = {};
 
     if (dto.categoryId) filter.category = new Types.ObjectId(dto.categoryId);
 
@@ -602,14 +603,37 @@ export class ListingsService {
       };
     }
 
-    if (dto.search) filter.$text = { $search: dto.search };
+    if (dto.address) filter.address = new RegExp(escapeRegex(dto.address), 'i');
+    if (dto.state) filter.state = new RegExp(escapeRegex(dto.state), 'i');
+    if (dto.area) filter.area = new RegExp(escapeRegex(dto.area), 'i');
 
+    return filter;
+  }
+
+  // Shared by countFiltered() and filterListings() so the two can never drift out of sync on what counts as a match.
+  // Excludes the caller's own listings — a seller browses everyone else's, and gets their own via GET /listings/mine.
+  private buildListingFilterQuery(
+    dto: ListingFilterDto,
+    currentUserId: string,
+  ): Record<string, unknown> {
+    const extra = this.buildExtraFilters(dto);
     // Text location fields only apply on the non-geo path — useMyLocation switches to $geoNear instead.
-    if (!dto.useMyLocation) {
-      if (dto.address)
-        filter.address = new RegExp(escapeRegex(dto.address), 'i');
-      if (dto.state) filter.state = new RegExp(escapeRegex(dto.state), 'i');
-      if (dto.area) filter.area = new RegExp(escapeRegex(dto.area), 'i');
+    if (dto.useMyLocation) {
+      delete extra.address;
+      delete extra.state;
+      delete extra.area;
+    }
+
+    const filter: Record<string, unknown> = {
+      status: ListingStatus.ACTIVE,
+      seller: { $ne: new Types.ObjectId(currentUserId) },
+      ...extra,
+    };
+
+    // Case-insensitive regex against title/description, not Mongo's $text index — no relevance ranking, just a substring match.
+    if (dto.search) {
+      const re = new RegExp(escapeRegex(dto.search), 'i');
+      filter.$or = [{ title: re }, { description: re }];
     }
 
     return filter;
@@ -668,15 +692,12 @@ export class ListingsService {
       return { results, total, page, limit };
     }
 
+    // Regex has no relevance score to sort by (unlike the old $text search) — newest first regardless of whether `search` is present.
     const query = this.listingModel
       .find(baseFilter)
       .populate('category', CATEGORY_POPULATE_FIELDS)
-      .populate('seller', SELLER_POPULATE_FIELDS);
-    if (dto.search) {
-      query.sort({ score: { $meta: 'textScore' } });
-    } else {
-      query.sort({ createdAt: -1 });
-    }
+      .populate('seller', SELLER_POPULATE_FIELDS)
+      .sort({ createdAt: -1 });
     const [found, total] = await Promise.all([
       query
         .skip((page - 1) * limit)

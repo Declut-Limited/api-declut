@@ -37,11 +37,36 @@ export class PriceRangeFilterDto {
   max?: number;
 }
 
-export class ListingFilterDto {
+// categoryId/address/state/area/itemCondition/priceRange — shared by every listing feed (search/filter, nearby, new). No search, no geo-mode-switching (useMyLocation/lat/lng/searchWithin) — those stay exclusive to ListingFilterDto below.
+export class ListingExtraFiltersDto {
   @IsOptional()
   @IsMongoId()
   categoryId?: string;
 
+  @IsOptional()
+  @IsString()
+  address?: string;
+
+  @IsOptional()
+  @IsString()
+  state?: string;
+
+  @IsOptional()
+  @IsString()
+  area?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ItemConditionFilterDto)
+  itemCondition?: ItemConditionFilterDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PriceRangeFilterDto)
+  priceRange?: PriceRangeFilterDto;
+}
+
+export class ListingFilterDto extends ListingExtraFiltersDto {
   @IsOptional()
   @Type(() => Boolean)
   @IsBoolean()
@@ -69,28 +94,7 @@ export class ListingFilterDto {
   @Min(0.1)
   searchWithin?: number;
 
-  // Only applied when useMyLocation is false/omitted.
-  @IsOptional()
-  @IsString()
-  address?: string;
-
-  @IsOptional()
-  @IsString()
-  state?: string;
-
-  @IsOptional()
-  @IsString()
-  area?: string;
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => ItemConditionFilterDto)
-  itemCondition?: ItemConditionFilterDto;
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => PriceRangeFilterDto)
-  priceRange?: PriceRangeFilterDto;
+  // address/state/area (inherited above) only apply when useMyLocation is false/omitted — see buildListingFilterQuery().
 
   // Text-search query, matched against title/description (Mongo text index).
   @IsOptional()
