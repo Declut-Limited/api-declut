@@ -40,6 +40,7 @@ export class PaystackService {
     amountKobo: number;
     reference: string;
     subaccountCode: string;
+    callbackUrl?: string;
   }): Promise<InitializeTransactionResult> {
     const response = await this.request<{
       authorization_url: string;
@@ -53,6 +54,7 @@ export class PaystackService {
       // processing fee, not deducted from the split. Our own 10% commission
       // is computed and taken separately at release, not via this split.
       bearer: 'account',
+      ...(params.callbackUrl && { callback_url: params.callbackUrl }),
     });
 
     return {

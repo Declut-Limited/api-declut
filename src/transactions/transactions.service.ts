@@ -136,6 +136,7 @@ export class TransactionsService {
       amountKobo: Math.round(amount * 100),
       reference,
       subaccountCode,
+      callbackUrl: dto.callbackUrl,
     });
 
     const year = new Date().getFullYear();

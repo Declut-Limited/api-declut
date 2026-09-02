@@ -1613,10 +1613,10 @@
                 "transactions"
               ]
             },
-            "description": "Pays the listing's list price and creates a transaction in escrow.",
+            "description": "Initializes a Paystack checkout for the listing at its list price. Returns paystackAuthorizationUrl — open it in the app's in-app browser; the mobile app never handles Paystack keys directly. callbackUrl (optional) is where Paystack redirects after payment, e.g. a deep link scheme — needed for expo-web-browser to auto-close the checkout screen. The transaction is created at pending_payment immediately; it only moves to escrow_active (and an Escrow row is created) once the /transactions/webhook/paystack webhook confirms payment.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"listingId\": \"{{listingId}}\"\n}",
+              "raw": "{\n  \"listingId\": \"{{listingId}}\",\n  \"callbackUrl\": \"declut://payment-callback\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
