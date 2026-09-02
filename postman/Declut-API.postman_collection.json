@@ -1613,7 +1613,7 @@
                 "transactions"
               ]
             },
-            "description": "Initializes a Paystack checkout for the listing at its list price. Returns paystackAuthorizationUrl — open it in the app's in-app browser; the mobile app never handles Paystack keys directly. callbackUrl (optional) is where Paystack redirects after payment, e.g. a deep link scheme — needed for expo-web-browser to auto-close the checkout screen. The transaction is created at pending_payment immediately; it only moves to escrow_active (and an Escrow row is created) once the /transactions/webhook/paystack webhook confirms payment.",
+            "description": "Initializes a Paystack checkout for the listing at its list price. Returns paystackAuthorizationUrl — open it in the app's in-app browser; the mobile app never handles Paystack keys directly. callbackUrl is optional — the backend already defaults to PAYSTACK_CALLBACK_URL (the app's fixed deep-link scheme) when omitted; only send it to override that (e.g. a dev-build scheme). The transaction is created at pending_payment immediately; it only moves to escrow_active (and an Escrow row is created) once the /transactions/webhook/paystack webhook confirms payment.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"listingId\": \"{{listingId}}\",\n  \"callbackUrl\": \"declut://payment-callback\"\n}",
@@ -1823,6 +1823,182 @@
               ]
             }
           ]
+        }
+      ]
+    },
+    {
+      "name": "banks",
+      "item": [
+        {
+          "name": "List banks",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/banks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "banks"
+              ]
+            },
+            "description": "Nigerian banks from Paystack, passthrough — nothing persisted."
+          },
+          "response": []
+        },
+        {
+          "name": "Resolve bank account",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/banks/resolve?bankCode=044&accountNumber=1234567890",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "banks",
+                "resolve"
+              ],
+              "query": [
+                {
+                  "key": "bankCode",
+                  "value": "044",
+                  "disabled": false,
+                  "description": "Paystack bank code."
+                },
+                {
+                  "key": "accountNumber",
+                  "value": "1234567890",
+                  "disabled": false,
+                  "description": "10-digit NUBAN."
+                }
+              ]
+            },
+            "description": "Resolves the account holder name via Paystack — a UI preview only; create/update on bank-accounts re-resolve independently regardless."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "bank-accounts",
+      "item": [
+        {
+          "name": "Create bank account",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bank-accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bank-accounts"
+              ]
+            },
+            "description": "One per user — 409s if one already exists (use the edit endpoint instead). accountHolderName/shortName/fullName/maskedAccountNumber are all resolved server-side from Paystack, never client-supplied.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bankCode\": \"999992\",\n  \"accountNumber\": \"9057643470\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update bank account",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bank-accounts/{{bankAccountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bank-accounts",
+                "{{bankAccountId}}"
+              ]
+            },
+            "description": "Object-level ownership checked — 403 if the caller does not own it. Only re-resolves against Paystack when bankCode/accountNumber actually change.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bankCode\": \"058\",\n  \"accountNumber\": \"0123456789\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get bank account by user ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bank-accounts/user/{{userId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bank-accounts",
+                "user",
+                "{{userId}}"
+              ]
+            },
+            "description": "Restricted to the caller's own id — 403 on any other userId (avoids leaking another user's account number to any authenticated caller)."
+          },
+          "response": []
         }
       ]
     },
@@ -6057,6 +6233,11 @@
     },
     {
       "key": "transactionId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "bankAccountId",
       "value": "",
       "type": "string"
     },

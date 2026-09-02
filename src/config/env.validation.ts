@@ -72,6 +72,8 @@ export const envValidationSchema = Joi.object({
 
   PAYSTACK_PUBLIC_KEY: Joi.string().allow('').optional(),
   PAYSTACK_SECRET_KEY: Joi.string().allow('').optional(),
+  // Default deep-link Paystack redirects to after checkout — the mobile app's own URL scheme. Falls back to Paystack's own generic page when unset. Overridable per-request via CreateTransactionDto.callbackUrl (e.g. a dev-build scheme).
+  PAYSTACK_CALLBACK_URL: Joi.string().allow('').optional(),
 
   QOREID_CLIENT_ID: Joi.string().allow('').optional(),
   QOREID_CLIENT_SECRET: Joi.string().allow('').optional(),

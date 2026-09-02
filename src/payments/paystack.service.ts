@@ -13,6 +13,16 @@ export interface VerifyTransactionResult {
   currency: string;
 }
 
+export interface PaystackBank {
+  name: string;
+  code: string;
+}
+
+export interface ResolvedAccount {
+  accountNumber: string;
+  accountName: string;
+}
+
 interface PaystackApiResponse<T> {
   status: boolean;
   message: string;
@@ -42,6 +52,8 @@ export class PaystackService {
     subaccountCode: string;
     callbackUrl?: string;
   }): Promise<InitializeTransactionResult> {
+    const callbackUrl =
+      params.callbackUrl || this.config.get<string>('PAYSTACK_CALLBACK_URL');
     const response = await this.request<{
       authorization_url: string;
       access_code: string;
@@ -54,7 +66,8 @@ export class PaystackService {
       // processing fee, not deducted from the split. Our own 10% commission
       // is computed and taken separately at release, not via this split.
       bearer: 'account',
-      ...(params.callbackUrl && { callback_url: params.callbackUrl }),
+      // Falls back to PAYSTACK_CALLBACK_URL (the app's fixed deep-link scheme) when the caller doesn't override it — no callback_url at all if neither is set.
+      ...(callbackUrl && { callback_url: callbackUrl }),
     });
 
     return {
@@ -126,6 +139,37 @@ export class PaystackService {
       reference: params.reference,
       reason: 'Declut escrow release',
     });
+  }
+
+  // Nigerian banks only (this app is NGN-only, see CLAUDE.md). perPage:100
+  // isn't independently confirmed against Paystack's actual max — honesty
+  // flag, same spirit as QoreID's placeholder paths. Filters out inactive/
+  // deprecated banks — a bank picker shouldn't offer a code that no longer
+  // processes transfers.
+  async listBanks(): Promise<PaystackBank[]> {
+    const response = await this.request<
+      Array<{ name: string; code: string; active: boolean }>
+    >('/bank?country=nigeria&currency=NGN&perPage=100', 'GET');
+    return response.data
+      .filter((bank) => bank.active)
+      .map((bank) => ({ name: bank.name, code: bank.code }));
+  }
+
+  async resolveAccountNumber(
+    accountNumber: string,
+    bankCode: string,
+  ): Promise<ResolvedAccount> {
+    const response = await this.request<{
+      account_number: string;
+      account_name: string;
+    }>(
+      `/bank/resolve?account_number=${encodeURIComponent(accountNumber)}&bank_code=${encodeURIComponent(bankCode)}`,
+      'GET',
+    );
+    return {
+      accountNumber: response.data.account_number,
+      accountName: response.data.account_name,
+    };
   }
 
   async refund(reference: string): Promise<void> {
