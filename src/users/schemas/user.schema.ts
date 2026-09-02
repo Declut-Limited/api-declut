@@ -146,6 +146,10 @@ export class User {
   @Prop()
   paystackSubaccountCode?: string;
 
+  // Mirrors the exact check TransactionsService uses to gate checkout/release (bankCode + accountNumber + accountName all present) — kept in sync in UsersService.updateProfile(), the only write path for those three fields.
+  @Prop({ default: false })
+  hasPayoutDetails: boolean;
+
   createdAt: Date;
   updatedAt: Date;
 }

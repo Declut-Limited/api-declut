@@ -87,10 +87,10 @@ export class ListingsService {
         type: 'Point',
         coordinates: [dto.location.lng, dto.location.lat],
       },
-      locationLabel: `${dto.city}, ${dto.state}`,
+      locationLabel: `${dto.area}, ${dto.state}`,
       address: dto.address,
       state: dto.state,
-      city: dto.city,
+      area: dto.area,
       hasDefect,
       defectDescription,
       specs: dto.brand ? { brand: dto.brand } : undefined,
@@ -233,13 +233,15 @@ export class ListingsService {
       listing.state = dto.state;
       changedFields.push('state');
     }
-    if (dto.city !== undefined) {
-      listing.city = dto.city;
-      changedFields.push('city');
+    if (dto.area !== undefined) {
+      listing.area = dto.area;
+      changedFields.push('area');
     }
-    // Recomputed whenever either half changes — the other half falls back to its already-stored value.
-    if (dto.city !== undefined || dto.state !== undefined) {
-      listing.locationLabel = `${dto.city ?? listing.city}, ${dto.state ?? listing.state}`;
+    // Recomputed whenever either half changes — the other half falls back to its already-stored value. An old listing with no stored `area` (it wasn't part of creation until 2026-09-02) falls back to `state` alone rather than emitting "undefined, ...".
+    if (dto.area !== undefined || dto.state !== undefined) {
+      const area = dto.area ?? listing.area;
+      const state = dto.state ?? listing.state ?? '';
+      listing.locationLabel = area ? `${area}, ${state}` : state;
       changedFields.push('locationLabel');
     }
     if (dto.location !== undefined) {
@@ -408,7 +410,11 @@ export class ListingsService {
   }
 
   // Pure proximity feed (no keyword/category/price filters); $facet forks one $geoNear into page + total since countDocuments() can't use $near.
-  async nearby(dto: NearbyListingsDto): Promise<{
+  // Excludes the caller's own listings — a seller browses everyone else's, and gets their own via GET /listings/mine.
+  async nearby(
+    dto: NearbyListingsDto,
+    currentUserId: string,
+  ): Promise<{
     results: Record<string, unknown>[];
     total: number;
     page: number;
@@ -422,7 +428,10 @@ export class ListingsService {
       dto.lat,
       dto.lng,
       radiusKm * 1000,
-      { status: ListingStatus.ACTIVE },
+      {
+        status: ListingStatus.ACTIVE,
+        seller: { $ne: new Types.ObjectId(currentUserId) },
+      },
       page,
       limit,
     );
@@ -516,7 +525,11 @@ export class ListingsService {
   }
 
   // Recently posted feed — createdAt within the last 7 days, newest first.
-  async recent(dto: RecentListingsDto): Promise<{
+  // Excludes the caller's own listings — a seller browses everyone else's, and gets their own via GET /listings/mine.
+  async recent(
+    dto: RecentListingsDto,
+    currentUserId: string,
+  ): Promise<{
     results: Record<string, unknown>[];
     total: number;
     page: number;
@@ -531,6 +544,7 @@ export class ListingsService {
     const filter: Record<string, unknown> = {
       status: ListingStatus.ACTIVE,
       createdAt: { $gte: since },
+      seller: { $ne: new Types.ObjectId(currentUserId) },
     };
 
     const [found, total] = await Promise.all([
@@ -559,10 +573,15 @@ export class ListingsService {
   }
 
   // Shared by countFiltered() and filterListings() so the two can never drift out of sync on what counts as a match.
+  // Excludes the caller's own listings — a seller browses everyone else's, and gets their own via GET /listings/mine.
   private buildListingFilterQuery(
     dto: ListingFilterDto,
+    currentUserId: string,
   ): Record<string, unknown> {
-    const filter: Record<string, unknown> = { status: ListingStatus.ACTIVE };
+    const filter: Record<string, unknown> = {
+      status: ListingStatus.ACTIVE,
+      seller: { $ne: new Types.ObjectId(currentUserId) },
+    };
 
     if (dto.categoryId) filter.category = new Types.ObjectId(dto.categoryId);
 
@@ -590,7 +609,6 @@ export class ListingsService {
       if (dto.address)
         filter.address = new RegExp(escapeRegex(dto.address), 'i');
       if (dto.state) filter.state = new RegExp(escapeRegex(dto.state), 'i');
-      if (dto.city) filter.city = new RegExp(escapeRegex(dto.city), 'i');
       if (dto.area) filter.area = new RegExp(escapeRegex(dto.area), 'i');
     }
 
@@ -598,10 +616,12 @@ export class ListingsService {
   }
 
   // Count of active listings within radiusKm (default 5) of (lat, lng) — the count endpoint's whole job now, not a mirror of every /listings filter.
+  // Excludes the caller's own listings, matching nearby() — the count should describe what nearby() would actually return for this caller.
   async countNearby(
     lat: number,
     lng: number,
     radiusKm: number,
+    currentUserId: string,
   ): Promise<{ count: number }> {
     const [row] = await this.listingModel.aggregate<{ count: number }>([
       {
@@ -610,7 +630,10 @@ export class ListingsService {
           distanceField: 'distanceMeters',
           maxDistance: radiusKm * 1000,
           spherical: true,
-          query: { status: ListingStatus.ACTIVE },
+          query: {
+            status: ListingStatus.ACTIVE,
+            seller: { $ne: new Types.ObjectId(currentUserId) },
+          },
         },
       },
       { $count: 'count' },
@@ -619,7 +642,10 @@ export class ListingsService {
   }
 
   // Backs GET /listings' pagination — the search/filter data endpoint.
-  async filterListings(dto: FilterListingsDto): Promise<{
+  async filterListings(
+    dto: FilterListingsDto,
+    currentUserId: string,
+  ): Promise<{
     results: Record<string, unknown>[];
     total: number;
     page: number;
@@ -628,7 +654,7 @@ export class ListingsService {
     this.assertLocationParams(dto);
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
-    const baseFilter = this.buildListingFilterQuery(dto);
+    const baseFilter = this.buildListingFilterQuery(dto, currentUserId);
 
     if (dto.useMyLocation) {
       const { results, total } = await this.geoPaginatedListings(

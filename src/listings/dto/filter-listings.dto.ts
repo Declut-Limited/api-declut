@@ -80,10 +80,6 @@ export class ListingFilterDto {
 
   @IsOptional()
   @IsString()
-  city?: string;
-
-  @IsOptional()
-  @IsString()
   area?: string;
 
   @IsOptional()

@@ -19,6 +19,7 @@ export interface PrivateUserProfile {
   bankName?: string;
   accountNumber?: string;
   accountName?: string;
+  hasPayoutDetails: boolean;
   createdAt: Date;
 }
 

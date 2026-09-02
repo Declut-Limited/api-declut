@@ -665,7 +665,7 @@
                     "me"
                   ]
                 },
-                "description": ""
+                "description": "hasPayoutDetails is true only when bankCode, accountNumber, and accountName are all set (PATCH Update my profile) — mirrors the check TransactionsService uses to gate checkout."
               },
               "response": []
             },
@@ -777,7 +777,7 @@
                   "key": "useMyLocation",
                   "value": "true",
                   "disabled": true,
-                  "description": "When true, location filtering switches to lat/lng + searchWithin ($geoNear). When false/omitted, address/state/city/area text filters apply instead."
+                  "description": "When true, location filtering switches to lat/lng + searchWithin ($geoNear). When false/omitted, address/state/area text filters apply instead."
                 },
                 {
                   "key": "lat",
@@ -808,12 +808,6 @@
                   "value": "Lagos",
                   "disabled": true,
                   "description": "Free-text match against Listing.state. Only applied when useMyLocation is false/omitted."
-                },
-                {
-                  "key": "city",
-                  "value": "Ikeja",
-                  "disabled": true,
-                  "description": "Free-text match against Listing.city. Only applied when useMyLocation is false/omitted."
                 },
                 {
                   "key": "area",
@@ -865,7 +859,7 @@
                 }
               ]
             },
-            "description": "Paginated. All params optional and combinable. Replaces the old flat category/condition/minPrice/maxPrice/lat/lng/radiusKm shape entirely — shares its filter logic with GET /listings/count, so the two always agree on what matches."
+            "description": "Paginated. All params optional and combinable. Replaces the old flat category/condition/minPrice/maxPrice/lat/lng/radiusKm shape entirely — shares its filter logic with GET /listings/count, so the two always agree on what matches. Excludes the caller's own listings — use 'Get my listings' for those."
           },
           "response": []
         },
@@ -910,7 +904,7 @@
                 }
               ]
             },
-            "description": "Count of active listings within radiusKm (default 5) of (lat, lng) — not a mirror of every GET /listings filter, just location."
+            "description": "Count of active listings within radiusKm (default 5) of (lat, lng) — not a mirror of every GET /listings filter, just location. Excludes the caller's own listings — use 'Get my listings' for those."
           },
           "response": []
         },
@@ -967,7 +961,7 @@
                 }
               ]
             },
-            "description": "Active listings within radiusKm of (lat, lng), closest first. Unlike the main search endpoint's radiusKm, this one is actually enforced (via $geoNear's maxDistance)."
+            "description": "Active listings within radiusKm of (lat, lng), closest first. Unlike the main search endpoint's radiusKm, this one is actually enforced (via $geoNear's maxDistance). Excludes the caller's own listings — use 'Get my listings' for those."
           },
           "response": []
         },
@@ -1006,7 +1000,7 @@
                 }
               ]
             },
-            "description": "Active listings created in the last 7 days, newest first. The window is fixed (not admin-configurable)."
+            "description": "Active listings created in the last 7 days, newest first. The window is fixed (not admin-configurable). Excludes the caller's own listings — use 'Get my listings' for those."
           },
           "response": []
         },
@@ -1035,10 +1029,10 @@
                 "listings"
               ]
             },
-            "description": "categoryId is a real Category _id (GET /categories/all). condition: new|neatly_used. hasDefect requires defectDescription when true. images/video use Cloudinary's own upload-response shape (publicId/url/secureUrl), obtained via GET /media/upload-signature(/bulk) — sortOrder/isPrimary/createdAt are optional per item, defaulted server-side if omitted. images max 3, video is a single object (max 1). mainImageUrl is computed server-side from whichever image has isPrimary:true (falling back to the first) — never sent by the client. locationLabel is also computed server-side as \"city, state\".",
+            "description": "categoryId is a real Category _id (GET /categories/all). condition: new|neatly_used. hasDefect requires defectDescription when true. images/video use Cloudinary's own upload-response shape (publicId/url/secureUrl), obtained via GET /media/upload-signature(/bulk) — sortOrder/isPrimary/createdAt are optional per item, defaulted server-side if omitted. images max 3, video is a single object (max 1). mainImageUrl is computed server-side from whichever image has isPrimary:true (falling back to the first) — never sent by the client. locationLabel is also computed server-side as `area, state` (area replaced city here — area is now required at creation).",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Comfortable 3-seater sofa\",\n  \"description\": \"Barely used, no stains, smoke-free home.\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"price\": 45000,\n  \"brand\": \"Mouka\",\n  \"state\": \"Lagos\",\n  \"city\": \"Lekki\",\n  \"address\": \"12 Admiralty Way\",\n  \"location\": {\n    \"lat\": 6.5244,\n    \"lng\": 3.3792\n  },\n  \"condition\": \"neatly_used\",\n  \"hasDefect\": false,\n  \"defectDescription\": null,\n  \"images\": [\n    {\n      \"publicId\": \"listings/file_au9f4o\",\n      \"url\": \"http://res.cloudinary.com/example/image/upload/v1/listings/file_au9f4o.jpg\",\n      \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/listings/file_au9f4o.jpg\",\n      \"sortOrder\": 0,\n      \"isPrimary\": true\n    },\n    {\n      \"publicId\": \"listings/file_bz2k9p\",\n      \"url\": \"http://res.cloudinary.com/example/image/upload/v1/listings/file_bz2k9p.jpg\",\n      \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/listings/file_bz2k9p.jpg\",\n      \"sortOrder\": 1,\n      \"isPrimary\": false\n    }\n  ],\n  \"video\": {\n    \"publicId\": \"listings/file_vid001\",\n    \"url\": \"http://res.cloudinary.com/example/video/upload/v1/listings/file_vid001.mp4\",\n    \"secureUrl\": \"https://res.cloudinary.com/example/video/upload/v1/listings/file_vid001.mp4\"\n  }\n}",
+              "raw": "{\n  \"title\": \"Comfortable 3-seater sofa\",\n  \"description\": \"Barely used, no stains, smoke-free home.\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"price\": 45000,\n  \"brand\": \"Mouka\",\n  \"state\": \"Lagos\",\n  \"area\": \"Lekki Phase 1\",\n  \"address\": \"12 Admiralty Way\",\n  \"location\": {\n    \"lat\": 6.5244,\n    \"lng\": 3.3792\n  },\n  \"condition\": \"neatly_used\",\n  \"hasDefect\": false,\n  \"defectDescription\": null,\n  \"images\": [\n    {\n      \"publicId\": \"listings/file_au9f4o\",\n      \"url\": \"http://res.cloudinary.com/example/image/upload/v1/listings/file_au9f4o.jpg\",\n      \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/listings/file_au9f4o.jpg\",\n      \"sortOrder\": 0,\n      \"isPrimary\": true\n    },\n    {\n      \"publicId\": \"listings/file_bz2k9p\",\n      \"url\": \"http://res.cloudinary.com/example/image/upload/v1/listings/file_bz2k9p.jpg\",\n      \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/listings/file_bz2k9p.jpg\",\n      \"sortOrder\": 1,\n      \"isPrimary\": false\n    }\n  ],\n  \"video\": {\n    \"publicId\": \"listings/file_vid001\",\n    \"url\": \"http://res.cloudinary.com/example/video/upload/v1/listings/file_vid001.mp4\",\n    \"secureUrl\": \"https://res.cloudinary.com/example/video/upload/v1/listings/file_vid001.mp4\"\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1168,10 +1162,10 @@
                     "{{listingId}}"
                   ]
                 },
-                "description": "Owner-only, partial update — every field optional, same shape as Create listing (all fields shown here, send only what changed). categoryId must be a real Category _id. images/video use the same Cloudinary upload-response shape as Create listing — sending images recomputes mainImageUrl from whichever item is isPrimary:true. Changing city/state recomputes locationLabel. Setting hasDefect:false clears defectDescription. locationLabel/mainImageUrl still can't be sent directly (both computed server-side).",
+                "description": "Owner-only, partial update — every field optional, same shape as Create listing (all fields shown here, send only what changed). categoryId must be a real Category _id. images/video use the same Cloudinary upload-response shape as Create listing — sending images recomputes mainImageUrl from whichever item is isPrimary:true. Changing area or state recomputes locationLabel (`area, state` — area replaced city here). Setting hasDefect:false clears defectDescription. locationLabel/mainImageUrl still can't be sent directly (both computed server-side).",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"title\": \"Comfortable 3-seater sofa (updated)\",\n  \"description\": \"Price reduced — barely used, no stains.\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"price\": 42000,\n  \"brand\": \"Mouka\",\n  \"state\": \"Lagos\",\n  \"city\": \"Lekki\",\n  \"address\": \"12 Admiralty Way\",\n  \"location\": {\n    \"lat\": 6.5244,\n    \"lng\": 3.3792\n  },\n  \"condition\": \"neatly_used\",\n  \"hasDefect\": true,\n  \"defectDescription\": \"Small scuff on the left armrest\",\n  \"images\": [\n    {\n      \"publicId\": \"listings/file_au9f4o\",\n      \"url\": \"http://res.cloudinary.com/example/image/upload/v1/listings/file_au9f4o.jpg\",\n      \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/listings/file_au9f4o.jpg\",\n      \"sortOrder\": 0,\n      \"isPrimary\": true\n    },\n    {\n      \"publicId\": \"listings/file_bz2k9p\",\n      \"url\": \"http://res.cloudinary.com/example/image/upload/v1/listings/file_bz2k9p.jpg\",\n      \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/listings/file_bz2k9p.jpg\",\n      \"sortOrder\": 1,\n      \"isPrimary\": false\n    }\n  ],\n  \"video\": {\n    \"publicId\": \"listings/file_vid001\",\n    \"url\": \"http://res.cloudinary.com/example/video/upload/v1/listings/file_vid001.mp4\",\n    \"secureUrl\": \"https://res.cloudinary.com/example/video/upload/v1/listings/file_vid001.mp4\"\n  }\n}",
+                  "raw": "{\n  \"title\": \"Comfortable 3-seater sofa (updated)\",\n  \"description\": \"Price reduced — barely used, no stains.\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"price\": 42000,\n  \"brand\": \"Mouka\",\n  \"state\": \"Lagos\",\n  \"area\": \"Lekki Phase 1\",\n  \"address\": \"12 Admiralty Way\",\n  \"location\": {\n    \"lat\": 6.5244,\n    \"lng\": 3.3792\n  },\n  \"condition\": \"neatly_used\",\n  \"hasDefect\": true,\n  \"defectDescription\": \"Small scuff on the left armrest\",\n  \"images\": [\n    {\n      \"publicId\": \"listings/file_au9f4o\",\n      \"url\": \"http://res.cloudinary.com/example/image/upload/v1/listings/file_au9f4o.jpg\",\n      \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/listings/file_au9f4o.jpg\",\n      \"sortOrder\": 0,\n      \"isPrimary\": true\n    },\n    {\n      \"publicId\": \"listings/file_bz2k9p\",\n      \"url\": \"http://res.cloudinary.com/example/image/upload/v1/listings/file_bz2k9p.jpg\",\n      \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/listings/file_bz2k9p.jpg\",\n      \"sortOrder\": 1,\n      \"isPrimary\": false\n    }\n  ],\n  \"video\": {\n    \"publicId\": \"listings/file_vid001\",\n    \"url\": \"http://res.cloudinary.com/example/video/upload/v1/listings/file_vid001.mp4\",\n    \"secureUrl\": \"https://res.cloudinary.com/example/video/upload/v1/listings/file_vid001.mp4\"\n  }\n}",
                   "options": {
                     "raw": {
                       "language": "json"

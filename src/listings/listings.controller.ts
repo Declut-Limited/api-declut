@@ -27,30 +27,44 @@ export class ListingsController {
   constructor(private readonly listingsService: ListingsService) {}
 
   // Search and filter — categoryId/useMyLocation/itemCondition/priceRange/search/etc, see FilterListingsDto. Replaces the old flat-param search().
+  // Excludes the caller's own listings — see GET /listings/mine for those.
   @Get()
-  search(@Query() dto: FilterListingsDto) {
-    return this.listingsService.filterListings(dto);
+  search(
+    @CurrentUser() user: AccessTokenPayload,
+    @Query() dto: FilterListingsDto,
+  ) {
+    return this.listingsService.filterListings(dto, user.sub);
   }
 
   // Count of active listings within radiusKm (default 5) of (lat, lng) — not a mirror of every /listings filter.
   @Get('count')
-  count(@Query() dto: NearbyLocationDto) {
+  count(
+    @CurrentUser() user: AccessTokenPayload,
+    @Query() dto: NearbyLocationDto,
+  ) {
     return this.listingsService.countNearby(
       dto.lat,
       dto.lng,
       dto.radiusKm ?? 5,
+      user.sub,
     );
   }
 
   // Must come before ':id' — otherwise Nest would match "nearby"/"new" as the id.
   @Get('nearby')
-  nearby(@Query() dto: NearbyListingsDto) {
-    return this.listingsService.nearby(dto);
+  nearby(
+    @CurrentUser() user: AccessTokenPayload,
+    @Query() dto: NearbyListingsDto,
+  ) {
+    return this.listingsService.nearby(dto, user.sub);
   }
 
   @Get('new')
-  recent(@Query() dto: RecentListingsDto) {
-    return this.listingsService.recent(dto);
+  recent(
+    @CurrentUser() user: AccessTokenPayload,
+    @Query() dto: RecentListingsDto,
+  ) {
+    return this.listingsService.recent(dto, user.sub);
   }
 
   // Must come before ':idOrSlug' — otherwise Nest would match "mine" as the id/slug.

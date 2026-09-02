@@ -139,6 +139,11 @@ export class UsersService {
     if (dto.bankName !== undefined) user.bankName = dto.bankName;
     if (dto.accountNumber !== undefined) user.accountNumber = dto.accountNumber;
     if (dto.accountName !== undefined) user.accountName = dto.accountName;
+    user.hasPayoutDetails = !!(
+      user.bankCode &&
+      user.accountNumber &&
+      user.accountName
+    );
 
     await user.save();
     return this.toPrivateProfile(user);
@@ -321,6 +326,7 @@ export class UsersService {
       bankName: user.bankName,
       accountNumber: user.accountNumber,
       accountName: user.accountName,
+      hasPayoutDetails: user.hasPayoutDetails,
       createdAt: (user as unknown as { createdAt: Date }).createdAt,
     };
   }

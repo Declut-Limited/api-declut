@@ -121,7 +121,7 @@ export class Listing {
   @Prop({ type: GeoPoint, required: true })
   location: GeoPoint;
 
-  // Computed server-side as "${city}, ${state}" — not client-supplied.
+  // Computed server-side as "${area}, ${state}" — not client-supplied.
   @Prop({ required: true, trim: true, maxlength: 200 })
   locationLabel: string;
 
@@ -130,9 +130,6 @@ export class Listing {
 
   @Prop({ trim: true, maxlength: 100, index: true })
   state?: string;
-
-  @Prop({ trim: true, maxlength: 100, index: true })
-  city?: string;
 
   @Prop({ trim: true, maxlength: 100, index: true })
   area?: string;
