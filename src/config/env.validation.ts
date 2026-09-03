@@ -53,6 +53,9 @@ export const envValidationSchema = Joi.object({
   EMAIL_FROM: Joi.string().allow('').optional(),
   EMAIL_FROM_NAME: Joi.string().default('Declut'),
 
+  // Inbox that receives "Get in touch" (public contact form) notifications — read fresh on every submission (see ContactService), never hardcoded.
+  CONTACT_ADMIN_EMAIL: Joi.string().allow('').optional(),
+
   // Comma-separated OAuth client id(s) accepted as a valid audience when
   // verifying a Google ID token (e.g. iOS + Android + Web client ids).
   // Optional for now since we don't have real values yet — GoogleOAuthService

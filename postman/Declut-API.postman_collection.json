@@ -2475,6 +2475,45 @@
               "response": []
             }
           ]
+        },
+        {
+          "name": "contact",
+          "description": "",
+          "item": [
+            {
+              "name": "Get in touch",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/contact",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "contact"
+                  ]
+                },
+                "description": "Public, unauthenticated — the marketing website's \"Get in touch\" contact form. Saves to the ContactMessage collection and emails CONTACT_ADMIN_EMAIL (never the submitter). Never returns which admin address it was sent to.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Amara Chukwu\",\n  \"email\": \"amara.chukwu@gmail.com\",\n  \"phone\": \"08012345678\",\n  \"message\": \"Hi, I have a question about how escrow payments work on Declut.\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            }
+          ]
         }
       ]
     },

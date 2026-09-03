@@ -96,6 +96,14 @@ export class EmailService {
     const { subject, html } = buildWaitlistInviteEmailBody(message);
     await this.sendEmail({ to, subject, html });
   }
+
+  async sendContactMessageEmail(
+    to: string,
+    submission: { name: string; email: string; phone: string; message: string },
+  ): Promise<void> {
+    const { subject, html } = buildContactMessageEmailBody(submission);
+    await this.sendEmail({ to, subject, html });
+  }
 }
 
 // Shared with AuthService.forgotPassword(), which echoes this back in the
@@ -135,6 +143,20 @@ export function buildWaitlistInviteEmailBody(message: string): {
   return {
     subject: "You're invited to Declut",
     html: `<p>${escapeHtml(message).replace(/\n/g, '<br />')}</p>`,
+  };
+}
+
+// Sent to CONTACT_ADMIN_EMAIL (not the submitter) — a new "Get in touch"
+// submission from the public marketing site's contact form.
+export function buildContactMessageEmailBody(submission: {
+  name: string;
+  email: string;
+  phone: string;
+  message: string;
+}): { subject: string; html: string } {
+  return {
+    subject: `New contact form submission from ${submission.name}`,
+    html: `<p>New "Get in touch" submission:</p><p>Name: ${escapeHtml(submission.name)}<br />Email: ${escapeHtml(submission.email)}<br />Phone: ${escapeHtml(submission.phone)}</p><p>Message:</p><p>${escapeHtml(submission.message).replace(/\n/g, '<br />')}</p>`,
   };
 }
 

@@ -30,6 +30,7 @@ import { ReportsModule } from './reports/reports.module';
 import { ContentModule } from './content/content.module';
 import { RolesModule } from './roles/roles.module';
 import { WaitlistModule } from './waitlist/waitlist.module';
+import { ContactModule } from './contact/contact.module';
 import { AuditContextMiddleware } from './common/middleware/audit-context.middleware';
 
 @Module({
@@ -103,6 +104,7 @@ import { AuditContextMiddleware } from './common/middleware/audit-context.middle
     ContentModule,
     RolesModule,
     WaitlistModule,
+    ContactModule,
   ],
   providers: [
     // APP_GUARD/APP_FILTER/APP_INTERCEPTOR are Nest's tokens for registering a provider as a *global* guard/filter/interceptor via DI, instead of NestFactory.create's app.useGlobal*() calls in main.ts. Doing it here means they participate in Nest's dependency injection (useful later — e.g. a guard that injects a service), unlike the main.ts equivalents.
