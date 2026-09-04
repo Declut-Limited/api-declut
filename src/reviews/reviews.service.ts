@@ -342,25 +342,33 @@ export class ReviewsService {
   // isn't one.
   private shapeReview(review: ReviewDocument): Record<string, unknown> {
     const obj = review.toObject() as unknown as Record<string, unknown>;
-    const reviewer = review.reviewer as unknown as PopulatedReviewer;
-    obj.reviewer = {
-      id: reviewer._id.toString(),
-      name: reviewer.name,
-      email: reviewer.email,
-      slug: reviewer.slug,
-      role: review.role,
-      company: reviewer.company,
-      status: reviewer.accountStatus,
-      image: reviewer.image,
-    };
-    const listing = review.listing as unknown as PopulatedReviewListing;
-    obj.listing = {
-      id: listing._id.toString(),
-      title: listing.title,
-      mainImage: listing.mainImageUrl,
-      slug: listing.slug,
-      createdAt: listing.createdAt,
-    };
+    // A referenced User/Listing can be gone by the time this is read (a hard
+    // delete elsewhere, or stale data) — populate() then resolves to null.
+    // Degrade to null rather than crash, matching nearby()'s dangling-seller
+    // handling elsewhere in this app.
+    const reviewer = review.reviewer as unknown as PopulatedReviewer | null;
+    obj.reviewer = reviewer
+      ? {
+          id: reviewer._id.toString(),
+          name: reviewer.name,
+          email: reviewer.email,
+          slug: reviewer.slug,
+          role: review.role,
+          company: reviewer.company,
+          status: reviewer.accountStatus,
+          image: reviewer.image,
+        }
+      : null;
+    const listing = review.listing as unknown as PopulatedReviewListing | null;
+    obj.listing = listing
+      ? {
+          id: listing._id.toString(),
+          title: listing.title,
+          mainImage: listing.mainImageUrl,
+          slug: listing.slug,
+          createdAt: listing.createdAt,
+        }
+      : null;
     return obj;
   }
 }
