@@ -665,7 +665,7 @@
                     "me"
                   ]
                 },
-                "description": "hasPayoutDetails is true only when bankCode, accountNumber, and accountName are all set (PATCH Update my profile) — mirrors the check TransactionsService uses to gate checkout."
+                "description": "hasPayoutDetails is true once POST /bank-accounts succeeds (see the bank-accounts folder) — bank details themselves live on BankAccount, not here."
               },
               "response": []
             },
@@ -695,10 +695,10 @@
                     "me"
                   ]
                 },
-                "description": "All fields optional. Bank details are required to receive a payout.",
+                "description": "Only name is updatable here now — bank/payout details moved to their own BankAccount document, see POST/PATCH /bank-accounts.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"name\": \"Damola Idowu\",\n  \"bankCode\": \"058\",\n  \"bankName\": \"GTBank\",\n  \"accountNumber\": \"0123456789\",\n  \"accountName\": \"Damola Idowu\"\n}",
+                  "raw": "{\n  \"name\": \"Damola Idowu\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"

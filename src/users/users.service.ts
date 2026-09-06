@@ -135,15 +135,6 @@ export class UsersService {
     }
 
     if (dto.name !== undefined) user.name = dto.name;
-    if (dto.bankCode !== undefined) user.bankCode = dto.bankCode;
-    if (dto.bankName !== undefined) user.bankName = dto.bankName;
-    if (dto.accountNumber !== undefined) user.accountNumber = dto.accountNumber;
-    if (dto.accountName !== undefined) user.accountName = dto.accountName;
-    user.hasPayoutDetails = !!(
-      user.bankCode &&
-      user.accountNumber &&
-      user.accountName
-    );
 
     await user.save();
     return this.toPrivateProfile(user);
@@ -257,9 +248,10 @@ export class UsersService {
     return this.userModel.countDocuments(filter).exec();
   }
 
-  async setPaystackSubaccountCode(userId: string, code: string): Promise<void> {
+  // Set only by BankAccountsService.create() — the one place a User can ever gain payout details.
+  async setHasPayoutDetails(userId: string, value: boolean): Promise<void> {
     await this.userModel
-      .updateOne({ _id: userId }, { paystackSubaccountCode: code })
+      .updateOne({ _id: userId }, { hasPayoutDetails: value })
       .exec();
   }
 
@@ -322,10 +314,6 @@ export class UsersService {
       trustScore: user.trustScore,
       avgRating: user.avgRating,
       reviewCount: user.reviewCount,
-      bankCode: user.bankCode,
-      bankName: user.bankName,
-      accountNumber: user.accountNumber,
-      accountName: user.accountName,
       hasPayoutDetails: user.hasPayoutDetails,
       createdAt: (user as unknown as { createdAt: Date }).createdAt,
     };

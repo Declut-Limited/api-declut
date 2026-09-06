@@ -6,6 +6,7 @@ import { BankAccountsController } from './bank-accounts.controller';
 import { BanksController } from './banks.controller';
 import { PaymentsModule } from '../payments/payments.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { AuditLogModule } from '../audit-log/audit-log.module';
     ]),
     PaymentsModule,
     AuditLogModule,
+    UsersModule,
   ],
   controllers: [BankAccountsController, BanksController],
   providers: [BankAccountsService],

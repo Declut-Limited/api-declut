@@ -15,6 +15,7 @@ import { CreateBankAccountDto } from './dto/create-bank-account.dto';
 import { UpdateBankAccountDto } from './dto/update-bank-account.dto';
 import { PaystackService } from '../payments/paystack.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class BankAccountsService {
@@ -23,6 +24,7 @@ export class BankAccountsService {
     private bankAccountModel: Model<BankAccountDocument>,
     private readonly paystackService: PaystackService,
     private readonly auditLogService: AuditLogService,
+    private readonly usersService: UsersService,
   ) {}
 
   async create(userId: string, dto: CreateBankAccountDto) {
@@ -54,6 +56,9 @@ export class BankAccountsService {
       event: 'bank_account.created',
       actor: userId,
     });
+
+    // The one place a User can ever gain payout details — a BankAccount now exists for them.
+    await this.usersService.setHasPayoutDetails(userId, true);
 
     return this.shape(bankAccount);
   }
@@ -102,6 +107,20 @@ export class BankAccountsService {
       throw new NotFoundException('Bank account not found');
     }
     return this.shape(bankAccount);
+  }
+
+  // Internal, unshaped lookup for other services (TransactionsService) that need the raw bank details for a Paystack call — distinct from getForUser(), which is the ownership-checked, shaped API-facing read.
+  findRawByUser(userId: string): Promise<BankAccountDocument | null> {
+    return this.bankAccountModel.findOne({ user: userId }).exec();
+  }
+
+  async setPaystackSubaccountCode(
+    bankAccountId: string,
+    code: string,
+  ): Promise<void> {
+    await this.bankAccountModel
+      .updateOne({ _id: bankAccountId }, { paystackSubaccountCode: code })
+      .exec();
   }
 
   private async findOwned(

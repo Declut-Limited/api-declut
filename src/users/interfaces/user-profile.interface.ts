@@ -15,10 +15,6 @@ export interface PrivateUserProfile {
   trustScore: number;
   avgRating: number;
   reviewCount: number;
-  bankCode?: string;
-  bankName?: string;
-  accountNumber?: string;
-  accountName?: string;
   hasPayoutDetails: boolean;
   createdAt: Date;
 }

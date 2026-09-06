@@ -12,6 +12,7 @@ import { SettingsModule } from '../settings/settings.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { CounterModule } from '../common/counter/counter.module';
 import { EscrowModule } from '../escrow/escrow.module';
+import { BankAccountsModule } from '../bank-accounts/bank-accounts.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { EscrowModule } from '../escrow/escrow.module';
     AuditLogModule,
     CounterModule,
     EscrowModule,
+    BankAccountsModule,
   ],
   controllers: [TransactionsController],
   providers: [TransactionsService],

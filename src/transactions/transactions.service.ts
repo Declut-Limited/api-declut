@@ -30,6 +30,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { SettingsService } from '../settings/settings.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { CounterService } from '../common/counter/counter.service';
+import { BankAccountsService } from '../bank-accounts/bank-accounts.service';
 import {
   formatNairaFull,
   formatNairaShort,
@@ -78,6 +79,7 @@ export class TransactionsService {
     private readonly settingsService: SettingsService,
     private readonly auditLogService: AuditLogService,
     private readonly counterService: CounterService,
+    private readonly bankAccountsService: BankAccountsService,
   ) {}
 
   async create(buyerId: string, dto: CreateTransactionDto) {
@@ -103,21 +105,31 @@ export class TransactionsService {
     if (!seller) {
       throw new NotFoundException('Seller not found');
     }
-    if (!seller.bankCode || !seller.accountNumber || !seller.accountName) {
+    if (!seller.hasPayoutDetails) {
       throw new BadRequestException(
         "This seller hasn't set up payout details yet — they need to add bank details before this listing can be purchased",
       );
     }
 
-    let subaccountCode = seller.paystackSubaccountCode;
+    const bankAccount = await this.bankAccountsService.findRawByUser(
+      seller._id.toString(),
+    );
+    if (!bankAccount) {
+      // Shouldn't happen (hasPayoutDetails is only ever set once a BankAccount exists), but a money-movement step should never assume — always re-check.
+      throw new InternalServerErrorException(
+        'Seller payout details are missing',
+      );
+    }
+
+    let subaccountCode = bankAccount.paystackSubaccountCode;
     if (!subaccountCode) {
       subaccountCode = await this.paystackService.createSubaccount({
         businessName: seller.name,
-        bankCode: seller.bankCode,
-        accountNumber: seller.accountNumber,
+        bankCode: bankAccount.bankCode,
+        accountNumber: bankAccount.accountNumber,
       });
-      await this.usersService.setPaystackSubaccountCode(
-        seller._id.toString(),
+      await this.bankAccountsService.setPaystackSubaccountCode(
+        bankAccount._id.toString(),
         subaccountCode,
       );
     }
@@ -302,8 +314,14 @@ export class TransactionsService {
     }
 
     const seller = await this.usersService.findById(sellerId);
-    if (!seller?.bankCode || !seller.accountNumber || !seller.accountName) {
-      // Shouldn't happen (create() already required these), but a money-movement step should never assume — always re-check.
+    if (!seller?.hasPayoutDetails) {
+      // Shouldn't happen (create() already required this), but a money-movement step should never assume — always re-check.
+      throw new InternalServerErrorException(
+        'Seller payout details are missing',
+      );
+    }
+    const bankAccount = await this.bankAccountsService.findRawByUser(sellerId);
+    if (!bankAccount) {
       throw new InternalServerErrorException(
         'Seller payout details are missing',
       );
@@ -316,9 +334,9 @@ export class TransactionsService {
       Math.round((transaction.amount - commissionAmount) * 100) / 100;
 
     await this.paystackService.releaseToSeller({
-      bankCode: seller.bankCode,
-      accountNumber: seller.accountNumber,
-      accountName: seller.accountName,
+      bankCode: bankAccount.bankCode,
+      accountNumber: bankAccount.accountNumber,
+      accountName: bankAccount.accountHolderName,
       amountKobo: Math.round(sellerPayoutAmount * 100),
       reference: `declut_payout_${transaction._id.toString()}`,
     });
@@ -596,7 +614,15 @@ export class TransactionsService {
     const seller = await this.usersService.findById(
       transaction.seller.toString(),
     );
-    if (!seller?.bankCode || !seller.accountNumber || !seller.accountName) {
+    if (!seller?.hasPayoutDetails) {
+      throw new InternalServerErrorException(
+        'Seller payout details are missing',
+      );
+    }
+    const bankAccount = await this.bankAccountsService.findRawByUser(
+      transaction.seller.toString(),
+    );
+    if (!bankAccount) {
       throw new InternalServerErrorException(
         'Seller payout details are missing',
       );
@@ -610,9 +636,9 @@ export class TransactionsService {
 
     // Paystack call before the local write — same money-movement ordering rule as confirmCode()'s release path.
     await this.paystackService.releaseToSeller({
-      bankCode: seller.bankCode,
-      accountNumber: seller.accountNumber,
-      accountName: seller.accountName,
+      bankCode: bankAccount.bankCode,
+      accountNumber: bankAccount.accountNumber,
+      accountName: bankAccount.accountHolderName,
       amountKobo: Math.round(sellerPayoutAmount * 100),
       reference: `declut_admin_release_${transaction._id.toString()}`,
     });

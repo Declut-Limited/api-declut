@@ -130,23 +130,11 @@ export class User {
   @Prop({ default: 0 })
   reviewCount: number;
 
-  // Seller payout bank details.
-  @Prop()
-  bankCode?: string;
-
-  @Prop()
-  bankName?: string;
-
-  @Prop()
-  accountNumber?: string;
-
-  @Prop()
-  accountName?: string;
-
-  @Prop()
-  paystackSubaccountCode?: string;
-
-  // Mirrors the exact check TransactionsService uses to gate checkout/release (bankCode + accountNumber + accountName all present) — kept in sync in UsersService.updateProfile(), the only write path for those three fields.
+  // Seller payout bank details live on their own BankAccount document
+  // (src/bank-accounts/), not here — this is just the denormalized "do they
+  // have one" flag, set true the moment BankAccountsService.create()
+  // succeeds. TransactionsService gates checkout/release on this flag, then
+  // reads the actual bank details from BankAccount.
   @Prop({ default: false })
   hasPayoutDetails: boolean;
 
