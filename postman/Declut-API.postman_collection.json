@@ -2461,10 +2461,10 @@
                     "waitlist"
                   ]
                 },
-                "description": "Public, unauthenticated — the marketing landing page signup form. Resubmitting an already-registered email is a silent success, not an error.",
+                "description": "Public, unauthenticated — the marketing landing page signup form. Resubmitting an already-registered email is a silent success, not an error — interest/location are kept as originally submitted, not overwritten. location is optional, free text.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"email\": \"chidinma.eze@gmail.com\",\n  \"interest\": \"buying\"\n}",
+                  "raw": "{\n  \"email\": \"chidinma.eze@gmail.com\",\n  \"interest\": \"buying\",\n  \"location\": \"Lagos, Nigeria\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -6048,7 +6048,7 @@
                     }
                   ]
                 },
-                "description": "Paginated, filterable by status/interest/inviteStatus, searchable by email. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
+                "description": "Paginated, filterable by status/interest/inviteStatus, searchable by email. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate). Each entry also includes location if the submitter provided one."
               },
               "response": []
             },

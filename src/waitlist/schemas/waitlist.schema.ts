@@ -42,6 +42,10 @@ export class Waitlist {
   })
   inviteStatus: WaitlistInviteStatus;
 
+  // Free text, submitter-supplied (e.g. city/country) — optional, not validated against a fixed list.
+  @Prop({ trim: true })
+  location?: string;
+
   createdAt: Date;
 }
 

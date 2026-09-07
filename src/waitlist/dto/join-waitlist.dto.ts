@@ -1,4 +1,10 @@
-import { IsEmail, IsEnum } from 'class-validator';
+import {
+  IsEmail,
+  IsEnum,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 import { WaitlistInterest } from '../schemas/waitlist.schema';
 
 export class JoinWaitlistDto {
@@ -7,4 +13,9 @@ export class JoinWaitlistDto {
 
   @IsEnum(WaitlistInterest)
   interest: WaitlistInterest;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  location?: string;
 }

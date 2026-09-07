@@ -40,15 +40,19 @@ export class WaitlistService {
 
   // Idempotent by design — a resubmission of an already-registered email is
   // a success, not a 409, since this is a public marketing form and a hard
-  // error on double-submit is bad UX. Interest is left as originally
-  // submitted, not overwritten by the resubmission.
+  // error on double-submit is bad UX. Interest/location are left as
+  // originally submitted, not overwritten by the resubmission.
   async join(dto: JoinWaitlistDto): Promise<void> {
     const email = dto.email.toLowerCase().trim();
     const existing = await this.waitlistModel.findOne({ email }).exec();
     if (existing) {
       return;
     }
-    await this.waitlistModel.create({ email, interest: dto.interest });
+    await this.waitlistModel.create({
+      email,
+      interest: dto.interest,
+      location: dto.location,
+    });
   }
 
   list(dto: ListWaitlistDto): Promise<{
