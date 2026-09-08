@@ -327,6 +327,7 @@ export class UsersService {
       trustScore: user.trustScore,
       avgRating: user.avgRating,
       reviewCount: user.reviewCount,
+      hasPayoutDetails: user.hasPayoutDetails,
     };
   }
 }

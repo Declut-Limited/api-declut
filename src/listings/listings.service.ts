@@ -39,15 +39,15 @@ import { DateRangeDto } from '../common/dto/date-range.dto';
 
 const CATEGORY_POPULATE_FIELDS = 'title slug';
 const SELLER_POPULATE_FIELDS =
-  'name phone accountStatus company avgRating createdAt slug';
-// Fixed, not admin-configurable — the "new" feed's spec is literally "last 7 days", not a tunable setting like the App Settings values elsewhere.
-const RECENT_LISTINGS_WINDOW_DAYS = 7;
+  '_id name phone accountStatus company avgRating createdAt slug hasPayoutDetails';
+const RECENT_LISTINGS_DAYS = 7;
 
 interface PopulatedSeller {
   _id: Types.ObjectId;
   name: string;
   phone?: string;
   accountStatus: string;
+  hasPayoutDetails?: boolean;
   company?: string;
   avgRating: number;
   createdAt: Date;
@@ -501,6 +501,7 @@ export class ListingsService {
                       company: 1,
                       avgRating: 1,
                       createdAt: 1,
+                      hasPayoutDetails: 1,
                     },
                   },
                 ],
@@ -544,7 +545,7 @@ export class ListingsService {
     const limit = dto.limit ?? 20;
 
     const since = new Date();
-    since.setDate(since.getDate() - RECENT_LISTINGS_WINDOW_DAYS);
+    since.setDate(since.getDate() - RECENT_LISTINGS_DAYS);
 
     const filter: Record<string, unknown> = {
       status: ListingStatus.ACTIVE,
@@ -1199,6 +1200,7 @@ export class ListingsService {
       listingsCount,
       createdAt: seller.createdAt,
       rating: seller.avgRating.toFixed(1),
+      hasPayoutDetails: seller.hasPayoutDetails ?? false,
     };
   }
 

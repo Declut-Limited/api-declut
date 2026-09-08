@@ -112,7 +112,7 @@ export class TransactionsService {
     }
 
     const bankAccount = await this.bankAccountsService.findRawByUser(
-      seller._id.toString(),
+      seller._id.toString() || seller?.id.toString(),
     );
     if (!bankAccount) {
       // Shouldn't happen (hasPayoutDetails is only ever set once a BankAccount exists), but a money-movement step should never assume — always re-check.

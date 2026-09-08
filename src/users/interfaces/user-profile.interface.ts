@@ -28,4 +28,5 @@ export interface PublicUserProfile {
   trustScore: number;
   avgRating: number;
   reviewCount: number;
+  hasPayoutDetails: boolean;
 }
