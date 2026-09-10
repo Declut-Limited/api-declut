@@ -1965,7 +1965,7 @@
                 "banks"
               ]
             },
-            "description": "Nigerian banks from Paystack, passthrough — nothing persisted."
+            "description": "Nigerian banks from Paystack, enriched with slug/logoUrl from nigerianbanks.xyz (matched by code, cached 24h) — Paystack stays authoritative for code/active. A code with no match there simply omits slug/logoUrl."
           },
           "response": []
         },
@@ -2112,7 +2112,7 @@
                 "{{userId}}"
               ]
             },
-            "description": "Restricted to the caller's own id — 403 on any other userId (avoids leaking another user's account number to any authenticated caller)."
+            "description": "Restricted to the caller's own id — 403 on any other userId (avoids leaking another user's account number to any authenticated caller). Includes logoUrl, snapshotted from nigerianbanks.xyz at create/update time."
           },
           "response": []
         },
