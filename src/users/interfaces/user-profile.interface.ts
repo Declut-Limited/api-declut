@@ -12,10 +12,14 @@ export interface PrivateUserProfile {
   kyc: { verifiedNIN: boolean; livenessChecked: boolean };
   accountStatus: AccountStatus;
   slug?: string;
-  trustScore: number;
   avgRating: number;
   reviewCount: number;
   hasPayoutDetails: boolean;
+  profileImageUrl?: string;
+  listingCount: number;
+  soldCount: number;
+  purchaseCount: number;
+  totalAmountInEscrow: number;
   createdAt: Date;
 }
 
@@ -25,7 +29,6 @@ export interface PublicUserProfile {
   id: string;
   name: string;
   verified: boolean;
-  trustScore: number;
   avgRating: number;
   reviewCount: number;
   hasPayoutDetails: boolean;

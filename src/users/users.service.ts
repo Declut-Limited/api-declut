@@ -8,6 +8,16 @@ import {
   User,
   UserDocument,
 } from './schemas/user.schema';
+import {
+  Transaction,
+  TransactionDocument,
+  TransactionStatus,
+} from '../transactions/schemas/transaction.schema';
+import {
+  Listing,
+  ListingDocument,
+  ListingStatus,
+} from '../listings/schemas/listing.schema';
 import { UpdateUserDto } from './dto/update-user.dto';
 import {
   PrivateUserProfile,
@@ -21,6 +31,9 @@ import { buildDateRangeFilter } from '../common/utils/date-range.util';
 export class UsersService {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
+    @InjectModel(Transaction.name)
+    private transactionModel: Model<TransactionDocument>,
+    @InjectModel(Listing.name) private listingModel: Model<ListingDocument>,
     private readonly counterService: CounterService,
   ) {}
 
@@ -111,7 +124,7 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    return this.toPrivateProfile(user);
+    return await this.toPrivateProfile(user);
   }
 
   async getPublicProfile(userId: string): Promise<PublicUserProfile> {
@@ -135,9 +148,10 @@ export class UsersService {
     }
 
     if (dto.name !== undefined) user.name = dto.name;
+    if (dto.profileImage !== undefined) user.profileImage = dto.profileImage;
 
     await user.save();
-    return this.toPrivateProfile(user);
+    return await this.toPrivateProfile(user);
   }
 
   async setKycStatus(userId: string, kycStatus: KycStatus): Promise<void> {
@@ -299,7 +313,56 @@ export class UsersService {
       .exec();
   }
 
-  private toPrivateProfile(user: UserDocument): PrivateUserProfile {
+  // listingCount excludes deleted (matches GET /listings/mine's definition of "my listings"); soldCount/purchaseCount are transaction-outcome counts, not just listing status.
+  private async getProfileStats(userId: string): Promise<{
+    listingCount: number;
+    soldCount: number;
+    purchaseCount: number;
+    totalAmountInEscrow: number;
+  }> {
+    const uid = new Types.ObjectId(userId);
+    const [listingCount, soldCount, purchaseCount, escrowRows] =
+      await Promise.all([
+        this.listingModel.countDocuments({
+          seller: uid,
+          status: { $ne: ListingStatus.DELETED },
+        }),
+        this.listingModel.countDocuments({
+          seller: uid,
+          status: ListingStatus.SOLD,
+        }),
+        this.transactionModel.countDocuments({
+          buyer: uid,
+          status: TransactionStatus.COMPLETED,
+        }),
+        this.transactionModel.aggregate<{ _id: null; total: number }>([
+          {
+            $match: {
+              $or: [{ buyer: uid }, { seller: uid }],
+              status: {
+                $in: [
+                  TransactionStatus.ESCROW_ACTIVE,
+                  TransactionStatus.AWAITING_INSPECTION,
+                ],
+              },
+            },
+          },
+          { $group: { _id: null, total: { $sum: '$amount' } } },
+        ]),
+      ]);
+
+    return {
+      listingCount,
+      soldCount,
+      purchaseCount,
+      totalAmountInEscrow: escrowRows[0]?.total ?? 0,
+    };
+  }
+
+  private async toPrivateProfile(
+    user: UserDocument,
+  ): Promise<PrivateUserProfile> {
+    const stats = await this.getProfileStats(user._id.toString());
     return {
       id: user._id.toString(),
       email: user.email,
@@ -311,10 +374,11 @@ export class UsersService {
       kyc: user.kyc,
       accountStatus: user.accountStatus,
       slug: user.slug,
-      trustScore: user.trustScore,
       avgRating: user.avgRating,
       reviewCount: user.reviewCount,
       hasPayoutDetails: user.hasPayoutDetails,
+      profileImageUrl: user.profileImage,
+      ...stats,
       createdAt: (user as unknown as { createdAt: Date }).createdAt,
     };
   }
@@ -324,7 +388,6 @@ export class UsersService {
       id: user._id.toString(),
       name: user.name,
       verified: user.kycStatus === KycStatus.VERIFIED,
-      trustScore: user.trustScore,
       avgRating: user.avgRating,
       reviewCount: user.reviewCount,
       hasPayoutDetails: user.hasPayoutDetails,

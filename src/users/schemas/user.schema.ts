@@ -118,11 +118,7 @@ export class User {
   company?: string;
 
   @Prop()
-  image?: string;
-
-  // Cached, recalculated on trigger events — see Trust Score / Reviews specs.
-  @Prop({ default: 0 })
-  trustScore: number;
+  profileImage?: string;
 
   @Prop({ default: 0 })
   avgRating: number;

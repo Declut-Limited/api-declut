@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { App, cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getMessaging, MulticastMessage } from 'firebase-admin/messaging';
+import { FirebaseAdminService } from '../firebase-admin/firebase-admin.service';
 
 export interface PushNotificationPayload {
   title: string;
@@ -27,37 +26,8 @@ export interface PushSendResult {
 @Injectable()
 export class FcmService {
   private readonly logger = new Logger(FcmService.name);
-  private app?: App;
 
-  constructor(private readonly config: ConfigService) {}
-
-  private getApp(): App | null {
-    if (this.app) {
-      return this.app;
-    }
-
-    const projectId = this.config.get<string>('FIREBASE_PROJECT_ID');
-    const clientEmail = this.config.get<string>('FIREBASE_CLIENT_EMAIL');
-    const privateKey = this.config.get<string>('FIREBASE_PRIVATE_KEY');
-
-    if (!projectId || !clientEmail || !privateKey) {
-      return null;
-    }
-
-    const existing = getApps();
-    this.app =
-      existing.length > 0
-        ? existing[0]
-        : initializeApp({
-            credential: cert({
-              projectId,
-              clientEmail,
-              // env vars store the PEM key with literal \n escape sequences.
-              privateKey: privateKey.replace(/\\n/g, '\n'),
-            }),
-          });
-    return this.app;
-  }
+  constructor(private readonly firebaseAdmin: FirebaseAdminService) {}
 
   async sendToTokens(
     tokens: string[],
@@ -67,7 +37,7 @@ export class FcmService {
       return { successCount: 0, invalidTokens: [] };
     }
 
-    const app = this.getApp();
+    const app = this.firebaseAdmin.getApp();
     if (!app) {
       this.logger.warn('FCM not configured — skipping push notification');
       return { successCount: 0, invalidTokens: [] };

@@ -204,7 +204,12 @@ export class AuditLogService {
     }
     const user = await this.usersService.findById(actor);
     if (user) {
-      return { id: actor, name: user.name, role: 'User', image: user.image };
+      return {
+        id: actor,
+        name: user.name,
+        role: 'User',
+        image: user.profileImage,
+      };
     }
     const admin = await this.adminAuthService.findById(actor);
     if (admin) {
@@ -228,7 +233,7 @@ export class AuditLogService {
         id: actor,
         name: user.name,
         role: 'User',
-        image: user.image,
+        image: user.profileImage,
         email: user.email,
         status: user.accountStatus,
         createdAt: user.createdAt,

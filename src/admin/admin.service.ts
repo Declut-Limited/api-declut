@@ -191,7 +191,6 @@ export class AdminService {
           createdAt: (user as unknown as { createdAt: Date }).createdAt,
           rating: user.avgRating.toFixed(1),
           reviewCount: user.reviewCount,
-          trustScore: user.trustScore,
           authProvider: user.authProvider,
           emailVerified: user.emailVerified,
           kycStatus: user.kycStatus,

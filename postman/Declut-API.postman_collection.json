@@ -262,10 +262,10 @@
                     "google"
                   ]
                 },
-                "description": "",
+                "description": "idToken is a Firebase ID token (not a raw Google ID token) — the frontend signs in with Google, exchanges it via auth().signInWithCredential(GoogleAuthProvider.credential(...)), and sends the resulting Firebase ID token here. Verified server-side via Firebase Admin.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"idToken\": \"<google-id-token-from-mobile-app>\"\n}",
+                  "raw": "{\n  \"idToken\": \"<firebase-id-token-from-mobile-app>\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -665,7 +665,7 @@
                     "me"
                   ]
                 },
-                "description": "hasPayoutDetails is true once POST /bank-accounts succeeds (see the bank-accounts folder) — bank details themselves live on BankAccount, not here."
+                "description": "hasPayoutDetails is true once POST /bank-accounts succeeds (see the bank-accounts folder) — bank details themselves live on BankAccount, not here. Also returns listingCount/soldCount/purchaseCount/totalAmountInEscrow (computed fresh, not cached) and profileImageUrl (set via PATCH, Cloudinary URL)."
               },
               "response": []
             },
@@ -695,10 +695,10 @@
                     "me"
                   ]
                 },
-                "description": "Only name is updatable here now — bank/payout details moved to their own BankAccount document, see POST/PATCH /bank-accounts.",
+                "description": "name and profileImage (a Cloudinary URL from GET /media/upload-signature) are updatable here — bank/payout details moved to their own BankAccount document, see POST/PATCH /bank-accounts.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"name\": \"Damola Idowu\"\n}",
+                  "raw": "{\n  \"name\": \"Damola Idowu\",\n  \"profileImage\": \"https://res.cloudinary.com/declut/image/upload/v1/avatars/damola.jpg\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
