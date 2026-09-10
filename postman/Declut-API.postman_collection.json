@@ -2115,6 +2115,31 @@
             "description": "Restricted to the caller's own id — 403 on any other userId (avoids leaking another user's account number to any authenticated caller)."
           },
           "response": []
+        },
+        {
+          "name": "Remove bank account",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bank-accounts/{{bankAccountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bank-accounts",
+                "{{bankAccountId}}"
+              ]
+            },
+            "description": "User end only. Object-level ownership checked. 409 if the caller has any escrow_active/awaiting_inspection transaction as seller — resolve those first. Sets hasPayoutDetails back to false on success."
+          },
+          "response": []
         }
       ]
     },

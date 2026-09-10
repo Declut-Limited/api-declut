@@ -36,6 +36,10 @@ export class BankAccount {
   @Prop({ required: true })
   accountHolderName: string;
 
+  // Snapshotted from nigerianbanks.xyz (matched by bankCode) at create/update time — optional, since not every Paystack bank code has a match there.
+  @Prop()
+  logoUrl?: string;
+
   // Set lazily on this account's first checkout (TransactionsService.create()), not at bank-account creation time — moved here from User.paystackSubaccountCode.
   @Prop()
   paystackSubaccountCode?: string;

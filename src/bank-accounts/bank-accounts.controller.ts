@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -42,5 +43,14 @@ export class BankAccountsController {
     @Param('userId') userId: string,
   ) {
     return this.bankAccountsService.getForUser(user.sub, userId);
+  }
+
+  @Delete(':id')
+  async remove(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param('id') id: string,
+  ) {
+    await this.bankAccountsService.remove(user.sub, id);
+    return { removed: true };
   }
 }

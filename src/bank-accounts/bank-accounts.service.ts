@@ -11,9 +11,15 @@ import {
   BankAccount,
   BankAccountDocument,
 } from './schemas/bank-account.schema';
+import {
+  Transaction,
+  TransactionDocument,
+  TransactionStatus,
+} from '../transactions/schemas/transaction.schema';
 import { CreateBankAccountDto } from './dto/create-bank-account.dto';
 import { UpdateBankAccountDto } from './dto/update-bank-account.dto';
 import { PaystackService } from '../payments/paystack.service';
+import { NigerianBanksService } from './nigerian-banks.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { UsersService } from '../users/users.service';
 
@@ -22,7 +28,10 @@ export class BankAccountsService {
   constructor(
     @InjectModel(BankAccount.name)
     private bankAccountModel: Model<BankAccountDocument>,
+    @InjectModel(Transaction.name)
+    private transactionModel: Model<TransactionDocument>,
     private readonly paystackService: PaystackService,
+    private readonly nigerianBanksService: NigerianBanksService,
     private readonly auditLogService: AuditLogService,
     private readonly usersService: UsersService,
   ) {}
@@ -48,6 +57,7 @@ export class BankAccountsService {
       accountNumber: dto.accountNumber,
       maskedAccountNumber: this.maskAccountNumber(dto.accountNumber),
       accountHolderName: resolved.accountHolderName,
+      logoUrl: resolved.logoUrl,
     });
 
     await this.auditLogService.record({
@@ -80,6 +90,7 @@ export class BankAccountsService {
       bankAccount.accountNumber = accountNumber;
       bankAccount.maskedAccountNumber = this.maskAccountNumber(accountNumber);
       bankAccount.accountHolderName = resolved.accountHolderName;
+      bankAccount.logoUrl = resolved.logoUrl;
       await bankAccount.save();
     }
 
@@ -91,6 +102,39 @@ export class BankAccountsService {
     });
 
     return this.shape(bankAccount);
+  }
+
+  // Blocked (409) while a payout tied to this account could still land on
+  // it — an escrow_active/awaiting_inspection transaction's eventual
+  // release reads bank details live via findRawByUser(), so removing the
+  // account out from under one would leave the payout with nowhere to go.
+  async remove(userId: string, id: string): Promise<void> {
+    const bankAccount = await this.findOwned(id, userId);
+
+    const blocking = await this.transactionModel.countDocuments({
+      seller: userId,
+      status: {
+        $in: [
+          TransactionStatus.ESCROW_ACTIVE,
+          TransactionStatus.AWAITING_INSPECTION,
+        ],
+      },
+    });
+    if (blocking > 0) {
+      throw new ConflictException(
+        'Cannot remove your bank account while a sale is awaiting payout — resolve it first',
+      );
+    }
+
+    await bankAccount.deleteOne();
+    await this.usersService.setHasPayoutDetails(userId, false);
+
+    await this.auditLogService.record({
+      entityType: 'bank_account',
+      entityId: id,
+      event: 'bank_account.removed',
+      actor: userId,
+    });
   }
 
   // Object-level ownership check, same as every other mutating/PII-exposing
@@ -147,7 +191,11 @@ export class BankAccountsService {
   private async resolveAndValidate(
     bankCode: string,
     accountNumber: string,
-  ): Promise<{ bankName: string; accountHolderName: string }> {
+  ): Promise<{
+    bankName: string;
+    accountHolderName: string;
+    logoUrl?: string;
+  }> {
     const banks = await this.paystackService.listBanks();
     const bank = banks.find((b) => b.code === bankCode);
     if (!bank) {
@@ -158,8 +206,13 @@ export class BankAccountsService {
       accountNumber,
       bankCode,
     );
+    const nigerianBank = await this.nigerianBanksService.getByCode(bankCode);
 
-    return { bankName: bank.name, accountHolderName: resolved.accountName };
+    return {
+      bankName: bank.name,
+      accountHolderName: resolved.accountName,
+      logoUrl: nigerianBank?.logo,
+    };
   }
 
   private maskAccountNumber(accountNumber: string): string {
