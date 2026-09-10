@@ -735,7 +735,7 @@
                     "{{userId}}"
                   ]
                 },
-                "description": ""
+                "description": "Public profile of any user (e.g. a seller viewed from a listing). Includes hasPayoutDetails."
               },
               "response": []
             }
@@ -1202,7 +1202,7 @@
                     "{{listingId}}"
                   ]
                 },
-                "description": "{{listingId}} accepts either a raw listing id or an LST-#### slug. Seller is populated. Does not increment views — call 'Register listing view' separately for that."
+                "description": "{{listingId}} accepts either a raw listing id or an LST-#### slug. Seller is populated (now includes hasPayoutDetails). Does not increment views — call 'Register listing view' separately for that."
               },
               "response": []
             },

@@ -11,7 +11,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Model, Types, isValidObjectId } from 'mongoose';
-import { randomInt, randomUUID } from 'crypto';
+import { randomInt } from 'crypto';
 import {
   InspectionStatus,
   Transaction,
@@ -139,10 +139,19 @@ export class TransactionsService {
       throw new NotFoundException('Buyer not found');
     }
 
-    const reference = `declut_${randomUUID()}`;
     const { commissionPercentage } = await this.settingsService.get();
 
-    // Paystack call happens before the local record is persisted (and before the reference counter increments) so a failed call leaves nothing orphaned to clean up.
+    const year = new Date().getFullYear();
+    const reference = `TXN-${year}-${String(
+      await this.counterService.next(`transaction-${year}`),
+    ).padStart(5, '0')}`;
+
+    // Paystack call happens before the local record is persisted so a failed
+    // call leaves nothing orphaned to clean up. The counter now increments
+    // just before it too (Paystack needs a reference as an input, not an
+    // output) — a failed checkout attempt after this point leaves a gap in
+    // the TXN-YYYY-##### sequence, an accepted trade-off for having one
+    // single reference instead of a separate internal-only Paystack key.
     const init = await this.paystackService.initializeTransaction({
       email: buyer.email,
       amountKobo: Math.round(amount * 100),
@@ -151,11 +160,6 @@ export class TransactionsService {
       callbackUrl: dto.callbackUrl,
     });
 
-    const year = new Date().getFullYear();
-    const humanReference = `TXN-${year}-${String(
-      await this.counterService.next(`transaction-${year}`),
-    ).padStart(5, '0')}`;
-
     const transaction = await this.transactionModel.create({
       listing: dto.listingId,
       buyer: buyerId,
@@ -163,8 +167,7 @@ export class TransactionsService {
       amount,
       commissionPercentage,
       status: TransactionStatus.PENDING_PAYMENT,
-      paystackReference: reference,
-      reference: humanReference,
+      reference,
     });
 
     await this.audit(
@@ -203,7 +206,7 @@ export class TransactionsService {
     }
 
     const transaction = await this.transactionModel.findOne({
-      paystackReference: reference,
+      reference,
     });
     if (!transaction) {
       this.logger.warn(`Webhook for unknown reference: ${reference}`);
@@ -702,7 +705,7 @@ export class TransactionsService {
     }
 
     // Paystack call before the local write — same ordering rule as everywhere else money moves in this module.
-    await this.paystackService.refund(transaction.paystackReference);
+    await this.paystackService.refund(transaction.reference);
 
     const oldStatus = transaction.status;
     transaction.status = TransactionStatus.REFUNDED;

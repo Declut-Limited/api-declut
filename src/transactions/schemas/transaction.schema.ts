@@ -74,11 +74,13 @@ export class Transaction {
   })
   status: TransactionStatus;
 
+  // Doubles as the value sent to Paystack as its own `reference` param at
+  // checkout — the webhook's data.reference is matched against this same
+  // field, so this is both the human-facing TXN-YYYY-##### id and the
+  // Paystack-facing key. Generated before the Paystack call (not after),
+  // so a failed checkout attempt can leave a gap in the sequence.
   @Prop({ required: true, unique: true })
-  paystackReference: string;
-
-  @Prop({ unique: true, sparse: true })
-  reference?: string;
+  reference: string;
 
   // Set once, at the same moment EscrowService.createForTransaction() creates
   // the Escrow row (payment verified) — mirrors Escrow.transaction so either
