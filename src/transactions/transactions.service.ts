@@ -268,10 +268,14 @@ export class TransactionsService {
       return;
     }
 
+    // Only underpayment is suspicious enough to block — Paystack legitimately collects more than
+    // the listing price on channels that gross its own transaction fee onto the payer (the buyer
+    // bears this, not Declut; see Transaction.paystackFee). Rejecting on `!==` was blocking every
+    // real payment made through such a channel outright.
     const expectedKobo = Math.round(transaction.amount * 100);
-    if (verification.amountKobo !== expectedKobo) {
+    if (verification.amountKobo < expectedKobo) {
       this.logger.error(
-        `[webhook] AMOUNT MISMATCH for transaction=${transaction._id.toString()} reference=${reference} — expected=${expectedKobo} received=${verification.amountKobo}`,
+        `[webhook] UNDERPAYMENT for transaction=${transaction._id.toString()} reference=${reference} — expected=${expectedKobo} received=${verification.amountKobo}`,
       );
       await this.audit(
         transaction._id.toString(),
@@ -284,6 +288,13 @@ export class TransactionsService {
       return;
     }
 
+    const paystackFeeKobo = verification.amountKobo - expectedKobo;
+    if (paystackFeeKobo > 0) {
+      this.logger.log(
+        `[webhook] transaction=${transaction._id.toString()} reference=${reference} — buyer paid a ₦${(paystackFeeKobo / 100).toFixed(2)} surplus over the listing price (Paystack's own fee, grossed onto the payer by the channel used) — recording, not blocking`,
+      );
+    }
+
     const { inspectionWindow } = await this.settingsService.get();
     const oldStatus = transaction.status;
     const escrowActivatedAt = new Date();
@@ -293,6 +304,7 @@ export class TransactionsService {
         inspectionWindow.inspectionPeriod * 24 * 60 * 60 * 1000,
     );
     transaction.confirmationCode = this.generateConfirmationCode();
+    transaction.paystackFee = paystackFeeKobo / 100;
     await transaction.save();
 
     // One Escrow per Transaction, created the moment payment is verified —
@@ -316,6 +328,7 @@ export class TransactionsService {
       'webhook',
       oldStatus,
       TransactionStatus.ESCROW_ACTIVE,
+      paystackFeeKobo > 0 ? { paystackFeeKobo } : undefined,
     );
     this.logger.log(
       `[webhook] transaction=${transaction._id.toString()} reference=${reference} → escrow_active (escrow=${escrowId.toString()})`,

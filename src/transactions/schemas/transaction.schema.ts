@@ -67,6 +67,15 @@ export class Transaction {
   @Prop()
   sellerPayoutAmount?: number;
 
+  // Paystack's own processing fee, in Naira — the surplus the buyer actually paid above `amount`
+  // (listing price), collected because the buyer's chosen payment channel grossed Paystack's fee
+  // onto them rather than it being deducted from settlement. Computed at webhook time as
+  // (amount Paystack actually received) − (amount). Zero for channels that don't gross the fee
+  // onto the payer. The buyer bears this — separate from commissionAmount (Declut's own cut,
+  // taken from the seller's side at release, not from the buyer at checkout).
+  @Prop({ default: 0 })
+  paystackFee?: number;
+
   @Prop({
     type: String,
     enum: TransactionStatus,
