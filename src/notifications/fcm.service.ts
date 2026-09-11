@@ -14,14 +14,16 @@ export interface PushSendResult {
 }
 
 /**
- * The ONLY place firebase-admin is used anywhere in this codebase — Firebase
- * was deliberately removed from Auth (see CLAUDE.md's Auth Architecture
- * section) and is wired up here solely for FCM push notifications, per v1
- * scope. Same lazy-config pattern as GoogleOAuthService/CloudinaryService,
- * with one difference: a push notification failing to send is never allowed
- * to break the caller's actual business operation (a payment released, an
- * offer accepted, etc.), so this swallows and logs errors instead of
- * throwing — NotificationsService.notifyUser() is designed to never throw.
+ * One of two consumers of firebase-admin in this codebase — the other is
+ * GoogleOAuthService, which verifies the Firebase ID token behind Google
+ * sign-in (see CLAUDE.md's Auth Architecture section; Firebase is back in
+ * Auth as of 2026-09-10). Both share the same lazily-initialized app via
+ * FirebaseAdminService. This service's own job is FCM push notifications,
+ * per v1 scope, with one difference from the Google-auth path: a push
+ * notification failing to send is never allowed to break the caller's
+ * actual business operation (a payment released, an offer accepted, etc.),
+ * so this swallows and logs errors instead of throwing —
+ * NotificationsService.notifyUser() is designed to never throw.
  */
 @Injectable()
 export class FcmService {

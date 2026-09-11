@@ -56,19 +56,6 @@ export const envValidationSchema = Joi.object({
   // Inbox that receives "Get in touch" (public contact form) notifications — read fresh on every submission (see ContactService), never hardcoded.
   CONTACT_ADMIN_EMAIL: Joi.string().allow('').optional(),
 
-  // Comma-separated OAuth client id(s) accepted as a valid audience when
-  // verifying a Google ID token (e.g. iOS + Android + Web client ids).
-  // Optional for now since we don't have real values yet — GoogleOAuthService
-  // throws a clear 500 if POST /auth/google is hit before this is set.
-  GOOGLE_CLIENT_ID: Joi.string().allow('').optional(),
-
-  // ESCROW_STALLED_THRESHOLD_DAYS, COMMISSION_PERCENTAGE, OFFER_EXPIRY_DAYS,
-  // DEFAULT_SEARCH_RADIUS_KM, and MAX_CODE_ATTEMPTS used to live here as env
-  // vars — moved to the DB-backed AppSettings singleton (src/settings/) on
-  // 2026-07-23 so admins can tune them at runtime via GET/PATCH
-  // /admin/settings without a redeploy. See SettingsService for the current
-  // defaults (unchanged from what these env vars used to default to).
-
   FIREBASE_PROJECT_ID: Joi.string().allow('').optional(),
   FIREBASE_CLIENT_EMAIL: Joi.string().allow('').optional(),
   FIREBASE_PRIVATE_KEY: Joi.string().allow('').optional(),

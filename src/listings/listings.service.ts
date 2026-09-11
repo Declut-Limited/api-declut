@@ -40,7 +40,7 @@ import { DateRangeDto } from '../common/dto/date-range.dto';
 const CATEGORY_POPULATE_FIELDS = 'title slug';
 const SELLER_POPULATE_FIELDS =
   '_id name phone accountStatus company avgRating createdAt slug hasPayoutDetails';
-const RECENT_LISTINGS_DAYS = 7;
+const RECENT_LISTINGS_DAYS = 14;
 
 interface PopulatedSeller {
   _id: Types.ObjectId;

@@ -33,7 +33,8 @@ export class FirebaseAdminService {
               projectId,
               clientEmail,
               // env vars store the PEM key with literal \n escape sequences.
-              privateKey: privateKey.replace(/\\n/g, '\n'),
+              // privateKey: privateKey.replace(/\\n/g,'\n'),
+              privateKey: privateKey.replace(/\\\\n/g,'\n'),
             }),
           });
     return this.app;
