@@ -442,6 +442,29 @@ export class TransactionsService {
     return this.toResponseShape(transaction, userId);
   }
 
+  // Looked up by the Paystack `reference` Paystack itself appends to callback_url (?reference=...)
+  // — used by the app's payment-callback deep-link route to resolve a transaction when it's
+  // entered cold (app was killed/backgrounded mid-checkout, so there's no in-memory transactionId
+  // to fall back on the way the live in-WebView redirect handler has).
+  async findForUserDisplayByReference(reference: string, userId: string) {
+    const transaction = await this.transactionModel.findOne({ reference });
+    if (!transaction) {
+      throw new NotFoundException('Transaction not found');
+    }
+    if (
+      transaction.buyer.toString() !== userId &&
+      transaction.seller.toString() !== userId
+    ) {
+      throw new ForbiddenException('You are not a party to this transaction');
+    }
+    await transaction.populate([
+      { path: 'buyer', select: PARTY_POPULATE_FIELDS },
+      { path: 'seller', select: PARTY_POPULATE_FIELDS },
+      { path: 'listing', select: LISTING_POPULATE_FIELDS },
+    ]);
+    return this.toResponseShape(transaction, userId);
+  }
+
   async listForUser(userId: string, page = 1, limit = 20) {
     const results = await this.transactionModel
       .find({ $or: [{ buyer: userId }, { seller: userId }] })

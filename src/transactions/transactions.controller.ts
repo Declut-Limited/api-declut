@@ -79,6 +79,21 @@ export class TransactionsController {
     );
   }
 
+  // Must come before ':id' — otherwise Nest would match "by-reference" as the id. Used by the
+  // app's payment-callback deep-link route (cold-launch/backgrounded-app case) — Paystack's
+  // redirect carries its own `reference`, not our transactionId.
+  @UseGuards(JwtAuthGuard)
+  @Get('by-reference/:reference')
+  findByReference(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param('reference') reference: string,
+  ) {
+    return this.transactionsService.findForUserDisplayByReference(
+      reference,
+      user.sub,
+    );
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get(':id')
   findOne(@CurrentUser() user: AccessTokenPayload, @Param('id') id: string) {
