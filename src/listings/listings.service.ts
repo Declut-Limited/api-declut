@@ -39,7 +39,7 @@ import { DateRangeDto } from '../common/dto/date-range.dto';
 
 const CATEGORY_POPULATE_FIELDS = 'title slug';
 const SELLER_POPULATE_FIELDS =
-  '_id name phone accountStatus company avgRating createdAt slug hasPayoutDetails';
+  '_id name phone accountStatus company avgRating createdAt slug hasPayoutDetails profileImage';
 const RECENT_LISTINGS_DAYS = 14;
 
 interface PopulatedSeller {
@@ -52,6 +52,7 @@ interface PopulatedSeller {
   avgRating: number;
   createdAt: Date;
   slug?: string;
+  profileImage?: string;
 }
 
 @Injectable()
@@ -144,10 +145,13 @@ export class ListingsService {
     }
     const [shaped] = await this.attachSellerSummaries([listing]);
 
-    // phoneNumber/totalSales are only enriched here, not in the shared
-    // shapeSellerSummary()/attachSellerSummaries() used by list/nearby/new/mine —
-    // totalSales needs its own query per seller, which is fine for a single
-    // detail view but would be an N+1 query on a 20-row search page.
+    // phoneNumber/totalSales/profileImageUrl are only enriched here, not in
+    // the shared shapeSellerSummary()/attachSellerSummaries() used by
+    // list/nearby/new/mine — totalSales needs its own query per seller,
+    // which is fine for a single detail view but would be an N+1 query on
+    // a 20-row search page (phoneNumber/profileImageUrl are free, already
+    // part of the same seller populate, but kept local for consistency
+    // with the "listing details only" scope of this ask).
     const seller = listing.seller as unknown as PopulatedSeller | null;
     if (seller && shaped.seller) {
       const totalSales = await this.listingModel.countDocuments({
@@ -157,6 +161,7 @@ export class ListingsService {
       Object.assign(shaped.seller as Record<string, unknown>, {
         phoneNumber: seller.phone,
         totalSales,
+        profileImageUrl: seller.profileImage,
       });
     }
 

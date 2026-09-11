@@ -1202,7 +1202,7 @@
                     "{{listingId}}"
                   ]
                 },
-                "description": "{{listingId}} accepts either a raw listing id or an LST-#### slug. Seller is populated (now includes hasPayoutDetails). Does not increment views — call 'Register listing view' separately for that. The populated seller now also includes phoneNumber and totalSales (count of this seller's listings currently sold)."
+                "description": "{{listingId}} accepts either a raw listing id or an LST-#### slug. Seller is populated (now includes hasPayoutDetails). Does not increment views — call 'Register listing view' separately for that. The populated seller now also includes phoneNumber, totalSales (count of this seller's listings currently sold), and profileImageUrl."
               },
               "response": []
             },
