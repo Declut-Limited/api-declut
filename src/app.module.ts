@@ -18,6 +18,7 @@ import { FavoritesModule } from './favorites/favorites.module';
 import { KycModule } from './kyc/kyc.module';
 import { PaymentsModule } from './payments/payments.module';
 import { BankAccountsModule } from './bank-accounts/bank-accounts.module';
+import { NotificationSettingsModule } from './notification-settings/notification-settings.module';
 import { TransactionsModule } from './transactions/transactions.module';
 import { EscrowModule } from './escrow/escrow.module';
 import { ReviewsModule } from './reviews/reviews.module';
@@ -92,6 +93,7 @@ import { AuditContextMiddleware } from './common/middleware/audit-context.middle
     KycModule,
     PaymentsModule,
     BankAccountsModule,
+    NotificationSettingsModule,
     TransactionsModule,
     EscrowModule,
     ReviewsModule,

@@ -2144,6 +2144,77 @@
       ]
     },
     {
+      "name": "notification-settings",
+      "item": [
+        {
+          "name": "Get notification settings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notification-settings/user/{{userId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notification-settings",
+                "user",
+                "{{userId}}"
+              ]
+            },
+            "description": "Restricted to the caller's own id — 403 on any other userId. Auto-creates with defaults on first call (paymentAndEscrowUpdates/listingActivity/productUpdates/referralAndRewards default true and can't be changed; everything else defaults false)."
+          },
+          "response": []
+        },
+        {
+          "name": "Update notification settings",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notification-settings/user/{{userId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notification-settings",
+                "user",
+                "{{userId}}"
+              ]
+            },
+            "description": "Partial update. channels.push/channels.email merge individually (patching one doesn't reset the other). paymentAndEscrowUpdates/listingActivity/productUpdates/referralAndRewards are not on this DTO at all — sending any of them 400s.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"channels\": {\n    \"push\": true,\n    \"email\": false\n  },\n  \"transactionUpdates\": true,\n  \"inspectionReminders\": false,\n  \"disputeUpdates\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "reviews",
       "description": "",
       "item": [
