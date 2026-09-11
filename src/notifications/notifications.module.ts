@@ -25,6 +25,7 @@ import { FcmService } from './fcm.service';
 import { AdminAuthModule } from '../admin-auth/admin-auth.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { FirebaseAdminModule } from '../firebase-admin/firebase-admin.module';
+import { NotificationSettingsModule } from '../notification-settings/notification-settings.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { FirebaseAdminModule } from '../firebase-admin/firebase-admin.module';
     UsersModule,
     EmailModule,
     FirebaseAdminModule,
+    NotificationSettingsModule,
     // forwardRef: AuditLogModule itself imports AdminAuthModule, which
     // forwardRef()s back to this module — without deferring this edge too,
     // the 3-hop file-level require cycle resolves AdminAuthModule to

@@ -66,6 +66,16 @@ export class NotificationSettingsService {
     return this.shape(doc);
   }
 
+  // Internal, system-facing lookup for NotificationsService's channel gating —
+  // no ownership check, no upsert (a notification send shouldn't create a
+  // settings row as a side effect). Returns null if the user has never had
+  // one created; the caller applies the schema's own defaults in that case.
+  async getRawForUser(
+    userId: string,
+  ): Promise<NotificationSettingDocument | null> {
+    return this.notificationSettingModel.findOne({ user: userId });
+  }
+
   private assertOwnership(requesterId: string, userId: string): void {
     if (requesterId !== userId) {
       throw new ForbiddenException(

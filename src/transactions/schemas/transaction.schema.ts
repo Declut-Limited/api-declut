@@ -109,12 +109,6 @@ export class Transaction {
   @Prop()
   inspectionDeadlineAt?: Date;
 
-  @Prop()
-  confirmationCode?: string;
-
-  @Prop({ default: 0 })
-  failedCodeAttempts: number;
-
   createdAt: Date;
   updatedAt: Date;
 }

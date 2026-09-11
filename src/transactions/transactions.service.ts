@@ -11,7 +11,6 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Model, Types, isValidObjectId } from 'mongoose';
-import { randomInt } from 'crypto';
 import {
   InspectionStatus,
   Transaction,
@@ -21,7 +20,6 @@ import {
 import { EscrowStatus } from '../escrow/schemas/escrow.schema';
 import { EscrowService } from '../escrow/escrow.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
-import { ConfirmCodeDto } from './dto/confirm-code.dto';
 import { PurchaseStatusFilter } from './dto/list-purchases.dto';
 import { ListingsService } from '../listings/listings.service';
 import { ListingStatus } from '../listings/schemas/listing.schema';
@@ -29,6 +27,7 @@ import { UsersService } from '../users/users.service';
 import { PaystackService } from '../payments/paystack.service';
 import { TrustScoreService } from '../trust-score/trust-score.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationRecipientType } from '../notifications/schemas/notification.schema';
 import { SettingsService } from '../settings/settings.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { CounterService } from '../common/counter/counter.service';
@@ -324,17 +323,22 @@ export class TransactionsService {
         lostRaceOldStatus,
         TransactionStatus.DISPUTED,
       );
-      await this.notificationsService.notifyUser(
-        transaction.buyer.toString(),
-        {
-          title: 'Payment received — action needed',
-          body: 'This item became unavailable right as your payment cleared. Our team will reach out to resolve this.',
-          data: {
-            type: 'listing_unavailable_after_payment',
-            transactionId: transaction._id.toString(),
-          },
-        },
-      );
+      await this.notificationsService.notify({
+        recipientType: NotificationRecipientType.USER,
+        recipientId: transaction.buyer.toString(),
+        type: 'listing_unavailable_after_payment',
+        title: 'Payment received — action needed',
+        body: 'This item became unavailable right as your payment cleared. Our team will reach out to resolve this.',
+        data: { transactionId: transaction._id.toString() },
+      });
+      await this.notificationsService.notify({
+        recipientType: NotificationRecipientType.USER,
+        recipientId: transaction.seller.toString(),
+        type: 'listing_unavailable_after_payment',
+        title: 'Sale on hold',
+        body: 'A payment for your listing could not be completed because it was already claimed by another buyer. Our team is reviewing it.',
+        data: { transactionId: transaction._id.toString() },
+      });
       return;
     }
 
@@ -346,7 +350,6 @@ export class TransactionsService {
       escrowActivatedAt.getTime() +
         inspectionWindow.inspectionPeriod * 24 * 60 * 60 * 1000,
     );
-    transaction.confirmationCode = this.generateConfirmationCode();
     transaction.paystackFee = paystackFeeKobo / 100;
     await transaction.save();
 
@@ -377,33 +380,34 @@ export class TransactionsService {
       `[webhook] transaction=${transaction._id.toString()} reference=${reference} → escrow_active (escrow=${escrowId.toString()})`,
     );
 
-    await this.notificationsService.notifyUser(transaction.seller.toString(), {
+    await this.notificationsService.notify({
+      recipientType: NotificationRecipientType.USER,
+      recipientId: transaction.seller.toString(),
+      type: 'payment_received',
       title: 'Payment received',
       body: `₦${transaction.amount.toLocaleString()} is now held in escrow — meet the buyer to complete the sale.`,
-      data: {
-        type: 'payment_received',
-        transactionId: transaction._id.toString(),
-      },
+      data: { transactionId: transaction._id.toString() },
     });
-    await this.notificationsService.notifyUser(transaction.buyer.toString(), {
+    await this.notificationsService.notify({
+      recipientType: NotificationRecipientType.USER,
+      recipientId: transaction.buyer.toString(),
+      type: 'payment_received',
       title: 'Payment confirmed',
-      body: 'Your confirmation code is ready — share it with the seller at the meetup.',
-      data: {
-        type: 'payment_received',
-        transactionId: transaction._id.toString(),
-      },
+      body: "Meet the seller, then confirm receipt in-app once you have the item — that's what releases their payment.",
+      data: { transactionId: transaction._id.toString() },
     });
   }
 
-  async confirmCode(
-    transactionId: string,
-    sellerId: string,
-    dto: ConfirmCodeDto,
-  ) {
+  // Buyer-only, by explicit instruction — no confirmation code involved
+  // anymore (the team dropped that process entirely). The buyer is the one
+  // escrow is protecting, so they're the one who attests the item arrived;
+  // that single call is what releases the seller's payout. Mirrors the old
+  // confirmCode() success path exactly, minus the code check.
+  async confirmReceipt(transactionId: string, buyerId: string) {
     const transaction = await this.findRaw(transactionId);
-    if (transaction.seller.toString() !== sellerId) {
+    if (transaction.buyer.toString() !== buyerId) {
       throw new ForbiddenException(
-        'Only the seller can confirm the code for this transaction',
+        'Only the buyer can confirm receipt for this transaction',
       );
     }
     if (
@@ -413,22 +417,22 @@ export class TransactionsService {
       ].includes(transaction.status)
     ) {
       throw new BadRequestException(
-        `Transaction is ${transaction.status}, code confirmation not available`,
+        `Transaction is ${transaction.status}, confirmation not available`,
       );
     }
 
-    if (transaction.confirmationCode !== dto.code) {
-      return this.handleWrongCode(transaction, sellerId);
-    }
-
-    const seller = await this.usersService.findById(sellerId);
+    const seller = await this.usersService.findById(
+      transaction.seller.toString(),
+    );
     if (!seller?.hasPayoutDetails) {
       // Shouldn't happen (create() already required this), but a money-movement step should never assume — always re-check.
       throw new InternalServerErrorException(
         'Seller payout details are missing',
       );
     }
-    const bankAccount = await this.bankAccountsService.findRawByUser(sellerId);
+    const bankAccount = await this.bankAccountsService.findRawByUser(
+      transaction.seller.toString(),
+    );
     if (!bankAccount) {
       throw new InternalServerErrorException(
         'Seller payout details are missing',
@@ -441,6 +445,7 @@ export class TransactionsService {
     const sellerPayoutAmount =
       Math.round((transaction.amount - commissionAmount) * 100) / 100;
 
+    // Paystack call before the local write — same money-movement ordering rule as everywhere else in this module.
     await this.paystackService.releaseToSeller({
       bankCode: bankAccount.bankCode,
       accountNumber: bankAccount.accountNumber,
@@ -453,7 +458,6 @@ export class TransactionsService {
     transaction.status = TransactionStatus.COMPLETED;
     transaction.commissionAmount = commissionAmount;
     transaction.sellerPayoutAmount = sellerPayoutAmount;
-    transaction.confirmationCode = undefined;
     transaction.inspectionStatus = InspectionStatus.COMPLETED;
     await transaction.save();
     await this.escrowService.updateStatusForTransaction(
@@ -465,7 +469,7 @@ export class TransactionsService {
     await this.audit(
       transactionId,
       'funds_released',
-      sellerId,
+      buyerId,
       oldStatus,
       TransactionStatus.COMPLETED,
       { commissionAmount, sellerPayoutAmount },
@@ -477,15 +481,21 @@ export class TransactionsService {
       this.trustScoreService.recalculate(transaction.seller.toString()),
     ]);
 
-    await this.notificationsService.notifyUser(transaction.seller.toString(), {
+    await this.notificationsService.notify({
+      recipientType: NotificationRecipientType.USER,
+      recipientId: transaction.seller.toString(),
+      type: 'funds_released',
       title: 'Funds released',
       body: `₦${sellerPayoutAmount.toLocaleString()} has been sent to your account.`,
-      data: { type: 'funds_released', transactionId },
+      data: { transactionId },
     });
-    await this.notificationsService.notifyUser(transaction.buyer.toString(), {
+    await this.notificationsService.notify({
+      recipientType: NotificationRecipientType.USER,
+      recipientId: transaction.buyer.toString(),
+      type: 'funds_released',
       title: 'Sale completed',
-      body: 'The seller confirmed your code and the sale is complete. Leave a review!',
-      data: { type: 'funds_released', transactionId },
+      body: 'You confirmed receipt and the sale is complete. Leave a review!',
+      data: { transactionId },
     });
 
     return { status: 'completed' };
@@ -645,7 +655,6 @@ export class TransactionsService {
     };
   }
 
-  // Admin-only surface — always strips confirmationCode, same "only ever returned to the buyer" invariant as toResponseShape().
   // `statuses` (plural) so AdminService's tab-vs-status filtering can pass either a single status or a grouped set (e.g. the "active" tab) through the same query path.
   async adminList(
     page: number,
@@ -836,7 +845,6 @@ export class TransactionsService {
     transaction.status = TransactionStatus.COMPLETED;
     transaction.commissionAmount = commissionAmount;
     transaction.sellerPayoutAmount = sellerPayoutAmount;
-    transaction.confirmationCode = undefined;
     transaction.inspectionStatus = InspectionStatus.COMPLETED;
     await transaction.save();
     await this.escrowService.updateStatusForTransaction(
@@ -859,15 +867,21 @@ export class TransactionsService {
       this.trustScoreService.recalculate(transaction.seller.toString()),
     ]);
 
-    await this.notificationsService.notifyUser(transaction.seller.toString(), {
+    await this.notificationsService.notify({
+      recipientType: NotificationRecipientType.USER,
+      recipientId: transaction.seller.toString(),
+      type: 'admin_released',
       title: 'Funds released',
       body: `An admin resolved your transaction — ₦${sellerPayoutAmount.toLocaleString()} has been sent to your account.`,
-      data: { type: 'admin_released', transactionId },
+      data: { transactionId },
     });
-    await this.notificationsService.notifyUser(transaction.buyer.toString(), {
+    await this.notificationsService.notify({
+      recipientType: NotificationRecipientType.USER,
+      recipientId: transaction.buyer.toString(),
+      type: 'admin_released',
       title: 'Transaction resolved',
       body: 'An admin reviewed your transaction and released funds to the seller.',
-      data: { type: 'admin_released', transactionId },
+      data: { transactionId },
     });
 
     await transaction.populate([
@@ -895,7 +909,6 @@ export class TransactionsService {
 
     const oldStatus = transaction.status;
     transaction.status = TransactionStatus.REFUNDED;
-    transaction.confirmationCode = undefined;
     transaction.inspectionStatus = InspectionStatus.REFUNDED;
     await transaction.save();
     await this.escrowService.updateStatusForTransaction(
@@ -918,15 +931,21 @@ export class TransactionsService {
       this.trustScoreService.recalculate(transaction.seller.toString()),
     ]);
 
-    await this.notificationsService.notifyUser(transaction.buyer.toString(), {
+    await this.notificationsService.notify({
+      recipientType: NotificationRecipientType.USER,
+      recipientId: transaction.buyer.toString(),
+      type: 'admin_refunded',
       title: 'Transaction refunded',
       body: 'An admin reviewed your transaction and issued a refund.',
-      data: { type: 'admin_refunded', transactionId },
+      data: { transactionId },
     });
-    await this.notificationsService.notifyUser(transaction.seller.toString(), {
+    await this.notificationsService.notify({
+      recipientType: NotificationRecipientType.USER,
+      recipientId: transaction.seller.toString(),
+      type: 'admin_refunded',
       title: 'Transaction refunded',
       body: 'An admin reviewed a transaction on your listing and refunded the buyer.',
-      data: { type: 'admin_refunded', transactionId },
+      data: { transactionId },
     });
 
     await transaction.populate([
@@ -966,21 +985,21 @@ export class TransactionsService {
       );
 
       await Promise.all([
-        this.notificationsService.notifyUser(transaction.buyer.toString(), {
+        this.notificationsService.notify({
+          recipientType: NotificationRecipientType.USER,
+          recipientId: transaction.buyer.toString(),
+          type: 'transaction_stalled',
           title: 'Transaction stalled',
           body: 'This transaction has been inactive too long and was flagged for review.',
-          data: {
-            type: 'transaction_stalled',
-            transactionId: transaction._id.toString(),
-          },
+          data: { transactionId: transaction._id.toString() },
         }),
-        this.notificationsService.notifyUser(transaction.seller.toString(), {
+        this.notificationsService.notify({
+          recipientType: NotificationRecipientType.USER,
+          recipientId: transaction.seller.toString(),
+          type: 'transaction_stalled',
           title: 'Transaction stalled',
           body: 'This transaction has been inactive too long and was flagged for review.',
-          data: {
-            type: 'transaction_stalled',
-            transactionId: transaction._id.toString(),
-          },
+          data: { transactionId: transaction._id.toString() },
         }),
       ]);
     }
@@ -1047,56 +1066,6 @@ export class TransactionsService {
     }
   }
 
-  private async handleWrongCode(
-    transaction: TransactionDocument,
-    sellerId: string,
-  ) {
-    transaction.failedCodeAttempts += 1;
-    const { maxCodeAttempts: maxAttempts } = await this.settingsService.get();
-    const oldStatus = transaction.status;
-
-    if (transaction.failedCodeAttempts >= maxAttempts) {
-      transaction.status = TransactionStatus.DISPUTED;
-      transaction.inspectionStatus = InspectionStatus.DISPUTED;
-      await transaction.save();
-      await this.audit(
-        transaction._id.toString(),
-        'code_mismatch_max_attempts',
-        sellerId,
-        oldStatus,
-        TransactionStatus.DISPUTED,
-        { attempts: transaction.failedCodeAttempts },
-      );
-
-      // Dispute rate feeds both parties' trust score — recalculated again when an admin later resolves this via adminRelease()/adminRefund().
-      await Promise.all([
-        this.trustScoreService.recalculate(transaction.buyer.toString()),
-        this.trustScoreService.recalculate(transaction.seller.toString()),
-      ]);
-
-      throw new BadRequestException(
-        'Too many failed attempts — this transaction has been flagged for admin review',
-      );
-    }
-
-    await transaction.save();
-    await this.audit(
-      transaction._id.toString(),
-      'code_mismatch',
-      sellerId,
-      oldStatus,
-      oldStatus,
-      { attempts: transaction.failedCodeAttempts },
-    );
-    throw new BadRequestException('Incorrect code');
-  }
-
-  private generateConfirmationCode(): string {
-    // Cryptographically secure — this code gates a real fund release, so Math.random() would be the wrong call here.
-    // return randomInt(100000, 1000000).toString();
-      return randomInt(1000, 10000).toString();
-  }
-
   private async audit(
     transactionId: string,
     event: string,
@@ -1133,20 +1102,11 @@ export class TransactionsService {
   ) {
     const buyer = transaction.buyer as unknown as PopulatedParty | null;
     const seller = transaction.seller as unknown as PopulatedParty | null;
-    const isBuyer = buyer?._id.toString() === requesterId;
-    const showCode =
-      isBuyer &&
-      [
-        TransactionStatus.ESCROW_ACTIVE,
-        TransactionStatus.AWAITING_INSPECTION,
-      ].includes(transaction.status);
+    void requesterId;
 
     const obj = transaction.toObject() as unknown as Record<string, unknown>;
     obj.buyer = shapeParty(buyer, 'buyer');
     obj.seller = shapeParty(seller, 'seller');
-    if (!showCode) {
-      delete obj.confirmationCode;
-    }
     return obj;
   }
 
@@ -1600,7 +1560,6 @@ export class TransactionsService {
       transaction.seller as unknown as PopulatedParty | null,
       'seller',
     );
-    delete obj.confirmationCode;
     return obj;
   }
 }

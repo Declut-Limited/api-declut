@@ -28,7 +28,13 @@ import {
   NotificationBroadcastTrigger,
 } from './schemas/notification-broadcast.schema';
 import { ContentDocument } from '../content/schemas/content.schema';
-import { NotificationType, channelsFor } from './notification-types';
+import {
+  NOTIFICATION_SETTING_CATEGORY,
+  NotificationChannel,
+  NotificationType,
+  channelsFor,
+} from './notification-types';
+import { NotificationSettingsService } from '../notification-settings/notification-settings.service';
 import {
   BROADCAST_QUEUE,
   BroadcastJobData,
@@ -58,6 +64,7 @@ export class NotificationsService {
     private readonly fcmService: FcmService,
     private readonly emailService: EmailService,
     private readonly gateway: NotificationsGateway,
+    private readonly notificationSettingsService: NotificationSettingsService,
     @InjectModel(Admin.name) private adminModel: Model<AdminDocument>,
     @InjectModel(Notification.name)
     private notificationModel: Model<NotificationDocument>,
@@ -114,7 +121,11 @@ export class NotificationsService {
     broadcastId?: string;
     recipientInfo?: RecipientInfo;
   }): Promise<void> {
-    const channels = channelsFor(params.type, params.recipientType);
+    const channels = await this.resolveChannels(
+      params.type,
+      params.recipientType,
+      params.recipientId,
+    );
 
     const doc = await this.notificationModel.create({
       recipientType: params.recipientType,
@@ -372,6 +383,44 @@ export class NotificationsService {
   // Force-drops an admin's live socket connection — the JWT access token itself stays valid until natural expiry (this app's access tokens are stateless, not blacklistable), so this doesn't revoke the token, it just stops the bell from staying live past logout.
   disconnectAdminSockets(adminId: string): void {
     this.gateway.disconnectAdmin(adminId);
+  }
+
+  // Narrows channelsFor()'s static per-type max down to what the recipient's
+  // own NotificationSetting actually allows. Only applies to User recipients
+  // on types listed in NOTIFICATION_SETTING_CATEGORY — every other type
+  // (content, reports, reviews, listings, roles) and every Admin recipient
+  // is untouched, keeping their existing behavior exactly as it was before
+  // this gating existed.
+  private async resolveChannels(
+    type: NotificationType,
+    recipientType: NotificationRecipientType,
+    recipientId: string,
+  ): Promise<NotificationChannel[]> {
+    const maxChannels = channelsFor(type, recipientType);
+    const category = NOTIFICATION_SETTING_CATEGORY[type];
+    if (recipientType !== NotificationRecipientType.USER || !category) {
+      return maxChannels;
+    }
+
+    const settings =
+      await this.notificationSettingsService.getRawForUser(recipientId);
+    // Schema defaults, applied when the user has never opened their settings
+    // (no row created yet) — paymentAndEscrowUpdates defaults true, the
+    // other toggleable categories default false; channels always default
+    // false regardless (opt-in), so a never-configured user gets the
+    // in-app Notification row but no push/email until they turn a channel on.
+    const categoryEnabled = settings
+      ? settings[category]
+      : category === 'paymentAndEscrowUpdates';
+    if (!categoryEnabled) {
+      return [];
+    }
+
+    const pushEnabled = settings?.channels?.push ?? false;
+    const emailEnabled = settings?.channels?.email ?? false;
+    return maxChannels.filter((c) =>
+      c === 'push' ? pushEnabled : emailEnabled,
+    );
   }
 
   private async attemptPush(params: {

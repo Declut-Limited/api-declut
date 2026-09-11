@@ -49,6 +49,66 @@ export const NOTIFICATION_TYPES = {
       [NotificationRecipientType.ADMIN]: ['email'] as NotificationChannel[],
     },
   },
+  payment_received: {
+    label: 'Payment received',
+    channels: {
+      [NotificationRecipientType.USER]: [
+        'push',
+        'email',
+      ] as NotificationChannel[],
+      [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
+    },
+  },
+  funds_released: {
+    label: 'Funds released',
+    channels: {
+      [NotificationRecipientType.USER]: [
+        'push',
+        'email',
+      ] as NotificationChannel[],
+      [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
+    },
+  },
+  transaction_stalled: {
+    label: 'Transaction stalled',
+    channels: {
+      [NotificationRecipientType.USER]: [
+        'push',
+        'email',
+      ] as NotificationChannel[],
+      [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
+    },
+  },
+  listing_unavailable_after_payment: {
+    label: 'Listing unavailable after payment',
+    channels: {
+      [NotificationRecipientType.USER]: [
+        'push',
+        'email',
+      ] as NotificationChannel[],
+      [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
+    },
+  },
+  admin_released: {
+    label: 'Transaction released by admin',
+    channels: {
+      [NotificationRecipientType.USER]: [
+        'push',
+        'email',
+      ] as NotificationChannel[],
+      [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
+    },
+  },
+  admin_refunded: {
+    label: 'Transaction refunded by admin',
+    channels: {
+      [NotificationRecipientType.USER]: [
+        'push',
+        'email',
+      ] as NotificationChannel[],
+      [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
+    },
+  },
 } as const;
 
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;
@@ -59,3 +119,26 @@ export function channelsFor(
 ): NotificationChannel[] {
   return NOTIFICATION_TYPES[type].channels[recipientType];
 }
+
+// Maps a transaction-lifecycle NotificationType to the NotificationSetting
+// category that gates it for User recipients — see notifications.service.ts's
+// notify(), which further narrows channelsFor()'s static max down to what the
+// recipient's own settings actually allow. Types not listed here (content,
+// reports, reviews, listings, roles) are unaffected — existing behavior for
+// those is left exactly as it was before this map existed.
+export const NOTIFICATION_SETTING_CATEGORY: Partial<
+  Record<
+    NotificationType,
+    | 'transactionUpdates'
+    | 'inspectionReminders'
+    | 'disputeUpdates'
+    | 'paymentAndEscrowUpdates'
+  >
+> = {
+  payment_received: 'paymentAndEscrowUpdates',
+  funds_released: 'paymentAndEscrowUpdates',
+  transaction_stalled: 'transactionUpdates',
+  listing_unavailable_after_payment: 'disputeUpdates',
+  admin_released: 'disputeUpdates',
+  admin_refunded: 'disputeUpdates',
+};

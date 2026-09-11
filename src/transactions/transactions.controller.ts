@@ -18,7 +18,6 @@ import type { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { TransactionsService } from './transactions.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
-import { ConfirmCodeDto } from './dto/confirm-code.dto';
 import { ListTransactionsDto } from './dto/list-transactions.dto';
 import { ListPurchasesDto } from './dto/list-purchases.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -117,14 +116,16 @@ export class TransactionsController {
     return this.transactionsService.findForUserDisplay(id, user.sub);
   }
 
+  // Buyer-only — no confirmation code involved. The buyer is who escrow is
+  // protecting, so they're the one who attests the item arrived; this is
+  // what releases the seller's payout.
   @UseGuards(JwtAuthGuard)
-  @Post(':id/confirm-code')
-  confirmCode(
+  @Post(':id/confirm-transaction')
+  confirmReceipt(
     @CurrentUser() user: AccessTokenPayload,
     @Param('id') id: string,
-    @Body() dto: ConfirmCodeDto,
   ) {
-    return this.transactionsService.confirmCode(id, user.sub, dto);
+    return this.transactionsService.confirmReceipt(id, user.sub);
   }
 
   @UseGuards(JwtAuthGuard)

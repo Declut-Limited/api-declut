@@ -1855,11 +1855,11 @@
               "response": []
             },
             {
-              "name": "confirm-code",
+              "name": "confirm-transaction",
               "description": "",
               "item": [
                 {
-                  "name": "Confirm code (release funds)",
+                  "name": "Confirm transaction (release funds)",
                   "request": {
                     "method": "POST",
                     "header": [
@@ -1867,34 +1867,20 @@
                         "key": "Authorization",
                         "value": "Bearer {{accessToken}}",
                         "type": "text"
-                      },
-                      {
-                        "key": "Content-Type",
-                        "value": "application/json",
-                        "type": "text"
                       }
                     ],
                     "url": {
-                      "raw": "{{baseUrl}}/transactions/{{transactionId}}/confirm-code",
+                      "raw": "{{baseUrl}}/transactions/{{transactionId}}/confirm-transaction",
                       "host": [
                         "{{baseUrl}}"
                       ],
                       "path": [
                         "transactions",
                         "{{transactionId}}",
-                        "confirm-code"
+                        "confirm-transaction"
                       ]
                     },
-                    "description": "Seller-only. Too many wrong attempts flags the transaction disputed.",
-                    "body": {
-                      "mode": "raw",
-                      "raw": "{\n  \"code\": \"123456\"\n}",
-                      "options": {
-                        "raw": {
-                          "language": "json"
-                        }
-                      }
-                    }
+                    "description": "Buyer-only — confirms the item was received and releases the seller's payout. No confirmation code involved; only callable while the transaction is escrow_active/awaiting_inspection."
                   },
                   "response": []
                 }
