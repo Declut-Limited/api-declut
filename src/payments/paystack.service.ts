@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'crypto';
 
@@ -31,6 +31,7 @@ interface PaystackApiResponse<T> {
 
 @Injectable()
 export class PaystackService {
+  private readonly logger = new Logger(PaystackService.name);
   private readonly baseUrl = 'https://api.paystack.co';
 
   constructor(private readonly config: ConfigService) {}
@@ -180,10 +181,16 @@ export class PaystackService {
     rawBody: Buffer,
     signature: string | undefined,
   ): boolean {
-    if (!signature) return false;
+    if (!signature) {
+      this.logger.warn('[webhook signature] no x-paystack-signature header on request');
+      return false;
+    }
 
     const secretKey = this.config.get<string>('PAYSTACK_SECRET_KEY');
-    if (!secretKey) return false;
+    if (!secretKey) {
+      this.logger.error('[webhook signature] PAYSTACK_SECRET_KEY is not set — cannot verify');
+      return false;
+    }
 
     const expected = createHmac('sha512', secretKey)
       .update(rawBody)
@@ -193,9 +200,20 @@ export class PaystackService {
     // that could help an attacker guess a valid signature byte-by-byte.
     const expectedBuf = Buffer.from(expected, 'hex');
     const providedBuf = Buffer.from(signature, 'hex');
-    if (expectedBuf.length !== providedBuf.length) return false;
+    if (expectedBuf.length !== providedBuf.length) {
+      this.logger.warn(
+        `[webhook signature] length mismatch — expected ${expectedBuf.length} bytes, got ${providedBuf.length} (likely wrong PAYSTACK_SECRET_KEY, or rawBody isn't the exact bytes Paystack sent)`,
+      );
+      return false;
+    }
 
-    return timingSafeEqual(expectedBuf, providedBuf);
+    const matches = timingSafeEqual(expectedBuf, providedBuf);
+    if (!matches) {
+      this.logger.warn(
+        '[webhook signature] HMAC mismatch — almost always PAYSTACK_SECRET_KEY not matching the account/mode that sent this webhook',
+      );
+    }
+    return matches;
   }
 
   private async request<T = unknown>(
@@ -203,17 +221,37 @@ export class PaystackService {
     method: 'GET' | 'POST',
     body?: Record<string, unknown>,
   ): Promise<PaystackApiResponse<T>> {
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      method,
-      headers: {
-        Authorization: `Bearer ${this.secretKey()}`,
-        'Content-Type': 'application/json',
-      },
-      ...(body && { body: JSON.stringify(body) }),
-    });
+    // Never log the secret key or the buyer's email — everything else about the call shape is
+    // safe and is exactly what's needed to tell "never reached Paystack" apart from "Paystack
+    // rejected it" apart from "Paystack accepted it, something after this point is the problem".
+    const safeBody = body
+      ? { ...body, email: body.email ? '(redacted)' : undefined }
+      : undefined;
+    this.logger.log(`[paystack] -> ${method} ${path} ${safeBody ? JSON.stringify(safeBody) : ''}`);
+
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl}${path}`, {
+        method,
+        headers: {
+          Authorization: `Bearer ${this.secretKey()}`,
+          'Content-Type': 'application/json',
+        },
+        ...(body && { body: JSON.stringify(body) }),
+      });
+    } catch (err) {
+      this.logger.error(`[paystack] network error calling ${method} ${path}`, err as Error);
+      throw err;
+    }
 
     const data = (await response.json()) as PaystackApiResponse<T>;
+    this.logger.log(
+      `[paystack] <- ${response.status} ${method} ${path} status=${data.status} message=${data.message ?? '(none)'}`,
+    );
     if (!response.ok || data.status === false) {
+      this.logger.error(
+        `[paystack] request FAILED — ${method} ${path} → ${response.status} ${data.message ?? response.statusText}`,
+      );
       throw new InternalServerErrorException(
         `Paystack request failed: ${data.message ?? response.statusText}`,
       );

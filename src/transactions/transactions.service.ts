@@ -84,6 +84,9 @@ export class TransactionsService {
   ) {}
 
   async create(buyerId: string, dto: CreateTransactionDto) {
+    this.logger.log(
+      `[checkout] create() start — buyer=${buyerId} listing=${dto.listingId} callbackUrl=${dto.callbackUrl ?? '(none, will use server default)'}`,
+    );
     const listing = await this.listingsService.findById(dto.listingId);
     if (listing.seller.toString() === buyerId) {
       throw new BadRequestException('You cannot buy your own listing');
@@ -95,6 +98,9 @@ export class TransactionsService {
       status: TransactionStatus.PENDING_PAYMENT,
     });
     if (existingPending) {
+      this.logger.warn(
+        `[checkout] blocked — buyer=${buyerId} already has pending_payment transaction ${existingPending._id.toString()} (reference=${existingPending.reference}) for listing=${dto.listingId}`,
+      );
       throw new ConflictException(
         'You already have a checkout in progress for this listing',
       );
@@ -124,6 +130,9 @@ export class TransactionsService {
 
     let subaccountCode = bankAccount.paystackSubaccountCode;
     if (!subaccountCode) {
+      this.logger.log(
+        `[checkout] no cached subaccount for seller=${seller._id.toString()} — creating one on Paystack`,
+      );
       subaccountCode = await this.paystackService.createSubaccount({
         businessName: seller.name,
         bankCode: bankAccount.bankCode,
@@ -133,6 +142,9 @@ export class TransactionsService {
         bankAccount._id.toString(),
         subaccountCode,
       );
+      this.logger.log(`[checkout] created subaccount=${subaccountCode}`);
+    } else {
+      this.logger.log(`[checkout] reusing cached subaccount=${subaccountCode}`);
     }
 
     const buyer = await this.usersService.findById(buyerId);
@@ -153,6 +165,9 @@ export class TransactionsService {
     // output) — a failed checkout attempt after this point leaves a gap in
     // the TXN-YYYY-##### sequence, an accepted trade-off for having one
     // single reference instead of a separate internal-only Paystack key.
+    this.logger.log(
+      `[checkout] calling Paystack initialize — reference=${reference} amountKobo=${Math.round(amount * 100)} subaccount=${subaccountCode} callbackUrl=${dto.callbackUrl ?? '(server default)'}`,
+    );
     const init = await this.paystackService.initializeTransaction({
       email: buyer.email,
       amountKobo: Math.round(amount * 100),
@@ -160,6 +175,9 @@ export class TransactionsService {
       subaccountCode,
       callbackUrl: dto.callbackUrl,
     });
+    this.logger.log(
+      `[checkout] Paystack initialize OK — reference=${reference} authorizationUrl=${init.authorizationUrl}`,
+    );
 
     const transaction = await this.transactionModel.create({
       listing: dto.listingId,
@@ -179,6 +197,9 @@ export class TransactionsService {
       TransactionStatus.PENDING_PAYMENT,
     );
 
+    this.logger.log(
+      `[checkout] create() done — transactionId=${transaction._id.toString()} reference=${reference}`,
+    );
     return {
       transactionId: transaction._id.toString(),
       paystackAuthorizationUrl: init.authorizationUrl,
@@ -189,20 +210,29 @@ export class TransactionsService {
     rawBody: Buffer,
     signature: string | undefined,
   ): Promise<void> {
+    this.logger.log(
+      `[webhook] received — bytes=${rawBody.length} hasSignatureHeader=${!!signature}`,
+    );
     if (!this.paystackService.verifyWebhookSignature(rawBody, signature)) {
+      this.logger.warn('[webhook] signature verification FAILED — rejecting');
       throw new UnauthorizedException('Invalid webhook signature');
     }
+    this.logger.log('[webhook] signature OK');
 
     const payload = JSON.parse(
       rawBody.toString('utf8'),
     ) as PaystackWebhookPayload;
+    this.logger.log(
+      `[webhook] event=${payload.event} reference=${payload.data?.reference ?? '(none)'}`,
+    );
     if (payload.event !== 'charge.success') {
+      this.logger.log(`[webhook] ignoring non-charge.success event: ${payload.event}`);
       return;
     }
 
     const reference = payload.data?.reference;
     if (!reference) {
-      this.logger.warn('Webhook payload missing data.reference — ignoring');
+      this.logger.warn('[webhook] payload missing data.reference — ignoring');
       return;
     }
 
@@ -210,24 +240,39 @@ export class TransactionsService {
       reference,
     });
     if (!transaction) {
-      this.logger.warn(`Webhook for unknown reference: ${reference}`);
+      this.logger.warn(`[webhook] no local transaction found for reference=${reference}`);
       return;
     }
+    this.logger.log(
+      `[webhook] matched transaction=${transaction._id.toString()} reference=${reference} currentStatus=${transaction.status}`,
+    );
 
     // Idempotency: a retried webhook for a transaction already past pending_payment is a no-op, not a re-activation.
     if (transaction.status !== TransactionStatus.PENDING_PAYMENT) {
+      this.logger.log(
+        `[webhook] transaction=${transaction._id.toString()} already past pending_payment (status=${transaction.status}) — no-op`,
+      );
       return;
     }
 
     // Don't trust the webhook payload alone — re-verify server-to-server.
     const verification =
       await this.paystackService.verifyTransaction(reference);
+    this.logger.log(
+      `[webhook] server-to-server verify for reference=${reference} — successful=${verification.successful} amountKobo=${verification.amountKobo}`,
+    );
     if (!verification.successful) {
+      this.logger.warn(
+        `[webhook] verification NOT successful for reference=${reference} — not activating escrow`,
+      );
       return;
     }
 
     const expectedKobo = Math.round(transaction.amount * 100);
     if (verification.amountKobo !== expectedKobo) {
+      this.logger.error(
+        `[webhook] AMOUNT MISMATCH for transaction=${transaction._id.toString()} reference=${reference} — expected=${expectedKobo} received=${verification.amountKobo}`,
+      );
       await this.audit(
         transaction._id.toString(),
         'payment_amount_mismatch',
@@ -271,6 +316,9 @@ export class TransactionsService {
       'webhook',
       oldStatus,
       TransactionStatus.ESCROW_ACTIVE,
+    );
+    this.logger.log(
+      `[webhook] transaction=${transaction._id.toString()} reference=${reference} → escrow_active (escrow=${escrowId.toString()})`,
     );
 
     await this.notificationsService.notifyUser(transaction.seller.toString(), {
@@ -447,16 +495,26 @@ export class TransactionsService {
   // entered cold (app was killed/backgrounded mid-checkout, so there's no in-memory transactionId
   // to fall back on the way the live in-WebView redirect handler has).
   async findForUserDisplayByReference(reference: string, userId: string) {
+    this.logger.log(
+      `[deep-link] by-reference lookup — reference=${reference} requestedBy=${userId}`,
+    );
     const transaction = await this.transactionModel.findOne({ reference });
     if (!transaction) {
+      this.logger.warn(`[deep-link] no transaction found for reference=${reference}`);
       throw new NotFoundException('Transaction not found');
     }
     if (
       transaction.buyer.toString() !== userId &&
       transaction.seller.toString() !== userId
     ) {
+      this.logger.warn(
+        `[deep-link] user=${userId} is not a party to transaction=${transaction._id.toString()} (reference=${reference})`,
+      );
       throw new ForbiddenException('You are not a party to this transaction');
     }
+    this.logger.log(
+      `[deep-link] resolved reference=${reference} → transaction=${transaction._id.toString()} status=${transaction.status}`,
+    );
     await transaction.populate([
       { path: 'buyer', select: PARTY_POPULATE_FIELDS },
       { path: 'seller', select: PARTY_POPULATE_FIELDS },

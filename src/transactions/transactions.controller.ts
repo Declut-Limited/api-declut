@@ -5,6 +5,7 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
+  Logger,
   Param,
   Patch,
   Post,
@@ -26,6 +27,8 @@ import type { AccessTokenPayload } from '../auth/interfaces/jwt-payload.interfac
 
 @Controller('transactions')
 export class TransactionsController {
+  private readonly logger = new Logger(TransactionsController.name);
+
   constructor(private readonly transactionsService: TransactionsService) {}
 
   // No JwtAuthGuard — Paystack calls this directly, authenticated by HMAC
@@ -38,6 +41,17 @@ export class TransactionsController {
     @Req() req: RawBodyRequest<Request>,
     @Headers('x-paystack-signature') signature: string,
   ) {
+    this.logger.log(
+      `[webhook] request received at POST /transactions/webhook/paystack — hasRawBody=${!!req.rawBody} rawBodyLength=${req.rawBody?.length ?? 0} hasSignatureHeader=${!!signature}`,
+    );
+    if (!req.rawBody) {
+      // If this ever fires, main.ts's `rawBody: true` / body-parser wiring is broken for this
+      // route — handlePaystackWebhook would otherwise crash on `.length` below with a much less
+      // obvious stack trace.
+      this.logger.error(
+        '[webhook] req.rawBody is missing — check main.ts NestFactory.create({ rawBody: true }) and any body-parser config that might run before it',
+      );
+    }
     await this.transactionsService.handlePaystackWebhook(
       req.rawBody!,
       signature,
@@ -52,6 +66,9 @@ export class TransactionsController {
     @CurrentUser() user: AccessTokenPayload,
     @Body() dto: CreateTransactionDto,
   ) {
+    this.logger.log(
+      `[checkout] POST /transactions hit — user=${user.sub} listingId=${dto.listingId}`,
+    );
     return this.transactionsService.create(user.sub, dto);
   }
 
