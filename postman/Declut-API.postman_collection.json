@@ -1817,7 +1817,7 @@
                   "key": "status",
                   "value": "active",
                   "disabled": true,
-                  "description": "One of active|completed|refunded|disputed. 'active' means awaiting_inspection specifically. Omit to return purchases in any status."
+                  "description": "One of active|completed|refunded|disputed. 'active' means escrow_active specifically. Omit to return purchases in any status."
                 }
               ]
             },

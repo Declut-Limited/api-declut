@@ -1006,6 +1006,49 @@ export class ListingsService {
     return { listing, recentActivity };
   }
 
+  // Called by TransactionsService the moment a payment is verified (webhook),
+  // before the transaction reaches escrow_active — takes the listing out of
+  // ACTIVE so it disappears from search/checkout the instant it's paid for,
+  // not just once the physical handover happens (see markSold() below).
+  // Atomic (findOneAndUpdate conditioned on the current status) so two
+  // webhooks racing for the same listing can't both "win" — only the first
+  // to land actually claims it; the caller checks the boolean to know which.
+  async markPendingSale(id: string): Promise<boolean> {
+    const listing = await this.listingModel.findOneAndUpdate(
+      { _id: id, status: ListingStatus.ACTIVE },
+      { status: ListingStatus.PENDING_SALE },
+    );
+    if (!listing) return false;
+    await this.auditLogService.record({
+      entityType: 'listing',
+      entityId: id,
+      event: 'listing.pending_sale',
+      actor: 'system',
+      oldState: ListingStatus.ACTIVE,
+      newState: ListingStatus.PENDING_SALE,
+    });
+    return true;
+  }
+
+  // Reverses markPendingSale() when a reserved transaction ends up refunded
+  // instead of completed. Only flips PENDING_SALE back to ACTIVE — never
+  // SOLD (terminal) or anything else an admin may have set in the meantime.
+  async revertToActive(id: string): Promise<void> {
+    const listing = await this.listingModel.findOneAndUpdate(
+      { _id: id, status: ListingStatus.PENDING_SALE },
+      { status: ListingStatus.ACTIVE },
+    );
+    if (!listing) return;
+    await this.auditLogService.record({
+      entityType: 'listing',
+      entityId: id,
+      event: 'listing.reactivated',
+      actor: 'system',
+      oldState: ListingStatus.PENDING_SALE,
+      newState: ListingStatus.ACTIVE,
+    });
+  }
+
   // Called by TransactionsService when a transaction reaches 'completed' —
   // an already-sold item no longer shows up in regular search (which only
   // ever returns ACTIVE listings), same as archiving or deleting. No human

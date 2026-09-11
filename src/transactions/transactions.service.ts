@@ -24,6 +24,7 @@ import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { ConfirmCodeDto } from './dto/confirm-code.dto';
 import { PurchaseStatusFilter } from './dto/list-purchases.dto';
 import { ListingsService } from '../listings/listings.service';
+import { ListingStatus } from '../listings/schemas/listing.schema';
 import { UsersService } from '../users/users.service';
 import { PaystackService } from '../payments/paystack.service';
 import { TrustScoreService } from '../trust-score/trust-score.service';
@@ -90,6 +91,9 @@ export class TransactionsService {
     const listing = await this.listingsService.findById(dto.listingId);
     if (listing.seller.toString() === buyerId) {
       throw new BadRequestException('You cannot buy your own listing');
+    }
+    if (listing.status !== ListingStatus.ACTIVE) {
+      throw new BadRequestException('This item is no longer available');
     }
 
     const existingPending = await this.transactionModel.findOne({
@@ -293,6 +297,45 @@ export class TransactionsService {
       this.logger.log(
         `[webhook] transaction=${transaction._id.toString()} reference=${reference} — buyer paid a ₦${(paystackFeeKobo / 100).toFixed(2)} surplus over the listing price (Paystack's own fee, grossed onto the payer by the channel used) — recording, not blocking`,
       );
+    }
+
+    // Claim the listing before finalizing escrow — atomic, so two webhooks
+    // racing for the same listing (two buyers both reached pending_payment
+    // before either paid) can't both win. The loser's money has already
+    // moved on Paystack, so it's never auto-refunded here — flagged
+    // disputed for an explicit admin decision, same as every other
+    // stalled/disputed transaction in this app.
+    const claimed = await this.listingsService.markPendingSale(
+      transaction.listing.toString(),
+    );
+    if (!claimed) {
+      const lostRaceOldStatus = transaction.status;
+      transaction.status = TransactionStatus.DISPUTED;
+      transaction.inspectionStatus = InspectionStatus.DISPUTED;
+      transaction.paystackFee = paystackFeeKobo / 100;
+      await transaction.save();
+      this.logger.error(
+        `[webhook] transaction=${transaction._id.toString()} reference=${reference} paid but listing=${transaction.listing.toString()} is no longer active — likely claimed by another buyer's payment first. Flagged disputed for manual review.`,
+      );
+      await this.audit(
+        transaction._id.toString(),
+        'listing_unavailable_after_payment',
+        'webhook',
+        lostRaceOldStatus,
+        TransactionStatus.DISPUTED,
+      );
+      await this.notificationsService.notifyUser(
+        transaction.buyer.toString(),
+        {
+          title: 'Payment received — action needed',
+          body: 'This item became unavailable right as your payment cleared. Our team will reach out to resolve this.',
+          data: {
+            type: 'listing_unavailable_after_payment',
+            transactionId: transaction._id.toString(),
+          },
+        },
+      );
+      return;
     }
 
     const { inspectionWindow } = await this.settingsService.get();
@@ -564,7 +607,7 @@ export class TransactionsService {
     PurchaseStatusFilter,
     TransactionStatus
   > = {
-    active: TransactionStatus.AWAITING_INSPECTION,
+    active: TransactionStatus.ESCROW_ACTIVE,
     completed: TransactionStatus.COMPLETED,
     refunded: TransactionStatus.REFUNDED,
     disputed: TransactionStatus.DISPUTED,
@@ -859,6 +902,7 @@ export class TransactionsService {
       transaction._id.toString(),
       EscrowStatus.REFUNDED,
     );
+    await this.listingsService.revertToActive(transaction.listing.toString());
 
     await this.audit(
       transactionId,

@@ -10,6 +10,7 @@ export enum ListingCondition {
 
 export enum ListingStatus {
   ACTIVE = 'active',
+  PENDING_SALE = 'pending_sale',
   ARCHIVED = 'archived',
   DELETED = 'deleted',
   FLAGGED = 'flagged',
