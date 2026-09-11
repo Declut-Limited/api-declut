@@ -143,6 +143,23 @@ export class ListingsService {
       throw new NotFoundException('Listing not found');
     }
     const [shaped] = await this.attachSellerSummaries([listing]);
+
+    // phoneNumber/totalSales are only enriched here, not in the shared
+    // shapeSellerSummary()/attachSellerSummaries() used by list/nearby/new/mine —
+    // totalSales needs its own query per seller, which is fine for a single
+    // detail view but would be an N+1 query on a 20-row search page.
+    const seller = listing.seller as unknown as PopulatedSeller | null;
+    if (seller && shaped.seller) {
+      const totalSales = await this.listingModel.countDocuments({
+        seller: seller._id,
+        status: ListingStatus.SOLD,
+      });
+      Object.assign(shaped.seller as Record<string, unknown>, {
+        phoneNumber: seller.phone,
+        totalSales,
+      });
+    }
+
     return shaped;
   }
 
