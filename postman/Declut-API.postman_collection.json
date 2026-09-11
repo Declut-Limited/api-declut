@@ -1821,7 +1821,7 @@
                 }
               ]
             },
-            "description": "Buyer-only view of the caller's own purchases (distinct from \"List my transactions\", which mixes buyer and seller roles)."
+            "description": "Buyer-only view of the caller's own purchases (distinct from \"List my transactions\", which mixes buyer and seller roles). Each result's populated listing includes mainImageUrl."
           },
           "response": []
         },

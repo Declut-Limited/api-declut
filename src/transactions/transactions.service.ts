@@ -49,7 +49,7 @@ interface PaystackWebhookPayload {
 }
 
 const PARTY_POPULATE_FIELDS = 'name email accountStatus slug company';
-const LISTING_POPULATE_FIELDS = 'title';
+const LISTING_POPULATE_FIELDS = 'title mainImageUrl';
 const MONTH_NAMES = [
   'January',
   'February',
