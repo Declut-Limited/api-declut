@@ -1093,7 +1093,8 @@ export class TransactionsService {
 
   private generateConfirmationCode(): string {
     // Cryptographically secure — this code gates a real fund release, so Math.random() would be the wrong call here.
-    return randomInt(100000, 1000000).toString();
+    // return randomInt(100000, 1000000).toString();
+      return randomInt(1000, 10000).toString();
   }
 
   private async audit(
