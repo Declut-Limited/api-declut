@@ -1781,6 +1781,51 @@
           "response": []
         },
         {
+          "name": "List my purchases",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transactions/purchases?page=1&limit=20&status=active",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions",
+                "purchases"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false,
+                  "description": "Page number, >= 1. Default 1."
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false,
+                  "description": "Results per page, 1-50. Default 20."
+                },
+                {
+                  "key": "status",
+                  "value": "active",
+                  "disabled": true,
+                  "description": "One of active|completed|refunded|disputed. 'active' means awaiting_inspection specifically. Omit to return purchases in any status."
+                }
+              ]
+            },
+            "description": "Buyer-only view of the caller's own purchases (distinct from \"List my transactions\", which mixes buyer and seller roles)."
+          },
+          "response": []
+        },
+        {
           "name": "{transactionId}",
           "description": "",
           "item": [

@@ -19,6 +19,7 @@ import { TransactionsService } from './transactions.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { ConfirmCodeDto } from './dto/confirm-code.dto';
 import { ListTransactionsDto } from './dto/list-transactions.dto';
+import { ListPurchasesDto } from './dto/list-purchases.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AccessTokenPayload } from '../auth/interfaces/jwt-payload.interface';
@@ -61,6 +62,21 @@ export class TransactionsController {
     @Query() dto: ListTransactionsDto,
   ) {
     return this.transactionsService.listForUser(user.sub, dto.page, dto.limit);
+  }
+
+  // Must come before ':id' — otherwise Nest would match "purchases" as the id.
+  @UseGuards(JwtAuthGuard)
+  @Get('purchases')
+  listPurchases(
+    @CurrentUser() user: AccessTokenPayload,
+    @Query() dto: ListPurchasesDto,
+  ) {
+    return this.transactionsService.listPurchasesForUser(
+      user.sub,
+      dto.status,
+      dto.page,
+      dto.limit,
+    );
   }
 
   @UseGuards(JwtAuthGuard)

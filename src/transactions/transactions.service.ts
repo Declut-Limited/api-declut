@@ -22,6 +22,7 @@ import { EscrowStatus } from '../escrow/schemas/escrow.schema';
 import { EscrowService } from '../escrow/escrow.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { ConfirmCodeDto } from './dto/confirm-code.dto';
+import { PurchaseStatusFilter } from './dto/list-purchases.dto';
 import { ListingsService } from '../listings/listings.service';
 import { UsersService } from '../users/users.service';
 import { PaystackService } from '../payments/paystack.service';
@@ -454,6 +455,54 @@ export class TransactionsService {
 
     return {
       results: results.map((t) => this.toResponseShape(t, userId)),
+      page,
+      limit,
+    };
+  }
+
+  // Buyer-only view — "my purchases," distinct from listForUser() which mixes
+  // both roles. `status` is a small named-group filter, not a raw enum value:
+  // 'active' maps to awaiting_inspection specifically (not escrow_active too)
+  // per explicit instruction. Omitting `status` returns every purchase
+  // regardless of status, including pending_payment/escrow_active/stalled/
+  // cancelled — those just don't have a named filter value yet.
+  private static readonly PURCHASE_STATUS_MAP: Record<
+    PurchaseStatusFilter,
+    TransactionStatus
+  > = {
+    active: TransactionStatus.AWAITING_INSPECTION,
+    completed: TransactionStatus.COMPLETED,
+    refunded: TransactionStatus.REFUNDED,
+    disputed: TransactionStatus.DISPUTED,
+  };
+
+  async listPurchasesForUser(
+    userId: string,
+    status: PurchaseStatusFilter | undefined,
+    page = 1,
+    limit = 20,
+  ) {
+    const filter: Record<string, unknown> = { buyer: userId };
+    if (status) {
+      filter.status = TransactionsService.PURCHASE_STATUS_MAP[status];
+    }
+
+    const [results, total] = await Promise.all([
+      this.transactionModel
+        .find(filter)
+        .populate('buyer', PARTY_POPULATE_FIELDS)
+        .populate('seller', PARTY_POPULATE_FIELDS)
+        .populate('listing', LISTING_POPULATE_FIELDS)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .exec(),
+      this.transactionModel.countDocuments(filter),
+    ]);
+
+    return {
+      results: results.map((t) => this.toResponseShape(t, userId)),
+      total,
       page,
       limit,
     };
