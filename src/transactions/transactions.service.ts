@@ -852,6 +852,63 @@ export class TransactionsService {
     }
   }
 
+  // Runs hourly. An abandoned checkout (WebView closed without paying, app killed mid-flow)
+  // is cancelled client-side on close (see the app's checkout-close handler), but that's
+  // best-effort — this is the server-side backstop so a stuck pending_payment transaction never
+  // permanently blocks that buyer from starting a new checkout on the same listing (see the
+  // existingPending guard in create()). Always re-verifies with Paystack before cancelling —
+  // never assumes "unpaid" from elapsed time alone, in case the charge succeeded but the webhook
+  // delivery was missed or delayed.
+  @Cron(CronExpression.EVERY_HOUR)
+  async sweepAbandonedCheckouts(): Promise<void> {
+    const cutoff = new Date(Date.now() - 30 * 60 * 1000);
+    const stale = await this.transactionModel.find({
+      status: TransactionStatus.PENDING_PAYMENT,
+      createdAt: { $lte: cutoff },
+    });
+
+    let cancelled = 0;
+    for (const transaction of stale) {
+      let verification;
+      try {
+        verification = await this.paystackService.verifyTransaction(
+          transaction.reference,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `Could not verify stale transaction ${transaction.reference} with Paystack — leaving as-is for next sweep`,
+          err as Error,
+        );
+        continue;
+      }
+
+      if (verification.successful) {
+        // Paid on Paystack but never flipped to escrow_active — the webhook was missed. Don't
+        // cancel a paid transaction; surface this loudly so it gets manual attention.
+        this.logger.error(
+          `Transaction ${transaction.reference} was paid on Paystack but is still pending_payment — webhook may have been missed. Needs manual review.`,
+        );
+        continue;
+      }
+
+      const oldStatus = transaction.status;
+      transaction.status = TransactionStatus.CANCELLED;
+      await transaction.save();
+      await this.audit(
+        transaction._id.toString(),
+        'auto_cancelled_abandoned_checkout',
+        'system',
+        oldStatus,
+        TransactionStatus.CANCELLED,
+      );
+      cancelled++;
+    }
+
+    if (cancelled > 0) {
+      this.logger.log(`Auto-cancelled ${cancelled} abandoned checkout(s)`);
+    }
+  }
+
   private async handleWrongCode(
     transaction: TransactionDocument,
     sellerId: string,
