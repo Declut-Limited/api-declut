@@ -1912,7 +1912,39 @@
                         "cancel"
                       ]
                     },
-                    "description": "Buyer-only, only before payment."
+                    "description": "Buyer-only, only before payment (pending_payment). For a paid transaction, use cancel-purchase instead."
+                  },
+                  "response": []
+                }
+              ]
+            },
+            {
+              "name": "cancel-purchase",
+              "description": "",
+              "item": [
+                {
+                  "name": "Cancel purchase (refund)",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{accessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/transactions/{{transactionId}}/cancel-purchase",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "transactions",
+                        "{{transactionId}}",
+                        "cancel-purchase"
+                      ]
+                    },
+                    "description": "Buyer-only, self-serve. For a paid transaction (escrow_active/awaiting_inspection) — triggers a real Paystack refund minus a flat 10% cancellation fee (not the sale commission rate). Listing goes back to active."
                   },
                   "response": []
                 }

@@ -49,6 +49,9 @@ interface PaystackWebhookPayload {
 
 const PARTY_POPULATE_FIELDS = 'name email accountStatus slug company';
 const LISTING_POPULATE_FIELDS = 'title mainImageUrl';
+// Flat rate kept on a buyer-initiated cancel-purchase refund — fixed, not
+// tied to AppSettings' (admin-configurable) commissionPercentage.
+const CANCELLATION_FEE_PERCENTAGE = 10;
 const MONTH_NAMES = [
   'January',
   'February',
@@ -501,6 +504,103 @@ export class TransactionsService {
     return { status: 'completed' };
   }
 
+  // Buyer-initiated, self-serve — no admin involved. Only valid before
+  // release (paid, still held in escrow), same states confirmReceipt()
+  // operates on; once stalled/disputed, resolution moves to the admin-only
+  // adminRefund()/adminRelease() path instead. Keeps a cancellation fee at
+  // the transaction's own snapshotted commissionPercentage (same rate as a
+  // normal sale) — the buyer gets the rest back, the fee simply isn't
+  // refunded and stays in Declut's Paystack balance (no separate "split"
+  // step needed for a partial refund).
+  async cancelPurchaseWithRefund(transactionId: string, buyerId: string) {
+    this.logger.log(
+      `[cancel-purchase] start — transaction=${transactionId} buyer=${buyerId}`,
+    );
+    const transaction = await this.findRaw(transactionId);
+    if (transaction.buyer.toString() !== buyerId) {
+      throw new ForbiddenException('Only the buyer can cancel this purchase');
+    }
+    if (
+      ![
+        TransactionStatus.ESCROW_ACTIVE,
+        TransactionStatus.AWAITING_INSPECTION,
+      ].includes(transaction.status)
+    ) {
+      throw new BadRequestException(
+        `Transaction is ${transaction.status} — this purchase can no longer be cancelled directly, contact support`,
+      );
+    }
+
+    // Fixed 10% cancellation fee — deliberately not transaction.commissionPercentage
+    // (that's the variable, admin-configurable sale commission rate; this fee is
+    // a flat rate regardless of what commission was in effect at checkout).
+    const rawFee = (transaction.amount * CANCELLATION_FEE_PERCENTAGE) / 100;
+    const commissionAmount = Math.round(rawFee * 100) / 100;
+    const refundAmount =
+      Math.round((transaction.amount - commissionAmount) * 100) / 100;
+
+    // Paystack call before the local write — same money-movement ordering rule as everywhere else in this module.
+    this.logger.log(
+      `[cancel-purchase] calling Paystack refund — transaction=${transactionId} reference=${transaction.reference} refundAmount=${refundAmount} cancellationFee=${commissionAmount}`,
+    );
+    await this.paystackService.refund(
+      transaction.reference,
+      Math.round(refundAmount * 100),
+    );
+
+    const oldStatus = transaction.status;
+    transaction.status = TransactionStatus.REFUNDED;
+    transaction.commissionAmount = commissionAmount;
+    transaction.inspectionStatus = InspectionStatus.REFUNDED;
+    await transaction.save();
+    await this.escrowService.updateStatusForTransaction(
+      transaction._id.toString(),
+      EscrowStatus.REFUNDED,
+    );
+    await this.listingsService.revertToActive(transaction.listing.toString());
+
+    await this.audit(
+      transactionId,
+      'buyer_cancelled_with_refund',
+      buyerId,
+      oldStatus,
+      TransactionStatus.REFUNDED,
+      { commissionAmount, refundAmount },
+    );
+    this.logger.log(
+      `[cancel-purchase] done — transaction=${transactionId} → refunded (refundAmount=${refundAmount}, commissionAmount kept=${commissionAmount})`,
+    );
+
+    await Promise.all([
+      this.trustScoreService.recalculate(transaction.buyer.toString()),
+      this.trustScoreService.recalculate(transaction.seller.toString()),
+    ]);
+
+    await this.notificationsService.notify({
+      recipientType: NotificationRecipientType.USER,
+      recipientId: transaction.buyer.toString(),
+      type: 'purchase_cancelled_refunded',
+      title: 'Purchase cancelled',
+      body: `Your purchase was cancelled — ₦${refundAmount.toLocaleString()} has been refunded to you.`,
+      data: { transactionId },
+    });
+    await this.notificationsService.notify({
+      recipientType: NotificationRecipientType.USER,
+      recipientId: transaction.seller.toString(),
+      type: 'purchase_cancelled_refunded',
+      title: 'Purchase cancelled by buyer',
+      body: 'The buyer cancelled their purchase before completing it — the listing is active again.',
+      data: { transactionId },
+    });
+
+    await transaction.populate([
+      { path: 'buyer', select: PARTY_POPULATE_FIELDS },
+      { path: 'seller', select: PARTY_POPULATE_FIELDS },
+      { path: 'listing', select: LISTING_POPULATE_FIELDS },
+    ]);
+    return this.toResponseShape(transaction, buyerId);
+  }
+
   async cancel(transactionId: string, buyerId: string) {
     const transaction = await this.findRaw(transactionId);
     if (transaction.buyer.toString() !== buyerId) {
@@ -510,7 +610,7 @@ export class TransactionsService {
     }
     if (transaction.status !== TransactionStatus.PENDING_PAYMENT) {
       throw new BadRequestException(
-        'Only a transaction awaiting payment can be cancelled directly — a paid transaction requires admin resolution',
+        'Only a transaction awaiting payment can be cancelled directly — for a paid transaction, use cancel-purchase instead',
       );
     }
 

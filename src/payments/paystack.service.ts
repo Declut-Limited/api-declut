@@ -173,8 +173,15 @@ export class PaystackService {
     };
   }
 
-  async refund(reference: string): Promise<void> {
-    await this.request('/refund', 'POST', { transaction: reference });
+  // amountKobo omitted → Paystack refunds the full original charge. Passed
+  // → a partial refund; whatever isn't refunded simply stays in Declut's
+  // balance (how the buyer-cancellation flow keeps its cancellation fee —
+  // no separate "split" step needed).
+  async refund(reference: string, amountKobo?: number): Promise<void> {
+    await this.request('/refund', 'POST', {
+      transaction: reference,
+      ...(amountKobo !== undefined && { amount: amountKobo }),
+    });
   }
 
   verifyWebhookSignature(

@@ -133,4 +133,16 @@ export class TransactionsController {
   cancel(@CurrentUser() user: AccessTokenPayload, @Param('id') id: string) {
     return this.transactionsService.cancel(id, user.sub);
   }
+
+  // Buyer-only, self-serve — for a paid transaction (escrow_active/
+  // awaiting_inspection), distinct from `cancel` above which only handles
+  // the pre-payment case. Real Paystack refund, minus a cancellation fee.
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/cancel-purchase')
+  cancelPurchaseWithRefund(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param('id') id: string,
+  ) {
+    return this.transactionsService.cancelPurchaseWithRefund(id, user.sub);
+  }
 }

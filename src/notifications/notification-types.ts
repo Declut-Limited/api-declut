@@ -109,6 +109,16 @@ export const NOTIFICATION_TYPES = {
       [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
     },
   },
+  purchase_cancelled_refunded: {
+    label: 'Purchase cancelled by buyer',
+    channels: {
+      [NotificationRecipientType.USER]: [
+        'push',
+        'email',
+      ] as NotificationChannel[],
+      [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
+    },
+  },
 } as const;
 
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;
@@ -141,4 +151,8 @@ export const NOTIFICATION_SETTING_CATEGORY: Partial<
   listing_unavailable_after_payment: 'disputeUpdates',
   admin_released: 'disputeUpdates',
   admin_refunded: 'disputeUpdates',
+  // Unlike admin_refunded, this fires on a perfectly normal (not
+  // stalled/disputed) transaction — the buyer just changed their mind — so
+  // it's a payment-lifecycle event, not a dispute one.
+  purchase_cancelled_refunded: 'paymentAndEscrowUpdates',
 };
