@@ -16,7 +16,7 @@ import { NearbyListingsDto } from './dto/nearby-listings.dto';
 import { NearbyLocationDto } from './dto/nearby-location.dto';
 import { RecentListingsDto } from './dto/recent-listings.dto';
 import { FilterListingsDto } from './dto/filter-listings.dto';
-import { PaginationDto } from '../common/dto/pagination.dto';
+import { MyListingsDto } from './dto/my-listings.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AccessTokenPayload } from '../auth/interfaces/jwt-payload.interface';
@@ -69,11 +69,13 @@ export class ListingsController {
 
   // Must come before ':idOrSlug' — otherwise Nest would match "mine" as the id/slug.
   @Get('mine')
-  mine(@CurrentUser() user: AccessTokenPayload, @Query() dto: PaginationDto) {
+  mine(@CurrentUser() user: AccessTokenPayload, @Query() dto: MyListingsDto) {
     return this.listingsService.byUser(
       user.sub,
       dto.page ?? 1,
       dto.limit ?? 20,
+      {},
+      dto.status,
     );
   }
 

@@ -1150,7 +1150,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/listings/mine?page=1&limit=20",
+              "raw": "{{baseUrl}}/listings/mine?page=1&limit=20&status=active",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1170,10 +1170,16 @@
                   "value": "20",
                   "disabled": false,
                   "description": "Results per page, 1-100. Default 20."
+                },
+                {
+                  "key": "status",
+                  "value": "active",
+                  "disabled": true,
+                  "description": "One of active|pending_sale|sold|reported. 'reported' means the listing was flagged by an admin. Omit for any status except deleted."
                 }
               ]
             },
-            "description": "The caller's own listings, any status except deleted, paginated, newest first."
+            "description": "The caller's own listings, paginated, newest first. Optionally filter by status (active/pending_sale/sold/reported) — omit for any status except deleted."
           },
           "response": []
         },
@@ -2406,6 +2412,66 @@
                   "response": []
                 }
               ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "reports",
+      "item": [
+        {
+          "name": "Create report",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports"
+              ]
+            },
+            "description": "User-facing — a user files their own report directly (reporterId must equal the caller's own id, or 403). At least one of listingId/userId is required. If listingId is given, that listing is immediately flagged (status becomes 'flagged', shown as 'reported' via GET /listings/mine?status=reported).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Listing photos appear to be stolen from another site\",\n  \"reason\": \"Buyer called in claiming this listing's photos were lifted from a competitor's page.\",\n  \"listingId\": \"{{listingId}}\",\n  \"reporterId\": \"{{reporterId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.data && data.data[\"slug\"]) {",
+                  "    pm.collectionVariables.set(\"reportSlug\", data.data[\"slug\"]);",
+                  "}",
+                  "if (data && data.data && data.data[\"_id\"]) {",
+                  "    pm.collectionVariables.set(\"reportId\", data.data[\"_id\"]);",
+                  "}"
+                ]
+              }
             }
           ]
         }
@@ -4502,62 +4568,6 @@
                 "description": "startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
               },
               "response": []
-            },
-            {
-              "name": "Create report",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{adminAccessToken}}",
-                    "type": "text"
-                  },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/admin/reports",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "admin",
-                    "reports"
-                  ]
-                },
-                "description": "At least one of listingId/userId is required. reporterId is the user who filed the dispute.",
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"title\": \"Listing photos appear to be stolen from another site\",\n  \"reason\": \"Buyer called in claiming this listing's photos were lifted from a competitor's page.\",\n  \"listingId\": \"{{listingId}}\",\n  \"reporterId\": \"{{reporterId}}\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "response": [],
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "const data = pm.response.json();",
-                      "if (data && data.data && data.data[\"slug\"]) {",
-                      "    pm.collectionVariables.set(\"reportSlug\", data.data[\"slug\"]);",
-                      "}",
-                      "if (data && data.data && data.data[\"_id\"]) {",
-                      "    pm.collectionVariables.set(\"reportId\", data.data[\"_id\"]);",
-                      "}"
-                    ]
-                  }
-                }
-              ]
             },
             {
               "name": "export",

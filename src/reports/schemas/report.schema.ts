@@ -29,12 +29,9 @@ export class Report {
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User' })
   user?: Types.ObjectId;
 
-  // The user who actually filed this dispute — distinct from `user` above, which is the report's target, not its source.
+  // The user who actually filed this report — distinct from `user` above, which is the report's target, not its source. Now also the report's creator (users file their own reports directly), so a separate admin-authorship field is no longer meaningful — see the removed `createdBy` below.
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true })
   reporter: Types.ObjectId;
-
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Admin', required: true })
-  createdBy: Types.ObjectId;
 
   @Prop({ type: String, enum: ReportStatus, default: ReportStatus.NEW })
   status: ReportStatus;

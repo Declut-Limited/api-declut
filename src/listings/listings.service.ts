@@ -26,6 +26,7 @@ import { CreateListingDto, MediaAssetDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { NearbyListingsDto } from './dto/nearby-listings.dto';
 import { RecentListingsDto } from './dto/recent-listings.dto';
+import { MyListingStatusFilter } from './dto/my-listings.dto';
 import {
   FilterListingsDto,
   ListingExtraFiltersDto,
@@ -1233,13 +1234,30 @@ export class ListingsService {
     });
   }
 
+  // Friendly GET /listings/mine filter keys → real ListingStatus. 'reported'
+  // reuses the existing FLAGGED status rather than inventing a new one —
+  // it's the same thing, just named the way a seller would recognize it.
+  private static readonly MY_LISTING_STATUS_MAP: Record<
+    MyListingStatusFilter,
+    ListingStatus
+  > = {
+    active: ListingStatus.ACTIVE,
+    pending_sale: ListingStatus.PENDING_SALE,
+    sold: ListingStatus.SOLD,
+    reported: ListingStatus.FLAGGED,
+  };
+
   // Takes an already-resolved seller id — resolving a USR-#### slug to an
-  // id is UsersService's job (see AdminService.getListingsByUser).
+  // id is UsersService's job (see AdminService.getListingsByUser). `status`
+  // is optional and only used by the user-facing GET /listings/mine — the
+  // admin by-user caller never passes it, so its own "every non-deleted
+  // status" behavior is unchanged.
   async byUser(
     sellerId: string,
     page: number,
     limit: number,
     dateRange: DateRangeDto = {},
+    status?: MyListingStatusFilter,
   ): Promise<{
     results: Record<string, unknown>[];
     total: number;
@@ -1248,7 +1266,9 @@ export class ListingsService {
   }> {
     const filter = {
       seller: sellerId,
-      status: { $ne: ListingStatus.DELETED },
+      ...(status
+        ? { status: ListingsService.MY_LISTING_STATUS_MAP[status] }
+        : { status: { $ne: ListingStatus.DELETED } }),
       ...buildDateRangeFilter(dateRange),
     };
     const [found, total] = await Promise.all([

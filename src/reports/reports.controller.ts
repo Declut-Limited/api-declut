@@ -4,14 +4,12 @@ import {
   Get,
   Param,
   Patch,
-  Post,
   Query,
   Res,
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { ReportsService } from './reports.service';
-import { CreateReportDto } from './dto/create-report.dto';
 import { ListReportsDto } from './dto/list-reports.dto';
 import { UpdateReportStatusDto } from './dto/update-report-status.dto';
 import { AdminJwtAuthGuard } from '../admin-auth/guards/admin-jwt-auth.guard';
@@ -29,15 +27,6 @@ export class ReportsController {
   @RequirePermission('reports', 'view')
   list(@Query() dto: ListReportsDto) {
     return this.reportsService.list(dto);
-  }
-
-  @Post()
-  @RequirePermission('reports', 'write')
-  create(
-    @CurrentAdmin() admin: AdminAccessTokenPayload,
-    @Body() dto: CreateReportDto,
-  ) {
-    return this.reportsService.create(admin.sub, dto);
   }
 
   // Must come before ':slug' — otherwise Nest matches "export" as the slug.

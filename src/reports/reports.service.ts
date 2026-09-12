@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -15,6 +16,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationRecipientType } from '../notifications/schemas/notification.schema';
 import { buildDateRangeFilter } from '../common/utils/date-range.util';
 import { DateRangeDto } from '../common/dto/date-range.dto';
+import { ListingsService } from '../listings/listings.service';
 
 // Proposed field sets, not explicitly pinned down beyond "populated" —
 // flag back if these need adjusting once a real UI consumes them.
@@ -32,13 +34,29 @@ export class ReportsService {
     private readonly counterService: CounterService,
     private readonly auditLogService: AuditLogService,
     private readonly notificationsService: NotificationsService,
+    private readonly listingsService: ListingsService,
   ) {}
 
-  async create(adminId: string, dto: CreateReportDto): Promise<ReportDocument> {
+  // User-facing — a user files their own report directly (no admin
+  // authorship anymore, see the removed `createdBy` on the schema).
+  async create(
+    callerId: string,
+    dto: CreateReportDto,
+  ): Promise<ReportDocument> {
     if (!dto.listingId && !dto.userId) {
       throw new BadRequestException(
         'A report must reference a listing, a user, or both',
       );
+    }
+    if (dto.reporterId !== callerId) {
+      throw new ForbiddenException('You can only file a report as yourself');
+    }
+
+    // Flag the listing before creating the report — a bad listingId fails
+    // loudly with nothing dangling, rather than a Report row referencing a
+    // listing that was never actually flagged.
+    if (dto.listingId) {
+      await this.listingsService.flag(dto.listingId, callerId);
     }
 
     const slug = await this.counterService.nextSlug('report', 'RPT', 4);
@@ -49,14 +67,13 @@ export class ReportsService {
       listing: dto.listingId,
       user: dto.userId,
       reporter: dto.reporterId,
-      createdBy: adminId,
     });
 
     await this.auditLogService.record({
       entityType: 'report',
       entityId: report._id.toString(),
       event: 'report.created',
-      actor: adminId,
+      actor: callerId,
       newState: report.status,
     });
 
