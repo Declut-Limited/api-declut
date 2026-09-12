@@ -546,6 +546,24 @@ export class TransactionsService {
     return transaction;
   }
 
+  // Backs ReviewsService's eligibility check — a buyer can only review a
+  // listing they've actually completed a purchase for. Hands back the
+  // seller id too, so the caller doesn't need a second lookup to know who
+  // the review is about.
+  async findCompletedPurchase(
+    buyerId: string,
+    listingId: string,
+  ): Promise<{ sellerId: string } | null> {
+    const transaction = await this.transactionModel
+      .findOne({
+        buyer: buyerId,
+        listing: listingId,
+        status: TransactionStatus.COMPLETED,
+      })
+      .select('seller');
+    return transaction ? { sellerId: transaction.seller.toString() } : null;
+  }
+
   async findForUserDisplay(transactionId: string, userId: string) {
     const transaction = await this.findForUser(transactionId, userId);
     await transaction.populate([

@@ -3,11 +3,6 @@ import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 
 export type ReviewDocument = HydratedDocument<Review>;
 
-export enum ReviewerRole {
-  BUYER = 'buyer',
-  SELLER = 'seller',
-}
-
 // visible: default. flagged: an admin has flagged it for attention.
 // resolved: an admin reviewed the flag and chose to keep the review as-is —
 // lighter-weight than the existing hard-delete moderation action.
@@ -17,16 +12,14 @@ export enum ReviewStatus {
   RESOLVED = 'resolved',
 }
 
+// One-directional — a buyer reviews a seller (a User), anchored on the
+// listing they bought rather than the transaction (a listing is only ever
+// listed/sold once, so it's the more available/stable identifier on the
+// client). Eligibility is checked at write time against a completed
+// transaction for this exact listing — see
+// TransactionsService.findCompletedPurchase().
 @Schema({ timestamps: { createdAt: true, updatedAt: false } })
 export class Review {
-  @Prop({
-    type: MongooseSchema.Types.ObjectId,
-    ref: 'Transaction',
-    required: true,
-    index: true,
-  })
-  transaction: Types.ObjectId;
-
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Listing', required: true })
   listing: Types.ObjectId;
 
@@ -40,12 +33,6 @@ export class Review {
     index: true,
   })
   reviewee: Types.ObjectId;
-
-  // Derived server-side from which party the reviewer is on the
-  // transaction — never trusted from the request body, so a reviewer can't
-  // misrepresent which side of the deal they were on.
-  @Prop({ type: String, enum: ReviewerRole, required: true })
-  role: ReviewerRole;
 
   @Prop({ required: true, min: 1, max: 5 })
   rating: number;
@@ -61,6 +48,8 @@ export class Review {
 
 export const ReviewSchema = SchemaFactory.createForClass(Review);
 
-// One review per reviewer per transaction — buyer and seller can each leave
-// exactly one review on a given deal.
-ReviewSchema.index({ transaction: 1, reviewer: 1 }, { unique: true });
+// One review per reviewer per listing — a listing is only ever bought once,
+// so in practice this means one review ever per listing, but the constraint
+// is expressed per-reviewer for the same reason every other uniqueness rule
+// in this app is: defense in depth, not just an application-level check.
+ReviewSchema.index({ listing: 1, reviewer: 1 }, { unique: true });

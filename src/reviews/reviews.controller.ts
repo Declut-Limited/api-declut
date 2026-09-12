@@ -27,16 +27,25 @@ export class ReviewsController {
     return this.reviewsService.create(user.sub, dto);
   }
 
-  @Get('user/:userId')
-  listForUser(@Param('userId') userId: string, @Query() dto: ListReviewsDto) {
-    return this.reviewsService.listForUser(userId, dto);
+  // The caller's own review for this listing (a listing is only ever bought
+  // once, so at most one exists) — not a public "everyone's review" lookup.
+  @Get('listing/:listingId')
+  getForListing(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param('listingId') listingId: string,
+  ) {
+    return this.reviewsService.getForListing(listingId, user.sub);
   }
 
-  @Get('transaction/:transactionId')
-  listForTransaction(
+  // The caller's own reviews left for this seller (potentially more than
+  // one, across separate purchases) — not a public "everyone's reviews of
+  // this seller" feed.
+  @Get('user/:userId')
+  listForUser(
     @CurrentUser() user: AccessTokenPayload,
-    @Param('transactionId') transactionId: string,
+    @Param('userId') userId: string,
+    @Query() dto: ListReviewsDto,
   ) {
-    return this.reviewsService.listForTransaction(transactionId, user.sub);
+    return this.reviewsService.listForUser(userId, user.sub, dto);
   }
 }

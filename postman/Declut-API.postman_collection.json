@@ -2274,10 +2274,10 @@
                 "reviews"
               ]
             },
-            "description": "Only on a completed transaction, one review per person per transaction.",
+            "description": "Buyer reviews the seller of a listing they bought. Requires a COMPLETED transaction for this exact listing. One review per listing (a listing is only ever bought once).",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"transactionId\": \"{{transactionId}}\",\n  \"rating\": 5,\n  \"comment\": \"Great transaction, item as described!\"\n}",
+              "raw": "{\n  \"listingId\": \"{{listingId}}\",\n  \"rating\": 5,\n  \"comment\": \"Great transaction, item as described!\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2296,7 +2296,7 @@
               "description": "",
               "item": [
                 {
-                  "name": "List reviews for a user",
+                  "name": "List my reviews for a seller",
                   "request": {
                     "method": "GET",
                     "header": [
@@ -2331,7 +2331,7 @@
                         }
                       ]
                     },
-                    "description": ""
+                    "description": "{userId} is the seller. Returns only the caller's own reviews of this seller (not a public feed) — can be more than one if the caller bought from this seller more than once."
                   },
                   "response": []
                 }
@@ -2340,15 +2340,15 @@
           ]
         },
         {
-          "name": "transaction",
+          "name": "listing",
           "description": "",
           "item": [
             {
-              "name": "{transactionId}",
+              "name": "{listingId}",
               "description": "",
               "item": [
                 {
-                  "name": "List reviews for a transaction",
+                  "name": "Get my review for a listing",
                   "request": {
                     "method": "GET",
                     "header": [
@@ -2359,17 +2359,17 @@
                       }
                     ],
                     "url": {
-                      "raw": "{{baseUrl}}/reviews/transaction/{{transactionId}}",
+                      "raw": "{{baseUrl}}/reviews/listing/{{listingId}}",
                       "host": [
                         "{{baseUrl}}"
                       ],
                       "path": [
                         "reviews",
-                        "transaction",
-                        "{{transactionId}}"
+                        "listing",
+                        "{{listingId}}"
                       ]
                     },
-                    "description": ""
+                    "description": "The caller's own review for this listing, if any (404 if none). A listing is only ever bought once, so at most one review can exist for it."
                   },
                   "response": []
                 }

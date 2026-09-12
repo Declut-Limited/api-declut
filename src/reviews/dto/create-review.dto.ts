@@ -10,7 +10,7 @@ import {
 
 export class CreateReviewDto {
   @IsMongoId()
-  transactionId: string;
+  listingId: string;
 
   @IsInt()
   @Min(1)

@@ -6,16 +6,10 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, isValidObjectId } from 'mongoose';
-import {
-  Review,
-  ReviewDocument,
-  ReviewerRole,
-  ReviewStatus,
-} from './schemas/review.schema';
+import { Review, ReviewDocument, ReviewStatus } from './schemas/review.schema';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { ListReviewsDto } from './dto/list-reviews.dto';
 import { TransactionsService } from '../transactions/transactions.service';
-import { TransactionStatus } from '../transactions/schemas/transaction.schema';
 import { UsersService } from '../users/users.service';
 import { TrustScoreService } from '../trust-score/trust-score.service';
 import { buildDateRangeFilter } from '../common/utils/date-range.util';
@@ -57,50 +51,40 @@ export class ReviewsService {
     private readonly auditLogService: AuditLogService,
   ) {}
 
+  // Buyer reviews the seller of a specific listing they bought — not tied to
+  // a transaction id (the client often won't have it handy) or bidirectional
+  // (sellers don't review buyers). Eligibility: reviewerId must have a
+  // COMPLETED transaction for this exact listing.
   async create(reviewerId: string, dto: CreateReviewDto) {
-    // findForUser already throws ForbiddenException if reviewerId isn't the
-    // buyer or seller on this transaction — the same object-level check
-    // every other module uses, reused rather than re-implemented here.
-    const transaction = await this.transactionsService.findForUser(
-      dto.transactionId,
+    const purchase = await this.transactionsService.findCompletedPurchase(
       reviewerId,
+      dto.listingId,
     );
-
-    if (transaction.status !== TransactionStatus.COMPLETED) {
+    if (!purchase) {
       throw new BadRequestException(
-        'Only a completed transaction can be reviewed',
+        'You can only review a listing you have completed a purchase for',
       );
     }
-
-    const isBuyer = transaction.buyer.toString() === reviewerId;
-    const role = isBuyer ? ReviewerRole.BUYER : ReviewerRole.SELLER;
-    const reviewee = isBuyer
-      ? transaction.seller.toString()
-      : transaction.buyer.toString();
 
     let review: ReviewDocument;
     try {
       review = await this.reviewModel.create({
-        transaction: dto.transactionId,
-        listing: transaction.listing,
+        listing: dto.listingId,
         reviewer: reviewerId,
-        reviewee,
-        role,
+        reviewee: purchase.sellerId,
         rating: dto.rating,
         comment: dto.comment,
       });
     } catch (err) {
       if ((err as { code?: number }).code === 11000) {
-        throw new ConflictException(
-          'You have already reviewed this transaction',
-        );
+        throw new ConflictException('You have already reviewed this listing');
       }
       throw err;
     }
 
-    await this.recalculate(reviewee);
+    await this.recalculate(purchase.sellerId);
 
-    await this.notificationsService.notifyUser(reviewee, {
+    await this.notificationsService.notifyUser(purchase.sellerId, {
       title: 'New review received',
       body: `You received a ${dto.rating}-star review.`,
       data: { type: 'review_received', reviewId: review._id.toString() },
@@ -109,23 +93,32 @@ export class ReviewsService {
     return review.toObject();
   }
 
-  async listForUser(userId: string, dto: ListReviewsDto) {
+  // The caller's own reviews left for this seller — potentially more than
+  // one, since a buyer can complete multiple separate purchases (and so
+  // leave multiple reviews) with the same seller. Scoped to the requester,
+  // not a public "everyone's reviews of this seller" feed.
+  async listForUser(
+    userId: string,
+    requesterId: string,
+    dto: ListReviewsDto,
+  ) {
     if (!isValidObjectId(userId)) {
       throw new NotFoundException('User not found');
     }
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
+    const filter = { reviewee: userId, reviewer: requesterId };
 
     const [found, total] = await Promise.all([
       this.reviewModel
-        .find({ reviewee: userId })
+        .find(filter)
         .populate('reviewer', REVIEWER_POPULATE_FIELDS)
         .populate('listing', REVIEW_LISTING_POPULATE_FIELDS)
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
         .exec(),
-      this.reviewModel.countDocuments({ reviewee: userId }),
+      this.reviewModel.countDocuments(filter),
     ]);
 
     return {
@@ -136,16 +129,21 @@ export class ReviewsService {
     };
   }
 
-  // Both reviews left on a transaction (buyer's and seller's, whichever
-  // exist) — only visible to the two parties on that transaction.
-  async listForTransaction(transactionId: string, requesterId: string) {
-    await this.transactionsService.findForUser(transactionId, requesterId);
-    const found = await this.reviewModel
-      .find({ transaction: transactionId })
+  // A listing is only ever bought once, so this is really "does the caller
+  // have a review for the one purchase they made of this listing" — at most
+  // one result, scoped to the requester (never someone else's review).
+  async getForListing(listingId: string, requesterId: string) {
+    if (!isValidObjectId(listingId)) {
+      throw new NotFoundException('Review not found');
+    }
+    const review = await this.reviewModel
+      .findOne({ listing: listingId, reviewer: requesterId })
       .populate('reviewer', REVIEWER_POPULATE_FIELDS)
-      .populate('listing', REVIEW_LISTING_POPULATE_FIELDS)
-      .exec();
-    return found.map((r) => this.shapeReview(r));
+      .populate('listing', REVIEW_LISTING_POPULATE_FIELDS);
+    if (!review) {
+      throw new NotFoundException('Review not found');
+    }
+    return this.shapeReview(review);
   }
 
   async adminRemove(reviewId: string, adminId: string): Promise<void> {
@@ -189,11 +187,9 @@ export class ReviewsService {
       const listing = r.listing as unknown as PopulatedReviewListing;
       return {
         id: r._id.toString(),
-        transactionId: r.transaction.toString(),
         listingTitle: listing?.title ?? '',
         reviewerName: reviewer?.name ?? '',
         reviewerEmail: reviewer?.email ?? '',
-        role: r.role,
         rating: r.rating,
         comment: r.comment ?? '',
         status: r.status,
@@ -203,11 +199,9 @@ export class ReviewsService {
 
     return toCsv(rows, [
       'id',
-      'transactionId',
       'listingTitle',
       'reviewerName',
       'reviewerEmail',
-      'role',
       'rating',
       'comment',
       'status',
@@ -337,9 +331,7 @@ export class ReviewsService {
   }
 
   // Requires reviewer + listing already populated on the query that fetched
-  // `review`. role reuses the review's own stored role field (buyer/seller
-  // on that transaction) rather than inventing a per-User role — there
-  // isn't one.
+  // `review`.
   private shapeReview(review: ReviewDocument): Record<string, unknown> {
     const obj = review.toObject() as unknown as Record<string, unknown>;
     // A referenced User/Listing can be gone by the time this is read (a hard
@@ -353,7 +345,6 @@ export class ReviewsService {
           name: reviewer.name,
           email: reviewer.email,
           slug: reviewer.slug,
-          role: review.role,
           company: reviewer.company,
           status: reviewer.accountStatus,
           image: reviewer.image,
