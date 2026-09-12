@@ -80,8 +80,11 @@ export class ListingsController {
   }
 
   @Get(':idOrSlug')
-  async findOne(@Param('idOrSlug') idOrSlug: string) {
-    return this.listingsService.findByIdForDisplay(idOrSlug);
+  async findOne(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param('idOrSlug') idOrSlug: string,
+  ) {
+    return this.listingsService.findByIdForDisplay(idOrSlug, user.sub);
   }
 
   // Registers a view — one counted per (viewer, listing) per hour; repeat
@@ -115,6 +118,19 @@ export class ListingsController {
   @Patch(':id/archive')
   archive(@CurrentUser() user: AccessTokenPayload, @Param('id') id: string) {
     return this.listingsService.archive(id, user.sub);
+  }
+
+  // Draft state — invisible to everyone except the owner (see
+  // findByIdForDisplay()'s visibility check). Not shown in any discovery
+  // feed either, same as archived/sold/flagged.
+  @Patch(':id/pause')
+  pause(@CurrentUser() user: AccessTokenPayload, @Param('id') id: string) {
+    return this.listingsService.pause(id, user.sub);
+  }
+
+  @Patch(':id/resume')
+  resume(@CurrentUser() user: AccessTokenPayload, @Param('id') id: string) {
+    return this.listingsService.resume(id, user.sub);
   }
 
   @Delete(':id')

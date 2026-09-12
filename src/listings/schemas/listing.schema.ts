@@ -16,6 +16,10 @@ export enum ListingStatus {
   FLAGGED = 'flagged',
   SOLD = 'sold',
   DELISTED = 'delisted',
+  // Owner-only draft state — visible on GET /listings/mine to its owner and
+  // nowhere else (not discovery feeds, not the direct detail view to anyone
+  // else, not even by direct link/slug). See ListingsService.pause()/resume().
+  PAUSED = 'paused',
 }
 
 @Schema({ _id: false })

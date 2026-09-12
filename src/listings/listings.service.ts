@@ -140,7 +140,10 @@ export class ListingsService {
   // and read listing.seller as a raw ObjectId (ownership checks, seller
   // lookups) — populating seller there would silently corrupt every one of
   // those .toString() comparisons.
-  async findByIdForDisplay(idOrSlug: string): Promise<Record<string, unknown>> {
+  async findByIdForDisplay(
+    idOrSlug: string,
+    requesterId: string,
+  ): Promise<Record<string, unknown>> {
     const filter = isValidObjectId(idOrSlug)
       ? { _id: idOrSlug, status: { $ne: ListingStatus.DELETED } }
       : { slug: idOrSlug, status: { $ne: ListingStatus.DELETED } };
@@ -149,6 +152,20 @@ export class ListingsService {
       .populate('category', CATEGORY_POPULATE_FIELDS)
       .populate('seller', SELLER_POPULATE_FIELDS);
     if (!listing) {
+      throw new NotFoundException('Listing not found');
+    }
+    // Paused is a draft state — invisible to everyone except its owner, not
+    // just excluded from discovery feeds like archived/sold/flagged are.
+    // 404, not 403 — a non-owner shouldn't be able to tell the difference
+    // between "doesn't exist" and "exists but is someone's paused draft."
+    // listing.seller is already populated by this point (the query above),
+    // so it's a seller sub-document, not a raw ObjectId — .toString() on it
+    // would never match requesterId; read its _id instead.
+    const sellerId = (listing.seller as unknown as PopulatedSeller)?._id;
+    if (
+      listing.status === ListingStatus.PAUSED &&
+      sellerId?.toString() !== requesterId
+    ) {
       throw new NotFoundException('Listing not found');
     }
     const [shaped] = await this.attachSellerSummaries([listing]);
@@ -182,6 +199,7 @@ export class ListingsService {
     dto: UpdateListingDto,
   ): Promise<ListingDocument> {
     const listing = await this.findOwned(id, userId);
+    this.assertActive(listing);
     const changedFields = await this.applyUpdate(listing, dto);
     if (changedFields.length > 0) {
       await this.auditLogService.record({
@@ -426,8 +444,51 @@ export class ListingsService {
     return listing;
   }
 
+  // Owner-only draft state — see the ListingStatus.PAUSED comment on the
+  // schema and findByIdForDisplay()'s visibility check above. Only from
+  // active, same as edit/delete — explicit instruction.
+  async pause(id: string, userId: string): Promise<ListingDocument> {
+    const listing = await this.findOwned(id, userId);
+    this.assertActive(listing);
+    const oldState = listing.status;
+    listing.status = ListingStatus.PAUSED;
+    await listing.save();
+    await this.auditLogService.record({
+      entityType: 'listing',
+      entityId: id,
+      event: 'listing.paused',
+      actor: userId,
+      oldState,
+      newState: listing.status,
+    });
+    return listing;
+  }
+
+  // Only from PAUSED — resuming a listing that's, say, sold or archived
+  // doesn't make sense, same "only from the expected starting status" guard
+  // unflag()/relist() already use.
+  async resume(id: string, userId: string): Promise<ListingDocument> {
+    const listing = await this.findOwned(id, userId);
+    if (listing.status !== ListingStatus.PAUSED) {
+      throw new BadRequestException('Only a paused listing can be resumed');
+    }
+    const oldState = listing.status;
+    listing.status = ListingStatus.ACTIVE;
+    await listing.save();
+    await this.auditLogService.record({
+      entityType: 'listing',
+      entityId: id,
+      event: 'listing.resumed',
+      actor: userId,
+      oldState,
+      newState: listing.status,
+    });
+    return listing;
+  }
+
   async remove(id: string, userId: string): Promise<void> {
     const listing = await this.findOwned(id, userId);
+    this.assertActive(listing);
     // Soft delete — a Transaction may reference this listing later, and we
     // never want a real Mongo delete to break that audit trail.
     const oldState = listing.status;
@@ -1245,6 +1306,7 @@ export class ListingsService {
     pending_sale: ListingStatus.PENDING_SALE,
     sold: ListingStatus.SOLD,
     reported: ListingStatus.FLAGGED,
+    paused: ListingStatus.PAUSED,
   };
 
   // Takes an already-resolved seller id — resolving a USR-#### slug to an
@@ -1295,6 +1357,17 @@ export class ListingsService {
       throw new ForbiddenException('You do not own this listing');
     }
     return listing;
+  }
+
+  // Shared by update()/remove()/pause() — explicit instruction: only an
+  // active listing can be edited, deleted, or paused. resume() has its own,
+  // opposite guard (only from paused) and doesn't use this.
+  private assertActive(listing: ListingDocument): void {
+    if (listing.status !== ListingStatus.ACTIVE) {
+      throw new BadRequestException(
+        `Listing is ${listing.status} — only an active listing can be edited, deleted, or paused`,
+      );
+    }
   }
 
   // Shared by every display-facing query method above — turns a populated
