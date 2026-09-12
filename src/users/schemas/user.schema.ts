@@ -134,6 +134,12 @@ export class User {
   @Prop({ default: false })
   hasPayoutDetails: boolean;
 
+  // Re-added 2026-09-12 (explicit instruction) — was removed 2026-09-10.
+  // TrustScoreService.recalculate() writes this on every trigger event; only
+  // ever surfaced back to the user themselves, on GET /users/me.
+  @Prop({ default: 0 })
+  trustScore: number;
+
   createdAt: Date;
   updatedAt: Date;
 }

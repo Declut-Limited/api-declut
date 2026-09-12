@@ -125,7 +125,7 @@ export class ListingsService {
       throw new NotFoundException('Listing not found');
     }
     const listing = await this.listingModel
-      .findOne({ _id: id, status: { $ne: ListingStatus.DELETED } })
+      .findOne({ _id: id })
       .populate('category', CATEGORY_POPULATE_FIELDS);
     if (!listing) {
       throw new NotFoundException('Listing not found');
@@ -136,17 +136,16 @@ export class ListingsService {
   // Display-only variant of findById() — accepts either a raw id or a
   // LST-#### slug, seller populated and reshaped for the public
   // single-listing GET. Deliberately separate from findById() itself:
-  // TransactionsService/FavoritesService both call findById() internally
-  // and read listing.seller as a raw ObjectId (ownership checks, seller
-  // lookups) — populating seller there would silently corrupt every one of
-  // those .toString() comparisons.
+  // TransactionsService calls findById() internally and reads listing.seller
+  // as a raw ObjectId (ownership checks, seller lookups) — populating seller
+  // there would silently corrupt those .toString() comparisons.
   async findByIdForDisplay(
     idOrSlug: string,
     requesterId: string,
   ): Promise<Record<string, unknown>> {
     const filter = isValidObjectId(idOrSlug)
-      ? { _id: idOrSlug, status: { $ne: ListingStatus.DELETED } }
-      : { slug: idOrSlug, status: { $ne: ListingStatus.DELETED } };
+      ? { _id: idOrSlug }
+      : { slug: idOrSlug };
     const listing = await this.listingModel
       .findOne(filter)
       .populate('category', CATEGORY_POPULATE_FIELDS)
@@ -155,7 +154,7 @@ export class ListingsService {
       throw new NotFoundException('Listing not found');
     }
     // Paused is a draft state — invisible to everyone except its owner, not
-    // just excluded from discovery feeds like archived/sold/flagged are.
+    // just excluded from discovery feeds like sold/flagged are.
     // 404, not 403 — a non-owner shouldn't be able to tell the difference
     // between "doesn't exist" and "exists but is someone's paused draft."
     // listing.seller is already populated by this point (the query above),
@@ -407,40 +406,12 @@ export class ListingsService {
   // that only need the document itself.
   private async findRawByIdOrSlug(idOrSlug: string): Promise<ListingDocument> {
     const filter = isValidObjectId(idOrSlug)
-      ? { _id: idOrSlug, status: { $ne: ListingStatus.DELETED } }
-      : { slug: idOrSlug, status: { $ne: ListingStatus.DELETED } };
+      ? { _id: idOrSlug }
+      : { slug: idOrSlug };
     const listing = await this.listingModel.findOne(filter);
     if (!listing) {
       throw new NotFoundException('Listing not found');
     }
-    return listing;
-  }
-
-  async incrementSaves(id: string): Promise<void> {
-    await this.listingModel
-      .updateOne({ _id: id }, { $inc: { saves: 1 } })
-      .exec();
-  }
-
-  async decrementSaves(id: string): Promise<void> {
-    await this.listingModel
-      .updateOne({ _id: id, saves: { $gt: 0 } }, { $inc: { saves: -1 } })
-      .exec();
-  }
-
-  async archive(id: string, userId: string): Promise<ListingDocument> {
-    const listing = await this.findOwned(id, userId);
-    const oldState = listing.status;
-    listing.status = ListingStatus.ARCHIVED;
-    await listing.save();
-    await this.auditLogService.record({
-      entityType: 'listing',
-      entityId: id,
-      event: 'listing.archived',
-      actor: userId,
-      oldState,
-      newState: listing.status,
-    });
     return listing;
   }
 
@@ -464,7 +435,7 @@ export class ListingsService {
     return listing;
   }
 
-  // Only from PAUSED — resuming a listing that's, say, sold or archived
+  // Only from PAUSED — resuming a listing that's, say, sold
   // doesn't make sense, same "only from the expected starting status" guard
   // unflag()/relist() already use.
   async resume(id: string, userId: string): Promise<ListingDocument> {
@@ -486,21 +457,27 @@ export class ListingsService {
     return listing;
   }
 
+  // Real hard delete — the DELETED status/soft-delete mechanism was removed
+  // 2026-09-12, explicit instruction ("only active status listing[s] can be
+  // deleted... remove deleted status and implementation"). Only reachable
+  // from `active` (assertActive() above), which limits but doesn't fully
+  // eliminate the risk this reverses from the original soft-delete design —
+  // a `cancelled`/`refunded` Transaction can still reference a listing that
+  // is currently `active` (and thus deletable); its `listing` ref goes
+  // dangling from here on, resolving to null on populate() like every other
+  // dangling ref in this app already degrades. Accepted trade-off, flagged.
   async remove(id: string, userId: string): Promise<void> {
     const listing = await this.findOwned(id, userId);
     this.assertActive(listing);
-    // Soft delete — a Transaction may reference this listing later, and we
-    // never want a real Mongo delete to break that audit trail.
     const oldState = listing.status;
-    listing.status = ListingStatus.DELETED;
-    await listing.save();
+    await listing.deleteOne();
     await this.auditLogService.record({
       entityType: 'listing',
       entityId: id,
       event: 'listing.deleted',
       actor: userId,
       oldState,
-      newState: listing.status,
+      newState: 'deleted',
     });
   }
 
@@ -954,7 +931,7 @@ export class ListingsService {
   }
 
   // Used by the admin Users federated list/detail view — counts all
-  // listings regardless of status (a suspended/archived seller's history
+  // listings regardless of status (a suspended seller's history
   // still matters for the "total listings" figure), plus how many are
   // currently active, per seller id.
   async countsBySeller(
@@ -992,15 +969,14 @@ export class ListingsService {
     return this.listingModel.countDocuments(filter).exec();
   }
 
-  // Backs the admin Dashboard "listings per month" chart's all-time total — sum of asking price across every non-deleted listing (judgment call: deleted excluded, everything else counts).
+  // Backs the admin Dashboard "listings per month" chart's all-time total —
+  // sum of asking price across every listing (deleted listings no longer
+  // exist as documents at all — see the DELETED-status removal note above).
   async sumTotalValue(): Promise<number> {
     const rows = await this.listingModel.aggregate<{
       _id: null;
       total: number;
-    }>([
-      { $match: { status: { $ne: ListingStatus.DELETED } } },
-      { $group: { _id: null, total: { $sum: '$price' } } },
-    ]);
+    }>([{ $group: { _id: null, total: { $sum: '$price' } } }]);
     return Math.round((rows[0]?.total ?? 0) * 100) / 100;
   }
 
@@ -1023,12 +999,7 @@ export class ListingsService {
       totalListing: number;
       listingWorth: number;
     }>([
-      {
-        $match: {
-          status: { $ne: ListingStatus.DELETED },
-          createdAt: { $gte: since },
-        },
-      },
+      { $match: { createdAt: { $gte: since } } },
       {
         $group: {
           _id: {
@@ -1187,15 +1158,18 @@ export class ListingsService {
     });
   }
 
-  async flag(id: string, adminId: string): Promise<ListingDocument> {
+  // Renamed from flag() 2026-09-12 — see the ListingStatus.REPORTED comment
+  // on the schema. Called both by ReportsService.create() (a user filing a
+  // report) and directly by an admin (PATCH /admin/listings/:id/report).
+  async report(id: string, adminId: string): Promise<ListingDocument> {
     const listing = await this.adminFindById(id);
     const oldState = listing.status;
-    listing.status = ListingStatus.FLAGGED;
+    listing.status = ListingStatus.REPORTED;
     await listing.save();
     await this.auditLogService.record({
       entityType: 'listing',
       entityId: id,
-      event: 'listing.flagged',
+      event: 'listing.reported',
       actor: adminId,
       oldState,
       newState: listing.status,
@@ -1204,18 +1178,21 @@ export class ListingsService {
     await this.notificationsService.notify({
       recipientType: NotificationRecipientType.USER,
       recipientId: listing.seller.toString(),
-      type: 'listing_flagged',
-      title: 'Your listing was flagged',
-      body: `Your listing "${listing.title}" was flagged for review.`,
+      type: 'listing_reported',
+      title: 'Your listing was reported',
+      body: `Your listing "${listing.title}" was reported and is under review.`,
     });
 
     return listing;
   }
 
-  async unflag(id: string, adminId: string): Promise<ListingDocument> {
+  // Renamed from unflag() 2026-09-12.
+  async unreport(id: string, adminId: string): Promise<ListingDocument> {
     const listing = await this.adminFindById(id);
-    if (listing.status !== ListingStatus.FLAGGED) {
-      throw new BadRequestException('Only a flagged listing can be unflagged');
+    if (listing.status !== ListingStatus.REPORTED) {
+      throw new BadRequestException(
+        'Only a reported listing can be un-reported',
+      );
     }
     const oldState = listing.status;
     listing.status = ListingStatus.ACTIVE;
@@ -1223,7 +1200,7 @@ export class ListingsService {
     await this.auditLogService.record({
       entityType: 'listing',
       entityId: id,
-      event: 'listing.unflagged',
+      event: 'listing.unreported',
       actor: adminId,
       oldState,
       newState: listing.status,
@@ -1280,24 +1257,24 @@ export class ListingsService {
 
   // Admin removal — same soft-delete mechanism as a seller's own delete,
   // just without the ownership check.
+  // Real hard delete, same as the owner's own remove() above — admin removal
+  // is deliberately not restricted to `active` (an admin needs to be able to
+  // remove a listing regardless of its current lifecycle state).
   async adminRemove(id: string, adminId: string): Promise<void> {
     const listing = await this.adminFindById(id);
     const oldState = listing.status;
-    listing.status = ListingStatus.DELETED;
-    await listing.save();
+    await listing.deleteOne();
     await this.auditLogService.record({
       entityType: 'listing',
       entityId: id,
       event: 'listing.deleted_by_admin',
       actor: adminId,
       oldState,
-      newState: listing.status,
+      newState: 'deleted',
     });
   }
 
-  // Friendly GET /listings/mine filter keys → real ListingStatus. 'reported'
-  // reuses the existing FLAGGED status rather than inventing a new one —
-  // it's the same thing, just named the way a seller would recognize it.
+  // Friendly GET /listings/mine filter keys → real ListingStatus.
   private static readonly MY_LISTING_STATUS_MAP: Record<
     MyListingStatusFilter,
     ListingStatus
@@ -1305,7 +1282,7 @@ export class ListingsService {
     active: ListingStatus.ACTIVE,
     pending_sale: ListingStatus.PENDING_SALE,
     sold: ListingStatus.SOLD,
-    reported: ListingStatus.FLAGGED,
+    reported: ListingStatus.REPORTED,
     paused: ListingStatus.PAUSED,
   };
 
@@ -1330,7 +1307,7 @@ export class ListingsService {
       seller: sellerId,
       ...(status
         ? { status: ListingsService.MY_LISTING_STATUS_MAP[status] }
-        : { status: { $ne: ListingStatus.DELETED } }),
+        : {}),
       ...buildDateRangeFilter(dateRange),
     };
     const [found, total] = await Promise.all([

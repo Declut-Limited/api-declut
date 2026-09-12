@@ -115,14 +115,9 @@ export class ListingsController {
     return this.listingsService.update(id, user.sub, dto);
   }
 
-  @Patch(':id/archive')
-  archive(@CurrentUser() user: AccessTokenPayload, @Param('id') id: string) {
-    return this.listingsService.archive(id, user.sub);
-  }
-
   // Draft state — invisible to everyone except the owner (see
   // findByIdForDisplay()'s visibility check). Not shown in any discovery
-  // feed either, same as archived/sold/flagged.
+  // feed either, same as sold/flagged.
   @Patch(':id/pause')
   pause(@CurrentUser() user: AccessTokenPayload, @Param('id') id: string) {
     return this.listingsService.pause(id, user.sub);

@@ -11,9 +11,7 @@ export enum ListingCondition {
 export enum ListingStatus {
   ACTIVE = 'active',
   PENDING_SALE = 'pending_sale',
-  ARCHIVED = 'archived',
-  DELETED = 'deleted',
-  FLAGGED = 'flagged',
+  REPORTED = 'reported',
   SOLD = 'sold',
   DELISTED = 'delisted',
   // Owner-only draft state — visible on GET /listings/mine to its owner and
@@ -159,8 +157,10 @@ export class Listing {
   @Prop({ default: 0 })
   views: number;
 
-  // Kept in sync from FavoritesService.add()/remove() — the trigger point
-  // for "someone saved this listing" already exists there.
+  // Dormant since the Favorites module was removed (2026-09-12, explicit
+  // instruction) — used to be kept in sync from FavoritesService.add()/
+  // remove(). Left in place rather than dropped from the schema (no reader
+  // depends on it being accurate); flag if it should come out too.
   @Prop({ default: 0 })
   saves: number;
 

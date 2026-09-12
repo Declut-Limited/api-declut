@@ -1175,7 +1175,7 @@
                   "key": "status",
                   "value": "active",
                   "disabled": true,
-                  "description": "One of active|pending_sale|sold|reported|paused. 'reported' means the listing was flagged by an admin. 'paused' is a private draft only the owner can see. Omit for any status except deleted."
+                  "description": "One of active|pending_sale|sold|reported|paused. 'reported' means the listing was reported (via POST /reports, or an admin's direct action). 'paused' is a private draft only the owner can see. Omit for every status."
                 }
               ]
             },
@@ -1298,41 +1298,9 @@
                     "{{listingId}}"
                   ]
                 },
-                "description": "Owner-only. Soft delete. Only callable while the listing is active (400 otherwise)."
+                "description": "Owner-only. Only callable while the listing is active (400 otherwise). This is a real hard delete — the listing document is permanently removed, not soft-deleted."
               },
               "response": []
-            },
-            {
-              "name": "archive",
-              "description": "",
-              "item": [
-                {
-                  "name": "Archive listing",
-                  "request": {
-                    "method": "PATCH",
-                    "header": [
-                      {
-                        "key": "Authorization",
-                        "value": "Bearer {{accessToken}}",
-                        "type": "text"
-                      }
-                    ],
-                    "url": {
-                      "raw": "{{baseUrl}}/listings/{{listingId}}/archive",
-                      "host": [
-                        "{{baseUrl}}"
-                      ],
-                      "path": [
-                        "listings",
-                        "{{listingId}}",
-                        "archive"
-                      ]
-                    },
-                    "description": "Owner-only."
-                  },
-                  "response": []
-                }
-              ]
             },
             {
               "name": "pause",
@@ -1540,106 +1508,6 @@
             "description": "Authenticated, paginated category list — active categories only, lean shape (id, title, slug). Distinct from the unauthenticated, unpaginated GET /categories under public."
           },
           "response": []
-        }
-      ]
-    },
-    {
-      "name": "favorites",
-      "description": "",
-      "item": [
-        {
-          "name": "List my favorites",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/favorites?page=1&limit=20",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "favorites"
-              ],
-              "query": [
-                {
-                  "key": "page",
-                  "value": "1",
-                  "disabled": false,
-                  "description": "Page number, >= 1. Default 1."
-                },
-                {
-                  "key": "limit",
-                  "value": "20",
-                  "disabled": false,
-                  "description": "Results per page, 1-50. Default 20."
-                }
-              ]
-            },
-            "description": ""
-          },
-          "response": []
-        },
-        {
-          "name": "{listingId}",
-          "description": "",
-          "item": [
-            {
-              "name": "Add favorite",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{accessToken}}",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/favorites/{{listingId}}",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "favorites",
-                    "{{listingId}}"
-                  ]
-                },
-                "description": ""
-              },
-              "response": []
-            },
-            {
-              "name": "Remove favorite",
-              "request": {
-                "method": "DELETE",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{accessToken}}",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/favorites/{{listingId}}",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "favorites",
-                    "{{listingId}}"
-                  ]
-                },
-                "description": ""
-              },
-              "response": []
-            }
-          ]
         }
       ]
     },
@@ -2509,7 +2377,7 @@
                 "reports"
               ]
             },
-            "description": "User-facing — a user files their own report directly (reporterId must equal the caller's own id, or 403). At least one of listingId/userId is required. If listingId is given, that listing is immediately flagged (status becomes 'flagged', shown as 'reported' via GET /listings/mine?status=reported).",
+            "description": "User-facing — a user files their own report directly (reporterId must equal the caller's own id, or 403). At least one of listingId/userId is required. If listingId is given, that listing is immediately reported (status becomes 'reported', shown via GET /listings/mine?status=reported).",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"title\": \"Listing photos appear to be stolen from another site\",\n  \"reason\": \"Buyer called in claiming this listing's photos were lifted from a competitor's page.\",\n  \"listingId\": \"{{listingId}}\",\n  \"reporterId\": \"{{reporterId}}\"\n}",
@@ -3356,7 +3224,7 @@
                       "key": "status",
                       "value": "all",
                       "disabled": false,
-                      "description": "active, archived, deleted, flagged, sold, or all. Omitting this (or passing all) returns every status."
+                      "description": "active, sold, reported, paused, delisted, or all. Omitting this (or passing all) returns every status."
                     },
                     {
                       "key": "search",
@@ -3378,7 +3246,7 @@
                     }
                   ]
                 },
-                "description": "status accepts 'all' alongside the real statuses (active/archived/deleted/flagged/sold). Lean row shape — no location, views, saves, priceHistory, or condition (detail-view-only fields); category is trimmed to {_id, title} (no slug), seller to {_id, name, company}. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
+                "description": "status accepts 'all' alongside the real statuses (active/sold/reported/paused/delisted). Lean row shape — no location, views, saves, priceHistory, or condition (detail-view-only fields); category is trimmed to {_id, title} (no slug), seller to {_id, name, company}. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
               },
               "response": []
             },
@@ -3411,7 +3279,7 @@
                           "key": "status",
                           "value": "active",
                           "disabled": true,
-                          "description": "active, archived, deleted, flagged, sold, or all."
+                          "description": "active, sold, reported, paused, delisted, or all."
                         },
                         {
                           "key": "search",
@@ -3639,7 +3507,7 @@
                         "{{listingId}}"
                       ]
                     },
-                    "description": "Soft delete — same mechanism as the owner's own delete, no ownership check."
+                    "description": "Same mechanism as the owner's own delete, no ownership check. This is a real hard delete — the listing document is permanently removed, not soft-deleted."
                   },
                   "response": []
                 },
@@ -3691,11 +3559,11 @@
                   ]
                 },
                 {
-                  "name": "flag",
+                  "name": "report",
                   "description": "",
                   "item": [
                     {
-                      "name": "Flag listing",
+                      "name": "Report listing",
                       "request": {
                         "method": "PATCH",
                         "header": [
@@ -3706,7 +3574,7 @@
                           }
                         ],
                         "url": {
-                          "raw": "{{baseUrl}}/admin/listings/{{listingId}}/flag",
+                          "raw": "{{baseUrl}}/admin/listings/{{listingId}}/report",
                           "host": [
                             "{{baseUrl}}"
                           ],
@@ -3714,20 +3582,20 @@
                             "admin",
                             "listings",
                             "{{listingId}}",
-                            "flag"
+                            "report"
                           ]
                         },
-                        "description": "Removes it from public search (same as archived/deleted)."
+                        "description": "Removes it from public search (same as sold/paused/delisted). Renamed from flag 2026-09-12 — \"flagged\" is no longer a concept in this app."
                       },
                       "response": []
                     }
                   ]
                 },
                 {
-                  "name": "unflag",
+                  "name": "unreport",
                   "item": [
                     {
-                      "name": "Unflag listing",
+                      "name": "Unreport listing",
                       "request": {
                         "method": "PATCH",
                         "header": [
@@ -3738,7 +3606,7 @@
                           }
                         ],
                         "url": {
-                          "raw": "{{baseUrl}}/admin/listings/{{listingId}}/unflag",
+                          "raw": "{{baseUrl}}/admin/listings/{{listingId}}/unreport",
                           "host": [
                             "{{baseUrl}}"
                           ],
@@ -3746,10 +3614,10 @@
                             "admin",
                             "listings",
                             "{{listingId}}",
-                            "unflag"
+                            "unreport"
                           ]
                         },
-                        "description": "Reverses a flag, back to active. Only a flagged listing can be unflagged."
+                        "description": "Reverses a report, back to active. Only a reported listing can be un-reported. Renamed from unflag 2026-09-12."
                       },
                       "response": []
                     }

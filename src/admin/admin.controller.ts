@@ -189,22 +189,23 @@ export class AdminController {
     return this.adminService.adminUpdateListing(id, admin.sub, dto);
   }
 
-  @Patch('listings/:id/flag')
+  // Renamed from flag/unflag 2026-09-12 — "flagged" is no longer a concept in this app, see ListingStatus.REPORTED on the schema.
+  @Patch('listings/:id/report')
   @RequirePermission('listings', 'write')
-  flagListing(
+  reportListing(
     @CurrentAdmin() admin: AdminAccessTokenPayload,
     @Param('id') id: string,
   ) {
-    return this.adminService.flagListing(id, admin.sub);
+    return this.adminService.reportListing(id, admin.sub);
   }
 
-  @Patch('listings/:id/unflag')
+  @Patch('listings/:id/unreport')
   @RequirePermission('listings', 'write')
-  unflagListing(
+  resolveReportedListing(
     @CurrentAdmin() admin: AdminAccessTokenPayload,
     @Param('id') id: string,
   ) {
-    return this.adminService.unflagListing(id, admin.sub);
+    return this.adminService.resolveReportedListing(id, admin.sub);
   }
 
   @Patch('listings/:id/delist')

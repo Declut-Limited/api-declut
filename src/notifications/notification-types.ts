@@ -28,8 +28,10 @@ export const NOTIFICATION_TYPES = {
       [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
     },
   },
-  listing_flagged: {
-    label: 'Listing flagged',
+  // Renamed from listing_flagged 2026-09-12 — "flagged" is no longer a
+  // concept in this app, see ListingStatus.REPORTED on the schema.
+  listing_reported: {
+    label: 'Listing reported',
     channels: {
       [NotificationRecipientType.USER]: ['push'] as NotificationChannel[],
       [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],

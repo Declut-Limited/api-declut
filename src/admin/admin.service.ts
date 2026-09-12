@@ -366,12 +366,12 @@ export class AdminService {
     return { sent: true };
   }
 
-  flagListing(id: string, adminId: string) {
-    return this.listingsService.flag(id, adminId);
+  reportListing(id: string, adminId: string) {
+    return this.listingsService.report(id, adminId);
   }
 
-  unflagListing(id: string, adminId: string) {
-    return this.listingsService.unflag(id, adminId);
+  resolveReportedListing(id: string, adminId: string) {
+    return this.listingsService.unreport(id, adminId);
   }
 
   delistListing(id: string, adminId: string) {
@@ -405,11 +405,6 @@ export class AdminService {
     );
   }
 
-  // `status` is an exact override; `tab` groups related statuses for an
-  // admin UI tab strip. Grouping is a judgment call (CLAUDE.md named the
-  // tabs without defining them) — 'active' spans everything before a
-  // terminal state, 'refunded' folds in 'cancelled' since both mean "no
-  // money moved to the seller."
   private static readonly TAB_STATUS_MAP: Record<
     Exclude<TransactionTab, 'all'>,
     TransactionStatus[]

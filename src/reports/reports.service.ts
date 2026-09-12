@@ -54,9 +54,9 @@ export class ReportsService {
 
     // Flag the listing before creating the report — a bad listingId fails
     // loudly with nothing dangling, rather than a Report row referencing a
-    // listing that was never actually flagged.
+    // listing that was never actually reported.
     if (dto.listingId) {
-      await this.listingsService.flag(dto.listingId, callerId);
+      await this.listingsService.report(dto.listingId, callerId);
     }
 
     const slug = await this.counterService.nextSlug('report', 'RPT', 4);

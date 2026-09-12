@@ -14,7 +14,6 @@ import { UsersModule } from './users/users.module';
 import { AuthGuardsModule } from './auth/guards/guards.module';
 import { ListingsModule } from './listings/listings.module';
 import { MediaModule } from './media/media.module';
-import { FavoritesModule } from './favorites/favorites.module';
 import { KycModule } from './kyc/kyc.module';
 import { PaymentsModule } from './payments/payments.module';
 import { BankAccountsModule } from './bank-accounts/bank-accounts.module';
@@ -89,7 +88,6 @@ import { AuditContextMiddleware } from './common/middleware/audit-context.middle
     AuthModule,
     ListingsModule,
     MediaModule,
-    FavoritesModule,
     KycModule,
     PaymentsModule,
     BankAccountsModule,

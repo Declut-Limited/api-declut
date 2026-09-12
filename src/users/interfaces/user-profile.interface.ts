@@ -16,6 +16,7 @@ export interface PrivateUserProfile {
   reviewCount: number;
   hasPayoutDetails: boolean;
   profileImageUrl?: string;
+  trustScore: number;
   listingCount: number;
   soldCount: number;
   purchaseCount: number;

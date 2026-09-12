@@ -313,7 +313,7 @@ export class UsersService {
       .exec();
   }
 
-  // listingCount excludes deleted (matches GET /listings/mine's definition of "my listings"); soldCount/purchaseCount are transaction-outcome counts, not just listing status.
+  // listingCount matches GET /listings/mine's definition of "my listings" (deleted listings no longer exist as documents at all); soldCount/purchaseCount are transaction-outcome counts, not just listing status.
   private async getProfileStats(userId: string): Promise<{
     listingCount: number;
     soldCount: number;
@@ -323,10 +323,7 @@ export class UsersService {
     const uid = new Types.ObjectId(userId);
     const [listingCount, soldCount, purchaseCount, escrowRows] =
       await Promise.all([
-        this.listingModel.countDocuments({
-          seller: uid,
-          status: { $ne: ListingStatus.DELETED },
-        }),
+        this.listingModel.countDocuments({ seller: uid }),
         this.listingModel.countDocuments({
           seller: uid,
           status: ListingStatus.SOLD,
@@ -378,6 +375,7 @@ export class UsersService {
       reviewCount: user.reviewCount,
       hasPayoutDetails: user.hasPayoutDetails,
       profileImageUrl: user.profileImage,
+      trustScore: user.trustScore,
       ...stats,
       createdAt: (user as unknown as { createdAt: Date }).createdAt,
     };

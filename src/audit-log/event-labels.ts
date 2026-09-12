@@ -2,10 +2,9 @@
 const EVENT_LABELS: Record<string, string> = {
   'listing.created': 'Listing created',
   'listing.updated': 'Listing updated',
-  'listing.archived': 'Listing archived',
   'listing.deleted': 'Listing deleted',
   'listing.sold': 'Listing marked as sold',
-  'listing.flagged': 'Listing flagged',
+  'listing.reported': 'Listing reported',
   'listing.delisted': 'Listing delisted',
   'listing.relisted': 'Listing relisted',
   'listing.deleted_by_admin': 'Listing removed by admin',
