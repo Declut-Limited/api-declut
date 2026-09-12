@@ -2671,6 +2671,29 @@
               "response": []
             }
           ]
+        },
+        {
+          "name": "settings",
+          "item": [
+            {
+              "name": "Get public settings",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/settings",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "settings"
+                  ]
+                },
+                "description": "Public, unauthenticated — curated subset of the admin AppSettings singleton (branding, currency/timezone, payment-method toggles, fee figures, inspection window). Excludes maxCodeAttempts and internal document fields (_id/__v/createdAt/updatedAt)."
+              },
+              "response": []
+            }
+          ]
         }
       ]
     },

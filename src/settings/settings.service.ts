@@ -54,6 +54,33 @@ export class SettingsService {
     return doc;
   }
 
+  // Curated subset for GET /settings (public, no auth) — everything a
+  // client screen legitimately needs (branding, currency/timezone, which
+  // payment methods are on, the inspection window, fee figures) minus
+  // internal-only config. maxCodeAttempts is excluded deliberately: it's an
+  // anti-fraud retry limit (orphaned since the confirmation-code process was
+  // removed, but still not something to publish either way).
+  async getPublic() {
+    const settings = await this.get();
+    return {
+      companyName: settings.companyName,
+      supportEmail: settings.supportEmail,
+      defaultCurrency: settings.defaultCurrency,
+      timezone: settings.timezone,
+      commissionPercentage: settings.commissionPercentage,
+      cardPaymentsEnabled: settings.cardPaymentsEnabled,
+      bankTransferEnabled: settings.bankTransferEnabled,
+      buyerServiceFeePercentage: settings.buyerServiceFeePercentage,
+      escrowReleaseFee: settings.escrowReleaseFee,
+      minimumPayoutThreshold: settings.minimumPayoutThreshold,
+      inspectionWindow: {
+        inspectionPeriod: settings.inspectionWindow.inspectionPeriod,
+        allowExtension: settings.inspectionWindow.allowExtension,
+        maxExtensionPeriod: settings.inspectionWindow.maxExtensionPeriod,
+      },
+    };
+  }
+
   // Category-scoped update endpoints the admin settings page calls
   async updateGeneral(
     dto: UpdateGeneralSettingsDto,
