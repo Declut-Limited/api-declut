@@ -859,7 +859,7 @@
                 }
               ]
             },
-            "description": "Paginated. All params optional and combinable. Replaces the old flat category/condition/minPrice/maxPrice/lat/lng/radiusKm shape entirely — shares its filter logic with GET /listings/count, so the two always agree on what matches. Excludes the caller's own listings — use 'Get my listings' for those."
+            "description": "Paginated. All params optional and combinable. Replaces the old flat category/condition/minPrice/maxPrice/lat/lng/radiusKm shape entirely — shares its filter logic with GET /listings/count, so the two always agree on what matches. Excludes the caller's own listings — use 'Get my listings' for those. Also excludes listings the caller previously had a purchase REFUNDED for."
           },
           "response": []
         },
@@ -904,7 +904,7 @@
                 }
               ]
             },
-            "description": "Count of active listings within radiusKm (default 5) of (lat, lng) — not a mirror of every GET /listings filter, just location. Excludes the caller's own listings — use 'Get my listings' for those."
+            "description": "Count of active listings within radiusKm (default 5) of (lat, lng) — not a mirror of every GET /listings filter, just location. Excludes the caller's own listings — use 'Get my listings' for those. Also excludes listings the caller previously had a purchase REFUNDED for."
           },
           "response": []
         },
@@ -1009,7 +1009,7 @@
                 }
               ]
             },
-            "description": "Active listings within radiusKm of (lat, lng), closest first. Unlike the main search endpoint's radiusKm, this one is actually enforced (via $geoNear's maxDistance). Excludes the caller's own listings — use 'Get my listings' for those. Also accepts categoryId/itemCondition/priceRange/address/state/area as additional narrowing filters (no search) — combined with the radius, not an alternative to it."
+            "description": "Active listings within radiusKm of (lat, lng), closest first. Unlike the main search endpoint's radiusKm, this one is actually enforced (via $geoNear's maxDistance). Excludes the caller's own listings — use 'Get my listings' for those. Also accepts categoryId/itemCondition/priceRange/address/state/area as additional narrowing filters (no search) — combined with the radius, not an alternative to it. Also excludes listings the caller previously had a purchase REFUNDED for."
           },
           "response": []
         },
@@ -1096,7 +1096,7 @@
                 }
               ]
             },
-            "description": "Active listings created in the last 7 days, newest first. The window is fixed (not admin-configurable). Excludes the caller's own listings — use 'Get my listings' for those. Also accepts categoryId/itemCondition/priceRange/address/state/area as additional filters (no search)."
+            "description": "Active listings created in the last 7 days, newest first. The window is fixed (not admin-configurable). Excludes the caller's own listings — use 'Get my listings' for those. Also accepts categoryId/itemCondition/priceRange/address/state/area as additional filters (no search). Also excludes listings the caller previously had a purchase REFUNDED for."
           },
           "response": []
         },

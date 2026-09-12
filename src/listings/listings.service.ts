@@ -17,6 +17,11 @@ import {
   ListingView,
   ListingViewDocument,
 } from './schemas/listing-view.schema';
+import {
+  Transaction,
+  TransactionDocument,
+  TransactionStatus,
+} from '../transactions/schemas/transaction.schema';
 import { CreateListingDto, MediaAssetDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { NearbyListingsDto } from './dto/nearby-listings.dto';
@@ -61,6 +66,8 @@ export class ListingsService {
     @InjectModel(Listing.name) private listingModel: Model<ListingDocument>,
     @InjectModel(ListingView.name)
     private listingViewModel: Model<ListingViewDocument>,
+    @InjectModel(Transaction.name)
+    private transactionModel: Model<TransactionDocument>,
     private readonly categoriesService: CategoriesService,
     private readonly counterService: CounterService,
     private readonly auditLogService: AuditLogService,
@@ -449,6 +456,7 @@ export class ListingsService {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
     const radiusKm = dto.radiusKm ?? 5;
+    const refundedListingIds = await this.getRefundedListingIds(currentUserId);
 
     const { results, total } = await this.geoPaginatedListings(
       dto.lat,
@@ -457,6 +465,7 @@ export class ListingsService {
       {
         status: ListingStatus.ACTIVE,
         seller: { $ne: new Types.ObjectId(currentUserId) },
+        _id: { $nin: refundedListingIds },
         ...this.buildExtraFilters(dto),
       },
       page,
@@ -568,11 +577,13 @@ export class ListingsService {
 
     const since = new Date();
     since.setDate(since.getDate() - RECENT_LISTINGS_DAYS);
+    const refundedListingIds = await this.getRefundedListingIds(currentUserId);
 
     const filter: Record<string, unknown> = {
       status: ListingStatus.ACTIVE,
       createdAt: { $gte: since },
       seller: { $ne: new Types.ObjectId(currentUserId) },
+      _id: { $nin: refundedListingIds },
       ...this.buildExtraFilters(dto),
     };
 
@@ -599,6 +610,24 @@ export class ListingsService {
         'lat and lng are required when useMyLocation is true',
       );
     }
+  }
+
+  // Discovery feeds only — a buyer who had a purchase REFUNDED (either their
+  // own cancel-purchase, or an admin resolving a stalled/disputed one)
+  // already decided not to go through with that listing; don't keep
+  // resurfacing it. Deliberately not the pre-payment `cancelled` status —
+  // that listing never left `active` in the first place, no "it came back"
+  // story to hide. One small indexed query per request (Transaction.buyer
+  // is indexed, and a buyer's own transaction count is naturally small and
+  // bounded — this never scans the whole collection), not a per-row cost,
+  // so it doesn't add meaningfully to fetch time.
+  private async getRefundedListingIds(
+    userId: string,
+  ): Promise<Types.ObjectId[]> {
+    return this.transactionModel.distinct('listing', {
+      buyer: userId,
+      status: TransactionStatus.REFUNDED,
+    });
   }
 
   // Shared by every listing feed (search/filter, nearby, new) — categoryId/itemCondition/priceRange/address/state/area, so a bug fix here never has to be repeated across the three call sites.
@@ -633,12 +662,12 @@ export class ListingsService {
     return filter;
   }
 
-  // Shared by countFiltered() and filterListings() so the two can never drift out of sync on what counts as a match.
+  // Backs filterListings() — no longer shared with a countFiltered() (that method is gone, see countNearby() below).
   // Excludes the caller's own listings — a seller browses everyone else's, and gets their own via GET /listings/mine.
-  private buildListingFilterQuery(
+  private async buildListingFilterQuery(
     dto: ListingFilterDto,
     currentUserId: string,
-  ): Record<string, unknown> {
+  ): Promise<Record<string, unknown>> {
     const extra = this.buildExtraFilters(dto);
     // Text location fields only apply on the non-geo path — useMyLocation switches to $geoNear instead.
     if (dto.useMyLocation) {
@@ -646,10 +675,12 @@ export class ListingsService {
       delete extra.state;
       delete extra.area;
     }
+    const refundedListingIds = await this.getRefundedListingIds(currentUserId);
 
     const filter: Record<string, unknown> = {
       status: ListingStatus.ACTIVE,
       seller: { $ne: new Types.ObjectId(currentUserId) },
+      _id: { $nin: refundedListingIds },
       ...extra,
     };
 
@@ -670,6 +701,7 @@ export class ListingsService {
     radiusKm: number,
     currentUserId: string,
   ): Promise<{ count: number }> {
+    const refundedListingIds = await this.getRefundedListingIds(currentUserId);
     const [row] = await this.listingModel.aggregate<{ count: number }>([
       {
         $geoNear: {
@@ -680,6 +712,7 @@ export class ListingsService {
           query: {
             status: ListingStatus.ACTIVE,
             seller: { $ne: new Types.ObjectId(currentUserId) },
+            _id: { $nin: refundedListingIds },
           },
         },
       },
@@ -701,7 +734,7 @@ export class ListingsService {
     this.assertLocationParams(dto);
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
-    const baseFilter = this.buildListingFilterQuery(dto, currentUserId);
+    const baseFilter = await this.buildListingFilterQuery(dto, currentUserId);
 
     if (dto.useMyLocation) {
       const { results, total } = await this.geoPaginatedListings(
