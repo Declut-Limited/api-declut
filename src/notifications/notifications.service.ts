@@ -13,6 +13,7 @@ import { UsersService } from '../users/users.service';
 import { EmailService } from '../email/email.service';
 import { FcmService, PushNotificationPayload } from './fcm.service';
 import { NotificationsGateway } from './notifications.gateway';
+import { AppRealtimeService } from './app-realtime.service';
 import { Admin, AdminDocument } from '../admin-auth/schemas/admin.schema';
 import {
   Notification,
@@ -64,6 +65,7 @@ export class NotificationsService {
     private readonly fcmService: FcmService,
     private readonly emailService: EmailService,
     private readonly gateway: NotificationsGateway,
+    private readonly appRealtimeService: AppRealtimeService,
     private readonly notificationSettingsService: NotificationSettingsService,
     @InjectModel(Admin.name) private adminModel: Model<AdminDocument>,
     @InjectModel(Notification.name)
@@ -164,6 +166,20 @@ export class NotificationsService {
 
     if (params.recipientType === NotificationRecipientType.ADMIN) {
       this.gateway.emitToAdmin(params.recipientId, {
+        id: doc._id.toString(),
+        type: params.type,
+        title: params.title,
+        body: params.body,
+        data: params.data,
+        channels: channelUpdate,
+        read: false,
+        createdAt: doc.createdAt,
+      });
+    }
+
+    // Personal-channel echo for User recipients — fires regardless of the push/email gating above, since a live in-app update isn't the interruptive kind of delivery those toggles are meant to silence.
+    if (params.recipientType === NotificationRecipientType.USER) {
+      this.appRealtimeService.echoNotification(params.recipientId, {
         id: doc._id.toString(),
         type: params.type,
         title: params.title,

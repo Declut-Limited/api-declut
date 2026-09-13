@@ -36,6 +36,7 @@ import { CategoriesService } from '../categories/categories.service';
 import { CounterService } from '../common/counter/counter.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AppRealtimeService } from '../notifications/app-realtime.service';
 import { NotificationRecipientType } from '../notifications/schemas/notification.schema';
 import { escapeRegex } from '../common/utils/regex.util';
 import { MONTH_ABBREVIATIONS } from '../common/utils/date.util';
@@ -73,6 +74,7 @@ export class ListingsService {
     private readonly counterService: CounterService,
     private readonly auditLogService: AuditLogService,
     private readonly notificationsService: NotificationsService,
+    private readonly appRealtimeService: AppRealtimeService,
   ) {}
 
   async create(
@@ -116,6 +118,12 @@ export class ListingsService {
       event: 'listing.created',
       actor: sellerId,
       newState: listing.status,
+    });
+    this.appRealtimeService.broadcastNewListing({
+      listingId: listing._id.toString(),
+      title: listing.title,
+      price: listing.price,
+      mainImageUrl: listing.mainImageUrl,
     });
     return listing;
   }
@@ -208,6 +216,7 @@ export class ListingsService {
         actor: userId,
         metadata: { fields: changedFields },
       });
+      this.appRealtimeService.emitListingChanged(id, userId, 'updated');
     }
     return listing;
   }
@@ -229,6 +238,11 @@ export class ListingsService {
         actor: adminId,
         metadata: { fields: changedFields },
       });
+      this.appRealtimeService.emitListingChanged(
+        id,
+        listing.seller.toString(),
+        'updated',
+      );
     }
     return listing;
   }
@@ -432,6 +446,13 @@ export class ListingsService {
       oldState,
       newState: listing.status,
     });
+    // broadcastPublic:false — a paused listing is a private draft, nobody but the owner should learn it changed state.
+    this.appRealtimeService.emitListingStatusChange(
+      id,
+      userId,
+      { status: listing.status, oldStatus: oldState },
+      false,
+    );
     return listing;
   }
 
@@ -454,6 +475,13 @@ export class ListingsService {
       oldState,
       newState: listing.status,
     });
+    // broadcastPublic:false for symmetry with pause() — nobody could have been subscribed to this listing's room while it was paused anyway.
+    this.appRealtimeService.emitListingStatusChange(
+      id,
+      userId,
+      { status: listing.status, oldStatus: oldState },
+      false,
+    );
     return listing;
   }
 
@@ -479,6 +507,7 @@ export class ListingsService {
       oldState,
       newState: 'deleted',
     });
+    this.appRealtimeService.emitListingChanged(id, userId, 'deleted');
   }
 
   // Proximity feed, now also accepting the shared categoryId/itemCondition/priceRange/address/state/area filters (no search); $facet forks one $geoNear into page + total since countDocuments() can't use $near.
@@ -1115,6 +1144,11 @@ export class ListingsService {
       oldState: ListingStatus.ACTIVE,
       newState: ListingStatus.PENDING_SALE,
     });
+    this.appRealtimeService.emitListingStatusChange(
+      id,
+      listing.seller.toString(),
+      { status: ListingStatus.PENDING_SALE, oldStatus: ListingStatus.ACTIVE },
+    );
     return true;
   }
 
@@ -1135,6 +1169,11 @@ export class ListingsService {
       oldState: ListingStatus.PENDING_SALE,
       newState: ListingStatus.ACTIVE,
     });
+    this.appRealtimeService.emitListingStatusChange(
+      id,
+      listing.seller.toString(),
+      { status: ListingStatus.ACTIVE, oldStatus: ListingStatus.PENDING_SALE },
+    );
   }
 
   // Called by TransactionsService when a transaction reaches 'completed' —
@@ -1156,6 +1195,11 @@ export class ListingsService {
       oldState,
       newState: listing.status,
     });
+    this.appRealtimeService.emitListingStatusChange(
+      id,
+      listing.seller.toString(),
+      { status: listing.status, oldStatus: oldState },
+    );
   }
 
   // Renamed from flag() 2026-09-12 — see the ListingStatus.REPORTED comment
@@ -1182,6 +1226,11 @@ export class ListingsService {
       title: 'Your listing was reported',
       body: `Your listing "${listing.title}" was reported and is under review.`,
     });
+    this.appRealtimeService.emitListingStatusChange(
+      id,
+      listing.seller.toString(),
+      { status: listing.status, oldStatus: oldState },
+    );
 
     return listing;
   }
@@ -1205,6 +1254,11 @@ export class ListingsService {
       oldState,
       newState: listing.status,
     });
+    this.appRealtimeService.emitListingStatusChange(
+      id,
+      listing.seller.toString(),
+      { status: listing.status, oldStatus: oldState },
+    );
     return listing;
   }
 
@@ -1232,6 +1286,11 @@ export class ListingsService {
       title: 'Your listing was unlisted',
       body: `Your listing "${listing.title}" was taken down by an admin.`,
     });
+    this.appRealtimeService.emitListingStatusChange(
+      id,
+      listing.seller.toString(),
+      { status: listing.status, oldStatus: oldState },
+    );
 
     return listing;
   }
@@ -1252,6 +1311,11 @@ export class ListingsService {
       oldState,
       newState: listing.status,
     });
+    this.appRealtimeService.emitListingStatusChange(
+      id,
+      listing.seller.toString(),
+      { status: listing.status, oldStatus: oldState },
+    );
     return listing;
   }
 
@@ -1263,6 +1327,7 @@ export class ListingsService {
   async adminRemove(id: string, adminId: string): Promise<void> {
     const listing = await this.adminFindById(id);
     const oldState = listing.status;
+    const sellerId = listing.seller.toString();
     await listing.deleteOne();
     await this.auditLogService.record({
       entityType: 'listing',
@@ -1272,6 +1337,7 @@ export class ListingsService {
       oldState,
       newState: 'deleted',
     });
+    this.appRealtimeService.emitListingChanged(id, sellerId, 'deleted');
   }
 
   // Friendly GET /listings/mine filter keys → real ListingStatus.

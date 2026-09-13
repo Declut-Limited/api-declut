@@ -15,6 +15,8 @@ import {
 } from './schemas/notification-broadcast.schema';
 import { NotificationsService } from './notifications.service';
 import { NotificationsGateway } from './notifications.gateway';
+import { UserEventsGateway } from './user-events.gateway';
+import { AppRealtimeService } from './app-realtime.service';
 import { NotificationsController } from './notifications.controller';
 import { AdminNotificationsController } from './admin-notifications.controller';
 import { NotificationBroadcastsController } from './notification-broadcasts.controller';
@@ -56,9 +58,11 @@ import { NotificationSettingsModule } from '../notification-settings/notificatio
   providers: [
     NotificationsService,
     NotificationsGateway,
+    UserEventsGateway,
+    AppRealtimeService,
     FcmService,
     NotificationBroadcastProcessor,
   ],
-  exports: [NotificationsService],
+  exports: [NotificationsService, AppRealtimeService],
 })
 export class NotificationsModule {}
