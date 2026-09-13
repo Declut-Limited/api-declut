@@ -402,22 +402,17 @@ export class NotificationsService {
       return maxChannels;
     }
 
+    // Auto-creates the settings row (push defaulted true) the first time any
+    // gated notification reaches a user who's never configured one — see
+    // NotificationSettingsService.getOrCreateForNotify().
     const settings =
-      await this.notificationSettingsService.getRawForUser(recipientId);
-    // Schema defaults, applied when the user has never opened their settings
-    // (no row created yet) — paymentAndEscrowUpdates defaults true, the
-    // other toggleable categories default false; channels always default
-    // false regardless (opt-in), so a never-configured user gets the
-    // in-app Notification row but no push/email until they turn a channel on.
-    const categoryEnabled = settings
-      ? settings[category]
-      : category === 'paymentAndEscrowUpdates';
-    if (!categoryEnabled) {
+      await this.notificationSettingsService.getOrCreateForNotify(recipientId);
+    if (!settings[category]) {
       return [];
     }
 
-    const pushEnabled = settings?.channels?.push ?? false;
-    const emailEnabled = settings?.channels?.email ?? false;
+    const pushEnabled = settings.channels?.push ?? false;
+    const emailEnabled = settings.channels?.email ?? false;
     return maxChannels.filter((c) =>
       c === 'push' ? pushEnabled : emailEnabled,
     );

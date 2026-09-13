@@ -67,13 +67,27 @@ export class NotificationSettingsService {
   }
 
   // Internal, system-facing lookup for NotificationsService's channel gating —
-  // no ownership check, no upsert (a notification send shouldn't create a
-  // settings row as a side effect). Returns null if the user has never had
-  // one created; the caller applies the schema's own defaults in that case.
-  async getRawForUser(
+  // no ownership check. Auto-creates on first use, same upsert pattern as
+  // getForUser() above, but seeds channels.push true (not the schema's
+  // normal false default) — explicit instruction, 2026-09-13: the first
+  // notification that ever reaches a never-configured user should actually
+  // be deliverable by push, not silently dropped until they open settings
+  // themselves. channels is set as a whole object (not dot-notation) to
+  // avoid a Mongo path-conflict with setDefaultsOnInsert's own handling of
+  // the channels sub-document default.
+  async getOrCreateForNotify(
     userId: string,
-  ): Promise<NotificationSettingDocument | null> {
-    return this.notificationSettingModel.findOne({ user: userId });
+  ): Promise<NotificationSettingDocument> {
+    return this.notificationSettingModel.findOneAndUpdate(
+      { user: userId },
+      {
+        $setOnInsert: {
+          user: new Types.ObjectId(userId),
+          channels: { push: true, email: false },
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
   }
 
   private assertOwnership(requesterId: string, userId: string): void {
