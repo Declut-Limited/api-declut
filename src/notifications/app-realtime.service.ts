@@ -36,13 +36,16 @@ export class AppRealtimeService {
     this.userEventsGateway.emitToUser(sellerId, 'listing:update', body);
   }
 
-  // The "new listing" doorbell — every connected user gets this, not a specific room; browse/nearby/recent feeds use it to show a "new listings available" affordance rather than silently reshuffling.
-  broadcastNewListing(payload: {
-    listingId: string;
-    title: string;
-    price: number;
-    mainImageUrl?: string;
-  }): void {
-    this.userEventsGateway.broadcastAll('listings:new', payload);
+  // The "new listing" doorbell — every connected user gets this except the seller who just created it; browse/nearby/recent feeds use it to show a "new listings available" affordance rather than silently reshuffling.
+  broadcastNewListing(
+    sellerId: string,
+    payload: {
+      listingId: string;
+      title: string;
+      price: number;
+      mainImageUrl?: string;
+    },
+  ): void {
+    this.userEventsGateway.broadcastAll('listings:new', payload, sellerId);
   }
 }

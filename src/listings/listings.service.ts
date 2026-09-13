@@ -119,7 +119,7 @@ export class ListingsService {
       actor: sellerId,
       newState: listing.status,
     });
-    this.appRealtimeService.broadcastNewListing({
+    this.appRealtimeService.broadcastNewListing(sellerId, {
       listingId: listing._id.toString(),
       title: listing.title,
       price: listing.price,

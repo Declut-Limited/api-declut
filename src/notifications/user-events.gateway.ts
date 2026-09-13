@@ -106,11 +106,18 @@ export class UserEventsGateway
     }
   }
 
-  // No room targeting — every connected user gets this (the "new listing" doorbell).
-  broadcastAll(event: string, payload: Record<string, unknown>): void {
+  // Every connected user gets this (the "new listing" doorbell) except the actor themselves, if given — no reason for a "something new just showed up" ping to loop back to whoever just created it.
+  broadcastAll(
+    event: string,
+    payload: Record<string, unknown>,
+    excludeUserId?: string,
+  ): void {
     if (!this.server) return;
     try {
-      this.server.emit(event, payload);
+      const target = excludeUserId
+        ? this.server.except(this.userRoom(excludeUserId))
+        : this.server;
+      target.emit(event, payload);
     } catch (err) {
       this.logger.error(`Failed to broadcast "${event}"`, err as Error);
     }
