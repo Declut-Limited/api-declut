@@ -3,12 +3,16 @@ import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 
 export type TransactionDocument = HydratedDocument<Transaction>;
 
+// STALLED removed 2026-09-13, explicit instruction — a lapsed inspection
+// deadline now auto-cancels and refunds the transaction directly (see
+// sweepEndedInspectionPeriods()) instead of flagging it for manual admin
+// review. DISPUTED is the only status left that adminRelease()/
+// adminRefund() operate on.
 export enum TransactionStatus {
   PENDING_PAYMENT = 'pending_payment',
   ESCROW_ACTIVE = 'escrow_active',
   AWAITING_INSPECTION = 'awaiting_inspection',
   COMPLETED = 'completed',
-  STALLED = 'stalled',
   DISPUTED = 'disputed',
   REFUNDED = 'refunded',
   CANCELLED = 'cancelled',
@@ -124,7 +128,7 @@ export class Transaction {
   @Prop()
   inspectionExtensionEndDate?: Date;
 
-  // Set by the hourly sweep once the effective deadline (inspectionExtensionEndDate if extended, else inspectionDeadlineAt) has passed. Reset back to false by a granted extension so the sweep re-evaluates against the new deadline.
+  // Set by the hourly sweep once the effective deadline (inspectionExtensionEndDate if extended, else inspectionDeadlineAt) has passed. add-inspection-extension refuses once this is true — an extension can only be requested while the window is still open.
   @Prop({ default: false })
   inspectionPeriodEnded: boolean;
 

@@ -11,7 +11,7 @@ export class AppRealtimeService {
     this.userEventsGateway.emitToUser(userId, 'notification', payload);
   }
 
-  // Listing status ping — broadcastPublic:false keeps a transition off the shared listing room (the PAUSED-privacy case: nobody but the owner should ever learn a listing's state changed while it's a private draft).
+  // Listing status ping — broadcastPublic:false keeps a transition off the shared listing room and the global broadcast below (the PAUSED-privacy case: nobody but the owner should ever learn a listing's state changed while it's a private draft).
   emitListingStatusChange(
     listingId: string,
     sellerId: string,
@@ -21,6 +21,8 @@ export class AppRealtimeService {
     const body = { listingId, action: 'status_changed', ...payload };
     if (broadcastPublic) {
       this.userEventsGateway.emitToListing(listingId, 'listing:update', body);
+      // Feed screens (nearby/recent/search) have no per-card room subscription — this is their only signal that a listing they may be showing just changed, so they know to refetch.
+      this.userEventsGateway.broadcastAll('listings:updated', body);
     }
     this.userEventsGateway.emitToUser(sellerId, 'listing:update', body);
   }

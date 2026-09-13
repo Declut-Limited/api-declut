@@ -26,12 +26,19 @@ export class AdminListUsersDto extends PageDto {
   search?: string;
 }
 
+// 'paused' excluded from the allowed values below, 2026-09-13 — a paused
+// listing is a private seller draft, invisible to admin the same way it's
+// invisible to every other non-owner (see ListingStatus.PAUSED). ListingsService.adminList()/adminFindDetail() also unconditionally exclude it, so this is belt-and-suspenders — an explicit ?status=paused now 400s instead of silently returning nothing.
+const ADMIN_VISIBLE_LISTING_STATUSES = Object.values(ListingStatus).filter(
+  (status) => status !== ListingStatus.PAUSED,
+);
+
 export class AdminListListingsDto extends PageDto {
   // 'all' is accepted alongside the real statuses so the client can pass it
   // explicitly rather than needing to know "omit the param" means the same
   // thing — AdminService treats both identically (no filter).
   @IsOptional()
-  @IsIn([...Object.values(ListingStatus), 'all'])
+  @IsIn([...ADMIN_VISIBLE_LISTING_STATUSES, 'all'])
   status?: ListingStatus | 'all';
 
   @IsOptional()
@@ -39,12 +46,12 @@ export class AdminListListingsDto extends PageDto {
   search?: string;
 }
 
+// 'stalled' removed 2026-09-13 — TransactionStatus.STALLED no longer exists, see the Transactions schema.
 const TRANSACTION_TABS = [
   'all',
   'active',
   'completed',
   'disputed',
-  'stalled',
   'refunded',
 ] as const;
 export type TransactionTab = (typeof TRANSACTION_TABS)[number];

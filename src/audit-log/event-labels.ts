@@ -29,10 +29,12 @@ const EVENT_LABELS: Record<string, string> = {
   cancelled_by_buyer: 'Cancelled by buyer',
   admin_released: 'Funds released by admin',
   admin_refunded: 'Refunded by admin',
-  auto_flagged_stalled: 'Automatically flagged as stalled',
   auto_cancelled_abandoned_checkout:
     'Automatically cancelled — checkout abandoned',
+  inspection_extension_requested: 'Requested inspection extension',
   inspection_extended: 'Inspection window extended',
+  inspection_expired_auto_refunded:
+    'Automatically refunded — inspection window expired',
   // code_mismatch_max_attempts: 'Marked as disputed after repeated wrong codes',
   // code_mismatch: 'Wrong confirmation code entered',
 };

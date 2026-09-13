@@ -834,9 +834,12 @@ export class ListingsService {
     return { results, total, page, limit };
   }
 
-  // Unlike search()/findById(), admin visibility includes every status —
-  // an admin investigating a report or a dispute needs to see the listing
-  // regardless of its current lifecycle state.
+  // Unlike search()/findById(), admin visibility includes every status
+  // except paused — an admin investigating a report or a dispute needs to
+  // see the listing regardless of its other lifecycle states, but a paused
+  // listing is a private seller draft, invisible to admin too (2026-09-13,
+  // explicit instruction — narrows the earlier "admin sees everything"
+  // precedent specifically for this one status).
   async adminList(
     page: number,
     limit: number,
@@ -850,7 +853,7 @@ export class ListingsService {
     limit: number;
   }> {
     const filter: Record<string, unknown> = {
-      ...(status ? { status } : {}),
+      status: status ?? { $ne: ListingStatus.PAUSED },
       ...buildDateRangeFilter(dateRange),
     };
     if (search) {
@@ -1112,7 +1115,11 @@ export class ListingsService {
       .findOne(filter)
       .populate('category', CATEGORY_POPULATE_FIELDS)
       .exec();
-    if (!listing) {
+    // Paused is a private seller draft, invisible to admin too (2026-09-13,
+    // explicit instruction) — 404, matching the non-owner-user behavior on
+    // findByIdForDisplay(), rather than exposing that a paused listing
+    // exists at all under this id/slug.
+    if (!listing || listing.status === ListingStatus.PAUSED) {
       throw new NotFoundException('Listing not found');
     }
     const recentActivity = await this.auditLogService.findForEntity(
@@ -1225,6 +1232,7 @@ export class ListingsService {
       type: 'listing_reported',
       title: 'Your listing was reported',
       body: `Your listing "${listing.title}" was reported and is under review.`,
+      data: { listingId: id, title: listing.title },
     });
     this.appRealtimeService.emitListingStatusChange(
       id,
@@ -1356,13 +1364,18 @@ export class ListingsService {
   // id is UsersService's job (see AdminService.getListingsByUser). `status`
   // is optional and only used by the user-facing GET /listings/mine — the
   // admin by-user caller never passes it, so its own "every non-deleted
-  // status" behavior is unchanged.
+  // status" behavior is otherwise unchanged. `excludePaused` is the one
+  // exception: the admin caller passes `true` (paused is a private seller
+  // draft, invisible to admin too, 2026-09-13 explicit instruction) while
+  // GET /listings/mine leaves it `false` — the owner must still see (and
+  // filter to) their own paused drafts.
   async byUser(
     sellerId: string,
     page: number,
     limit: number,
     dateRange: DateRangeDto = {},
     status?: MyListingStatusFilter,
+    excludePaused = false,
   ): Promise<{
     results: Record<string, unknown>[];
     total: number;
@@ -1373,7 +1386,9 @@ export class ListingsService {
       seller: sellerId,
       ...(status
         ? { status: ListingsService.MY_LISTING_STATUS_MAP[status] }
-        : {}),
+        : excludePaused
+          ? { status: { $ne: ListingStatus.PAUSED } }
+          : {}),
       ...buildDateRangeFilter(dateRange),
     };
     const [found, total] = await Promise.all([

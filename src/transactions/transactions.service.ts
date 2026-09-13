@@ -508,13 +508,13 @@ export class TransactionsService {
     return { status: 'completed' };
   }
 
-  // Buyer-initiated, self-serve, one-time. Only usable once the original
-  // inspection window has actually ended (inspectionPeriodEnded, set by
-  // sweepEndedInspectionPeriods() above) — a buyer can't pre-emptively grab
-  // extra time while their original window still has days left.
-  // allowExtension is the admin's own on/off switch for the whole feature,
-  // checked here on every request regardless of how it got to
-  // inspectionPeriodEnded in the first place.
+  // Buyer-initiated, self-serve, one-time. Must be requested WHILE the
+  // original inspection window is still open (inspectionPeriodEnded still
+  // false, inspectionDeadlineAt still has days left) — corrected 2026-09-13,
+  // this is the inverse of an earlier pass, which wrongly required the
+  // window to have already ended. allowExtension (the admin's own on/off
+  // switch for the whole feature) is checked first, before either
+  // per-transaction condition.
   async addInspectionExtension(transactionId: string, buyerId: string) {
     const transaction = await this.findRaw(transactionId);
     if (transaction.buyer.toString() !== buyerId) {
@@ -532,21 +532,21 @@ export class TransactionsService {
         'Inspection has already been resolved for this transaction',
       );
     }
-    if (transaction.inspectionExtended) {
-      throw new BadRequestException(
-        'You have already used your one-time inspection extension for this transaction',
-      );
-    }
-    if (!transaction.inspectionPeriodEnded) {
-      throw new BadRequestException(
-        'You can only request an extension after your inspection window has ended',
-      );
-    }
 
     const { inspectionWindow } = await this.settingsService.get();
     if (!inspectionWindow.allowExtension) {
       throw new BadRequestException(
         'Inspection extensions are currently disabled',
+      );
+    }
+    if (transaction.inspectionExtended) {
+      throw new BadRequestException(
+        'You have already used your one-time inspection extension for this transaction',
+      );
+    }
+    if (transaction.inspectionPeriodEnded) {
+      throw new BadRequestException(
+        'Your inspection window has already ended — an extension can no longer be requested',
       );
     }
 
@@ -556,11 +556,18 @@ export class TransactionsService {
         inspectionWindow.maxExtensionPeriod * 24 * 60 * 60 * 1000,
     );
 
+    await this.audit(
+      transactionId,
+      'inspection_extension_requested',
+      buyerId,
+      'not_extended',
+      'not_extended',
+      { requestedByDays: inspectionWindow.maxExtensionPeriod },
+    );
+
     transaction.inspectionExtended = true;
     transaction.inspectionExtendedBy = inspectionWindow.maxExtensionPeriod;
     transaction.inspectionExtensionEndDate = extensionEndDate;
-    // Reset so sweepEndedInspectionPeriods() re-evaluates against the new, later deadline instead of treating this transaction as already ended.
-    transaction.inspectionPeriodEnded = false;
     await transaction.save();
 
     await this.audit(
@@ -1027,13 +1034,9 @@ export class TransactionsService {
   // Money moves automatically only on the unambiguous "correct code entered" case (confirmCode()) — everything else requires this explicit admin action, per CLAUDE.md's transaction state machine step 8.
   async adminRelease(transactionId: string, adminId: string) {
     const transaction = await this.findRaw(transactionId);
-    if (
-      ![TransactionStatus.STALLED, TransactionStatus.DISPUTED].includes(
-        transaction.status,
-      )
-    ) {
+    if (transaction.status !== TransactionStatus.DISPUTED) {
       throw new BadRequestException(
-        `Transaction is ${transaction.status} — admin release only applies to stalled or disputed transactions`,
+        `Transaction is ${transaction.status} — admin release only applies to disputed transactions`,
       );
     }
 
@@ -1122,13 +1125,9 @@ export class TransactionsService {
 
   async adminRefund(transactionId: string, adminId: string, reason?: string) {
     const transaction = await this.findRaw(transactionId);
-    if (
-      ![TransactionStatus.STALLED, TransactionStatus.DISPUTED].includes(
-        transaction.status,
-      )
-    ) {
+    if (transaction.status !== TransactionStatus.DISPUTED) {
       throw new BadRequestException(
-        `Transaction is ${transaction.status} — admin refund only applies to stalled or disputed transactions`,
+        `Transaction is ${transaction.status} — admin refund only applies to disputed transactions`,
       );
     }
 
@@ -1184,112 +1183,118 @@ export class TransactionsService {
     return this.toAdminResponseShape(transaction);
   }
 
-  // Runs hourly rather than daily — checking more often just means a stalled transaction gets flagged closer to the actual threshold instead of up to a day late.
-  // Judgment call, flagged: while an extension is still available to a transaction (allowExtension is on and it hasn't used its one-time extension yet), this sweep no longer stalls it at inspectionDeadlineAt — sweepEndedInspectionPeriods() below marks inspectionPeriodEnded instead, giving the buyer a window to add-inspection-extension first. Only an already-extended transaction (checked against its own inspectionExtensionEndDate) or one with no extension available at all can still land here. There's currently no further timeout for a transaction that reaches inspectionPeriodEnded and simply never requests an extension — it stays escrow_active/inspectionPeriodEnded indefinitely in that case, which wasn't specified either way.
-  @Cron(CronExpression.EVERY_HOUR)
-  async sweepStalledTransactions(): Promise<void> {
-    const { inspectionWindow } = await this.settingsService.get();
-    const now = new Date();
-
-    const deadlineFilter = inspectionWindow.allowExtension
-      ? {
-          inspectionExtended: true,
-          inspectionExtensionEndDate: { $lte: now },
-        }
-      : { inspectionDeadlineAt: { $lte: now } };
-
-    const stale = await this.transactionModel.find({
-      status: {
-        $in: [
-          TransactionStatus.ESCROW_ACTIVE,
-          TransactionStatus.AWAITING_INSPECTION,
-        ],
-      },
-      ...deadlineFilter,
-    });
-
-    for (const transaction of stale) {
-      const oldStatus = transaction.status;
-      transaction.status = TransactionStatus.STALLED;
-      await transaction.save();
-      await this.audit(
-        transaction._id.toString(),
-        'auto_flagged_stalled',
-        'system',
-        oldStatus,
-        TransactionStatus.STALLED,
-        { thresholdDays: inspectionWindow.inspectionPeriod },
-      );
-
-      await Promise.all([
-        this.notificationsService.notify({
-          recipientType: NotificationRecipientType.USER,
-          recipientId: transaction.buyer.toString(),
-          type: 'transaction_stalled',
-          title: 'Transaction stalled',
-          body: 'This transaction has been inactive too long and was flagged for review.',
-          data: { transactionId: transaction._id.toString() },
-        }),
-        this.notificationsService.notify({
-          recipientType: NotificationRecipientType.USER,
-          recipientId: transaction.seller.toString(),
-          type: 'transaction_stalled',
-          title: 'Transaction stalled',
-          body: 'This transaction has been inactive too long and was flagged for review.',
-          data: { transactionId: transaction._id.toString() },
-        }),
-      ]);
-    }
-
-    if (stale.length > 0) {
-      this.logger.log(`Flagged ${stale.length} transaction(s) as stalled`);
-    }
-  }
-
-  // Runs hourly, same cadence as the sweep above. Watches escrow_active
-  // transactions still awaiting inspection and marks inspectionPeriodEnded
-  // once the effective deadline passes — inspectionExtensionEndDate if the
-  // buyer already used their extension, otherwise the original
-  // inspectionDeadlineAt. This is a warning flag, not a status change: it's
-  // what makes a transaction eligible for addInspectionExtension(), and
-  // it's what sweepStalledTransactions() above now waits for (via its own
-  // allowExtension-aware query) before actually stalling an extended
-  // transaction. Two plain updateMany() calls rather than a per-document
-  // loop — nothing here needs a save-triggered side effect per row.
+  // Runs hourly. Watches escrow_active transactions still awaiting
+  // inspection and, once the effective deadline passes
+  // (inspectionExtensionEndDate if the buyer used their one-time extension,
+  // otherwise the original inspectionDeadlineAt), automatically cancels and
+  // refunds the buyer — explicit instruction, 2026-09-13, replacing the
+  // earlier design where a lapsed deadline just flagged the transaction
+  // STALLED for manual admin review. STALLED no longer exists as a status
+  // at all (see TransactionStatus/adminRelease()/adminRefund() above) — a
+  // failed Paystack refund attempt here is logged and simply retried on the
+  // next hourly run (inspectionPeriodEnded is only committed once the
+  // refund actually succeeds), there's no separate admin-review fallback.
   @Cron(CronExpression.EVERY_HOUR)
   async sweepEndedInspectionPeriods(): Promise<void> {
     const now = new Date();
 
-    const [notExtended, extended] = await Promise.all([
-      this.transactionModel.updateMany(
-        {
-          status: TransactionStatus.ESCROW_ACTIVE,
-          inspectionStatus: InspectionStatus.AWAITING,
-          inspectionPeriodEnded: false,
-          inspectionExtended: false,
-          inspectionDeadlineAt: { $lte: now },
-        },
-        { $set: { inspectionPeriodEnded: true } },
-      ),
-      this.transactionModel.updateMany(
-        {
-          status: TransactionStatus.ESCROW_ACTIVE,
-          inspectionStatus: InspectionStatus.AWAITING,
-          inspectionPeriodEnded: false,
-          inspectionExtended: true,
-          inspectionExtensionEndDate: { $lte: now },
-        },
-        { $set: { inspectionPeriodEnded: true } },
-      ),
-    ]);
+    const candidates = await this.transactionModel.find({
+      status: TransactionStatus.ESCROW_ACTIVE,
+      inspectionStatus: InspectionStatus.AWAITING,
+      inspectionPeriodEnded: false,
+      $or: [
+        { inspectionExtended: false, inspectionDeadlineAt: { $lte: now } },
+        { inspectionExtended: true, inspectionExtensionEndDate: { $lte: now } },
+      ],
+    });
 
-    const total =
-      (notExtended.modifiedCount ?? 0) + (extended.modifiedCount ?? 0);
-    if (total > 0) {
+    let refunded = 0;
+    for (const transaction of candidates) {
+      try {
+        await this.autoRefundExpiredInspection(transaction);
+        refunded++;
+      } catch (err) {
+        this.logger.error(
+          `[inspection-expired] auto-refund failed for transaction=${transaction._id.toString()} — will retry on the next sweep`,
+          err as Error,
+        );
+      }
+    }
+
+    if (refunded > 0) {
       this.logger.log(
-        `Marked ${total} transaction(s) inspection period as ended`,
+        `Auto-refunded ${refunded} transaction(s) whose inspection window expired`,
       );
     }
+  }
+
+  // Same fixed 10% fee as cancelPurchaseWithRefund() — the buyer simply
+  // never confirmed receipt in time, Declut isn't refunding its own cut.
+  // Transaction.status -> CANCELLED, not REFUNDED — explicit instruction:
+  // the buyer never requested this, the system auto-cancelled it for lost
+  // interest, so it's meant to read differently from a buyer-requested
+  // refund even though money moves the same way. Paystack call before the
+  // local write, same ordering rule as everywhere else in this module.
+  private async autoRefundExpiredInspection(
+    transaction: TransactionDocument,
+  ): Promise<void> {
+    const transactionId = transaction._id.toString();
+
+    const rawFee = (transaction.amount * CANCELLATION_FEE_PERCENTAGE) / 100;
+    const commissionAmount = Math.round(rawFee * 100) / 100;
+    const refundAmount =
+      Math.round((transaction.amount - commissionAmount) * 100) / 100;
+
+    await this.paystackService.refund(
+      transaction.reference,
+      Math.round(refundAmount * 100),
+    );
+
+    const oldStatus = transaction.status;
+    transaction.status = TransactionStatus.CANCELLED;
+    transaction.inspectionStatus = InspectionStatus.FAILED;
+    transaction.commissionAmount = commissionAmount;
+    transaction.inspectionPeriodEnded = true;
+    await transaction.save();
+
+    await this.escrowService.updateStatusForTransaction(
+      transactionId,
+      EscrowStatus.REFUNDED,
+    );
+    await this.listingsService.revertToActive(transaction.listing.toString());
+
+    await this.audit(
+      transactionId,
+      'inspection_expired_auto_refunded',
+      'system',
+      oldStatus,
+      TransactionStatus.CANCELLED,
+      { commissionAmount, refundAmount },
+    );
+
+    await Promise.all([
+      this.trustScoreService.recalculate(transaction.buyer.toString()),
+      this.trustScoreService.recalculate(transaction.seller.toString()),
+    ]);
+
+    await Promise.all([
+      this.notificationsService.notify({
+        recipientType: NotificationRecipientType.USER,
+        recipientId: transaction.buyer.toString(),
+        type: 'inspection_expired_refunded',
+        title: 'Inspection window expired',
+        body: `You didn't confirm receipt in time, so the purchase was cancelled — ₦${refundAmount.toLocaleString()} has been refunded to you.`,
+        data: { transactionId },
+      }),
+      this.notificationsService.notify({
+        recipientType: NotificationRecipientType.USER,
+        recipientId: transaction.seller.toString(),
+        type: 'inspection_expired_refunded',
+        title: 'Inspection window expired',
+        body: 'The buyer never confirmed receipt within the inspection window — the sale was automatically cancelled and refunded.',
+        data: { transactionId },
+      }),
+    ]);
   }
 
   // Runs hourly. An abandoned checkout (WebView closed without paying, app killed mid-flow)
@@ -1536,23 +1541,16 @@ export class TransactionsService {
     return { completed: r?.completed ?? 0, total: r?.total ?? 0 };
   }
 
-  // Live count of disputed/stalled transactions, split by whether they've sat untouched past the SLA cutoff — reuses inspectionWindow.inspectionPeriod as the SLA proxy (no dedicated "dispute SLA" setting exists yet, judgment call, flagged) via updatedAt (same proxy-timestamp caveat as getRevenueTrends).
+  // Live count of disputed transactions, split by whether they've sat untouched past the SLA cutoff — reuses inspectionWindow.inspectionPeriod as the SLA proxy (no dedicated "dispute SLA" setting exists yet, judgment call, flagged) via updatedAt (same proxy-timestamp caveat as getRevenueTrends). Used to also cover STALLED (removed 2026-09-13 — see TransactionStatus) — that count was already unused by getDashboardInsights() below even before the status itself was removed.
   private async summarizeAttentionStates(slaCutoff: Date) {
     const rows = await this.transactionModel.aggregate<{
-      _id: TransactionStatus;
       total: number;
       breaching: number;
     }>([
-      {
-        $match: {
-          status: {
-            $in: [TransactionStatus.DISPUTED, TransactionStatus.STALLED],
-          },
-        },
-      },
+      { $match: { status: TransactionStatus.DISPUTED } },
       {
         $group: {
-          _id: '$status',
+          _id: null,
           total: { $sum: 1 },
           breaching: {
             $sum: { $cond: [{ $lte: ['$updatedAt', slaCutoff] }, 1, 0] },
@@ -1560,12 +1558,7 @@ export class TransactionsService {
         },
       },
     ]);
-    const find = (status: TransactionStatus) =>
-      rows.find((r) => r._id === status) ?? { total: 0, breaching: 0 };
-    return {
-      disputed: find(TransactionStatus.DISPUTED),
-      stalled: find(TransactionStatus.STALLED),
-    };
+    return { disputed: rows[0] ?? { total: 0, breaching: 0 } };
   }
 
   // Backs 6 of the admin Dashboard's 8 "insights" cards — each returned as {value, extra}. See AdminService.getDashboardInsights() for the other 2 cards (numberOfUsers/newListings) and the filter/prior-period math. Reworked 2026-08-26 for the new 8-card set (Revenue/Escrow Balance/Transaction Today/Pending Inspections/Open Disputes/Completed Transactions here; avgOrderValue and stalledTransactions dropped — no longer part of the card set). escrowBalance/pendingInspections/openDisputes stay live, filter-independent snapshots ("what needs my attention right now") — same reasoning already established for the old disputed/stalled cards; revenue/transactionsToday/completedTransactions.value scope to the selected filter period.

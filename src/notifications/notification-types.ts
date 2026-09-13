@@ -71,8 +71,8 @@ export const NOTIFICATION_TYPES = {
       [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
     },
   },
-  transaction_stalled: {
-    label: 'Transaction stalled',
+  inspection_expired_refunded: {
+    label: 'Inspection window expired — auto-refunded',
     channels: {
       [NotificationRecipientType.USER]: [
         'push',
@@ -159,7 +159,7 @@ export const NOTIFICATION_SETTING_CATEGORY: Partial<
 > = {
   payment_received: 'paymentAndEscrowUpdates',
   funds_released: 'paymentAndEscrowUpdates',
-  transaction_stalled: 'transactionUpdates',
+  inspection_expired_refunded: 'paymentAndEscrowUpdates',
   listing_unavailable_after_payment: 'disputeUpdates',
   admin_released: 'disputeUpdates',
   admin_refunded: 'disputeUpdates',

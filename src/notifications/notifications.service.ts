@@ -178,12 +178,13 @@ export class NotificationsService {
     }
 
     // Personal-channel echo for User recipients — fires regardless of the push/email gating above, since a live in-app update isn't the interruptive kind of delivery those toggles are meant to silence.
+    // `message`, not `body` — matches the mobile team's realtime contract; the REST inbox (GET /notifications) and the stored Notification document are untouched and still use `body`.
     if (params.recipientType === NotificationRecipientType.USER) {
       this.appRealtimeService.echoNotification(params.recipientId, {
         id: doc._id.toString(),
         type: params.type,
         title: params.title,
-        body: params.body,
+        message: params.body,
         data: params.data,
         channels: channelUpdate,
         read: false,

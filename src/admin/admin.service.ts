@@ -402,6 +402,8 @@ export class AdminService {
       page,
       limit,
       dateRange,
+      undefined,
+      true, // excludePaused — a paused listing is a private seller draft, invisible to admin too
     );
   }
 
@@ -416,7 +418,6 @@ export class AdminService {
     ],
     completed: [TransactionStatus.COMPLETED],
     disputed: [TransactionStatus.DISPUTED],
-    stalled: [TransactionStatus.STALLED],
     refunded: [TransactionStatus.REFUNDED, TransactionStatus.CANCELLED],
   };
 

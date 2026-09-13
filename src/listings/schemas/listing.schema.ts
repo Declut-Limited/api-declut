@@ -14,9 +14,7 @@ export enum ListingStatus {
   REPORTED = 'reported',
   SOLD = 'sold',
   DELISTED = 'delisted',
-  // Owner-only draft state — visible on GET /listings/mine to its owner and
-  // nowhere else (not discovery feeds, not the direct detail view to anyone
-  // else, not even by direct link/slug). See ListingsService.pause()/resume().
+  // Owner-only draft state — visible on GET /listings/mine to its owner and nowhere else: not discovery feeds, not the direct detail view to anyone else, not even by direct link/slug, and (confirmed 2026-09-13, resolving an earlier flagged ambiguity) not to admin either. See ListingsService.pause()/resume().
   PAUSED = 'paused',
 }
 
