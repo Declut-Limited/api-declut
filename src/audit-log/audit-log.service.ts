@@ -67,6 +67,29 @@ export class AuditLogService {
       .exec();
   }
 
+  // Full chronological (oldest-first) timeline for one entity — backs a
+  // "progress"/history view on the entity's own detail response, unlike
+  // findForEntity() above (newest-first, capped) which backs a "recent
+  // activity" panel elsewhere. No limit: an individual entity's own event
+  // count is small and bounded (a handful of lifecycle transitions), unlike
+  // the admin-wide activity log.
+  async findTimelineForEntity(
+    entityType: string,
+    entityId: string,
+  ): Promise<Record<string, unknown>[]> {
+    const entries = await this.auditLogModel
+      .find({ entityType, entityId })
+      .sort({ createdAt: 1 })
+      .exec();
+    return entries.map((entry) => ({
+      event: entry.event,
+      label: describeEvent(entry.event),
+      oldState: entry.oldState,
+      newState: entry.newState,
+      createdAt: entry.createdAt,
+    }));
+  }
+
   // Backs the admin Activity Log page — every event across every entity
   // type, newest first, optionally narrowed to one entityType.
   async list(

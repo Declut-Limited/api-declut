@@ -1788,7 +1788,7 @@
                     "{{transactionId}}"
                   ]
                 },
-                "description": ""
+                "description": "Response now includes progress: the transaction's own full audit-log timeline, oldest-first, each entry {event, label, oldState, newState, createdAt} — backs a progress/timeline UI. Buyer-or-seller ownership enforced (403 otherwise)."
               },
               "response": []
             },

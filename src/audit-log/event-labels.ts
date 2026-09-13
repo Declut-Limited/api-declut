@@ -22,12 +22,16 @@ const EVENT_LABELS: Record<string, string> = {
   'review.resolved': 'Review flag resolved',
   checkout_initiated: 'Checkout initiated',
   payment_amount_mismatch: 'Payment amount mismatch detected',
+  listing_unavailable_after_payment: 'Listing became unavailable after payment',
   escrow_held: 'Funds held in escrow',
   funds_released: 'Funds released to seller',
+  buyer_cancelled_with_refund: 'Cancelled by buyer with refund',
   cancelled_by_buyer: 'Cancelled by buyer',
   admin_released: 'Funds released by admin',
   admin_refunded: 'Refunded by admin',
   auto_flagged_stalled: 'Automatically flagged as stalled',
+  auto_cancelled_abandoned_checkout:
+    'Automatically cancelled — checkout abandoned',
   code_mismatch_max_attempts: 'Marked as disputed after repeated wrong codes',
   code_mismatch: 'Wrong confirmation code entered',
 };

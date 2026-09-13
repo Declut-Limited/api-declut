@@ -664,6 +664,12 @@ export class TransactionsService {
     return transaction ? { sellerId: transaction.seller.toString() } : null;
   }
 
+  // findForUser() (called above) already enforces the buyer-or-seller
+  // ownership check — see its ForbiddenException. `progress` is the
+  // transaction's own full audit-log timeline (oldest-first, readable
+  // labels) — detail-view-only, not added to toResponseShape() itself,
+  // since that's shared by list endpoints (GET /transactions, /purchases)
+  // where fetching a timeline per row would be an N+1 query.
   async findForUserDisplay(transactionId: string, userId: string) {
     const transaction = await this.findForUser(transactionId, userId);
     await transaction.populate([
@@ -671,7 +677,12 @@ export class TransactionsService {
       { path: 'seller', select: PARTY_POPULATE_FIELDS },
       { path: 'listing', select: LISTING_POPULATE_FIELDS },
     ]);
-    return this.toResponseShape(transaction, userId);
+    const shaped = this.toResponseShape(transaction, userId);
+    shaped.progress = await this.auditLogService.findTimelineForEntity(
+      'transaction',
+      transactionId,
+    );
+    return shaped;
   }
 
   // Looked up by the Paystack `reference` Paystack itself appends to callback_url (?reference=...)
