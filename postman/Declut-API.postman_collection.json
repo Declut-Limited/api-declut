@@ -1825,6 +1825,38 @@
               ]
             },
             {
+              "name": "request-extension",
+              "description": "",
+              "item": [
+                {
+                  "name": "Request inspection extension",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{accessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/transactions/{{transactionId}}/request-extension",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "transactions",
+                        "{{transactionId}}",
+                        "request-extension"
+                      ]
+                    },
+                    "description": "Buyer-only, one-time. Only usable once the inspection window has already ended (inspectionPeriodEnded, set by an hourly sweep) and only while the admin's inspectionWindow.allowExtension setting is on. Extends by inspectionWindow.maxExtensionPeriod days from the original inspectionDeadlineAt."
+                  },
+                  "response": []
+                }
+              ]
+            },
+            {
               "name": "cancel",
               "description": "",
               "item": [

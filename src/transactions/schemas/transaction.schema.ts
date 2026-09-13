@@ -17,11 +17,14 @@ export enum TransactionStatus {
 // Escrow itself (id/status/money-holding) lives in its own Escrow
 // collection (schemas/escrow.schema.ts) — a Transaction is not an Escrow,
 // it's the record an Escrow gets created from once payment is verified.
+// Narrowed to exactly these 3 values 2026-09-13, explicit instruction ("no
+// more no less") — REFUNDED/DISPUTED collapsed into FAILED, since from the
+// inspection's own point of view both used to mean the same thing: the
+// inspection never reached a normal completion.
 export enum InspectionStatus {
   AWAITING = 'awaiting',
   COMPLETED = 'completed',
-  REFUNDED = 'refunded',
-  DISPUTED = 'disputed',
+  FAILED = 'failed',
 }
 
 @Schema({ timestamps: true })
@@ -108,6 +111,22 @@ export class Transaction {
   // Set once, when escrow becomes active — now + inspectionWindow.inspectionPeriod at that moment. A snapshot for display, not re-derived live, so a later admin change to the platform-wide setting doesn't retroactively move an in-flight transaction's deadline.
   @Prop()
   inspectionDeadlineAt?: Date;
+
+  // Whether the buyer has used their one-time inspection extension — once true, add-inspection-extension refuses a second one.
+  @Prop({ default: false })
+  inspectionExtended: boolean;
+
+  // Snapshotted from AppSettings.inspectionWindow.maxExtensionPeriod at the moment the extension was granted, in days.
+  @Prop()
+  inspectionExtendedBy?: number;
+
+  // inspectionDeadlineAt + inspectionExtendedBy days — the real deadline once extended, set only by a successful add-inspection-extension call.
+  @Prop()
+  inspectionExtensionEndDate?: Date;
+
+  // Set by the hourly sweep once the effective deadline (inspectionExtensionEndDate if extended, else inspectionDeadlineAt) has passed. Reset back to false by a granted extension so the sweep re-evaluates against the new deadline.
+  @Prop({ default: false })
+  inspectionPeriodEnded: boolean;
 
   createdAt: Date;
   updatedAt: Date;

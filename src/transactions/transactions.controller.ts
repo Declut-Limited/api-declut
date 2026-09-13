@@ -128,6 +128,18 @@ export class TransactionsController {
     return this.transactionsService.confirmReceipt(id, user.sub);
   }
 
+  // Buyer-only, one-time — only usable once the inspection window has
+  // already ended (inspectionPeriodEnded), and only while the admin's
+  // inspectionWindow.allowExtension setting is on.
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/add-inspection-extension')
+  addInspectionExtension(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param('id') id: string,
+  ) {
+    return this.transactionsService.addInspectionExtension(id, user.sub);
+  }
+
   @UseGuards(JwtAuthGuard)
   @Patch(':id/cancel')
   cancel(@CurrentUser() user: AccessTokenPayload, @Param('id') id: string) {

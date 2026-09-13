@@ -32,8 +32,9 @@ const EVENT_LABELS: Record<string, string> = {
   auto_flagged_stalled: 'Automatically flagged as stalled',
   auto_cancelled_abandoned_checkout:
     'Automatically cancelled — checkout abandoned',
-  code_mismatch_max_attempts: 'Marked as disputed after repeated wrong codes',
-  code_mismatch: 'Wrong confirmation code entered',
+  inspection_extended: 'Inspection window extended',
+  // code_mismatch_max_attempts: 'Marked as disputed after repeated wrong codes',
+  // code_mismatch: 'Wrong confirmation code entered',
 };
 
 export function describeEvent(event: string): string {

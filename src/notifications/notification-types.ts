@@ -121,6 +121,16 @@ export const NOTIFICATION_TYPES = {
       [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
     },
   },
+  inspection_extended: {
+    label: 'Inspection window extended',
+    channels: {
+      [NotificationRecipientType.USER]: [
+        'push',
+        'email',
+      ] as NotificationChannel[],
+      [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
+    },
+  },
 } as const;
 
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;
@@ -157,4 +167,5 @@ export const NOTIFICATION_SETTING_CATEGORY: Partial<
   // stalled/disputed) transaction — the buyer just changed their mind — so
   // it's a payment-lifecycle event, not a dispute one.
   purchase_cancelled_refunded: 'paymentAndEscrowUpdates',
+  inspection_extended: 'inspectionReminders',
 };
