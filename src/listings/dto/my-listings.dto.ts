@@ -9,7 +9,8 @@ export const MY_LISTING_STATUS_FILTERS = [
   'pending_sale',
   'sold',
   'reported',
-  'paused'
+  'paused',
+  'delisted',
 ] as const;
 export type MyListingStatusFilter = (typeof MY_LISTING_STATUS_FILTERS)[number];
 

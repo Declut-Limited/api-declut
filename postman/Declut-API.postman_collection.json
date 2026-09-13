@@ -1175,11 +1175,11 @@
                   "key": "status",
                   "value": "active",
                   "disabled": true,
-                  "description": "One of active|pending_sale|sold|reported|paused. 'reported' means the listing was reported (via POST /reports, or an admin's direct action). 'paused' is a private draft only the owner can see. Omit for every status."
+                  "description": "One of active|pending_sale|sold|reported|paused|delisted. 'reported' means the listing was reported (via POST /reports, or an admin's direct action). 'paused' is a private draft only the owner can see. 'delisted' added 2026-09-13. Omit for every status."
                 }
               ]
             },
-            "description": "The caller's own listings, paginated, newest first. Optionally filter by status (active/pending_sale/sold/reported) — omit for any status except deleted."
+            "description": "The caller's own listings, paginated, newest first. Optionally filter by status (active/pending_sale/sold/reported/paused/delisted) — omit for any status except deleted."
           },
           "response": []
         },
@@ -1825,11 +1825,11 @@
               ]
             },
             {
-              "name": "request-extension",
+              "name": "add-inspection-extension",
               "description": "",
               "item": [
                 {
-                  "name": "Request inspection extension",
+                  "name": "Add inspection extension",
                   "request": {
                     "method": "POST",
                     "header": [
@@ -1840,17 +1840,17 @@
                       }
                     ],
                     "url": {
-                      "raw": "{{baseUrl}}/transactions/{{transactionId}}/request-extension",
+                      "raw": "{{baseUrl}}/transactions/{{transactionId}}/add-inspection-extension",
                       "host": [
                         "{{baseUrl}}"
                       ],
                       "path": [
                         "transactions",
                         "{{transactionId}}",
-                        "request-extension"
+                        "add-inspection-extension"
                       ]
                     },
-                    "description": "Buyer-only, one-time. Only usable once the inspection window has already ended (inspectionPeriodEnded, set by an hourly sweep) and only while the admin's inspectionWindow.allowExtension setting is on. Extends by inspectionWindow.maxExtensionPeriod days from the original inspectionDeadlineAt."
+                    "description": "Buyer-only, one-time. Must be requested WHILE the inspection window is still open (inspectionPeriodEnded still false, inspectionDeadlineAt still has days left) — requesting after the window has ended 400s. Also requires inspectionWindow.allowExtension to be on. Extends by inspectionWindow.maxExtensionPeriod days from the original inspectionDeadlineAt. If the window lapses without confirmation (extended or not), the transaction is automatically cancelled and refunded (minus a 10% fee) — see the cancel-purchase request's sibling behavior."
                   },
                   "response": []
                 }
@@ -2950,7 +2950,7 @@
                         "transaction-breakdown"
                       ]
                     },
-                    "description": "All-time donut data. total = completed + awaitingInspection + disputed + cancelled counts (pending_payment/escrow_active/stalled/refunded are excluded — still in-progress or already surfaced elsewhere). Each of the 4 buckets: { count, percentage } (percentage is share of total, one decimal)."
+                    "description": "All-time donut data. total = completed + awaitingInspection + disputed + cancelled counts (pending_payment/escrow_active/refunded are excluded — still in-progress or already surfaced elsewhere). Each of the 4 buckets: { count, percentage } (percentage is share of total, one decimal)."
                   },
                   "response": []
                 }
@@ -3279,7 +3279,7 @@
                       "key": "status",
                       "value": "all",
                       "disabled": false,
-                      "description": "active, sold, reported, paused, delisted, or all. Omitting this (or passing all) returns every status."
+                      "description": "active, sold, reported, delisted, or all — paused is not an accepted value (400s), a paused listing is invisible to admin."
                     },
                     {
                       "key": "search",
@@ -3301,7 +3301,7 @@
                     }
                   ]
                 },
-                "description": "status accepts 'all' alongside the real statuses (active/sold/reported/paused/delisted). Lean row shape — no location, views, saves, priceHistory, or condition (detail-view-only fields); category is trimmed to {_id, title} (no slug), seller to {_id, name, company}. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
+                "description": "status accepts 'all' alongside the real statuses (active/sold/reported/delisted) — paused excluded entirely as of 2026-09-13 (a paused listing is invisible to admin too, see ListingStatus.PAUSED). Lean row shape — no location, views, saves, priceHistory, or condition (detail-view-only fields); category is trimmed to {_id, title} (no slug), seller to {_id, name, company}. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
               },
               "response": []
             },
@@ -3391,7 +3391,7 @@
                             "{{listingId}}"
                           ]
                         },
-                        "description": "Same rich detail shape as Get listing by slug — seller info, specs + condition, price history, last-3 activity log entries, location (GeoJSON Point) and locationLabel."
+                        "description": "Same rich detail shape as Get listing by slug — seller info, specs + condition, price history, last-3 activity log entries, location (GeoJSON Point) and locationLabel. 404s if the listing is paused (2026-09-13) — invisible to admin, same as a nonexistent listing."
                       },
                       "response": []
                     }
@@ -3425,7 +3425,7 @@
                         "{{listingSlug}}"
                       ]
                     },
-                    "description": "Rich detail: seller info, specs + condition, price history, last-3 activity log entries, location (GeoJSON Point) and locationLabel."
+                    "description": "Rich detail: seller info, specs + condition, price history, last-3 activity log entries, location (GeoJSON Point) and locationLabel. 404s if the listing is paused (2026-09-13) — invisible to admin, same as a nonexistent listing."
                   },
                   "response": []
                 }
@@ -3488,7 +3488,7 @@
                             }
                           ]
                         },
-                        "description": "idOrSlug accepts either a raw user id or a USR-#### slug. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
+                        "description": "idOrSlug accepts either a raw user id or a USR-#### slug. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate). Paused listings are excluded from this seller's results (2026-09-13) — a paused listing is a private draft, invisible to admin the same way it is to any other non-owner."
                       },
                       "response": []
                     }
@@ -3809,7 +3809,7 @@
                     }
                   ]
                 },
-                "description": "tab groups related statuses (active/completed/disputed/stalled/refunded); status is an exact single-status override, taking precedence over tab. Get-by-id and get-by-reference were removed 2026-08-28 (explicit instruction) — list is the only transaction read endpoint now; release/refund were already deferred. escrow is now populated ({_id, status}) on each row, and EscrowStatus gained FROZEN (held/refunded/released/frozen). startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
+                "description": "tab groups related statuses (active/completed/disputed/refunded) — stalled removed 2026-09-13, TransactionStatus.STALLED no longer exists; status is an exact single-status override, taking precedence over tab. Get-by-id and get-by-reference were removed 2026-08-28 (explicit instruction) — list is the only transaction read endpoint now; release/refund were already deferred. escrow is now populated ({_id, status}) on each row, and EscrowStatus gained FROZEN (held/refunded/released/frozen). startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
               },
               "response": []
             }

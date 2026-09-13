@@ -1358,6 +1358,7 @@ export class ListingsService {
     sold: ListingStatus.SOLD,
     reported: ListingStatus.REPORTED,
     paused: ListingStatus.PAUSED,
+    delisted: ListingStatus.DELISTED,
   };
 
   // Takes an already-resolved seller id — resolving a USR-#### slug to an
