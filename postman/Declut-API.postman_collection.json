@@ -2627,6 +2627,31 @@
           ]
         },
         {
+          "name": "listings",
+          "item": [
+            {
+              "name": "Get listing by slug",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/listings/public/{{listingSlug}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "listings",
+                    "public",
+                    "{{listingSlug}}"
+                  ]
+                },
+                "description": "Public, unauthenticated, by slug only — for a Next.js server-side metadata/OG-tag fetch on a listing's share link. Lean shape: {_id, title, description, mainImageUrl}, more fields to come later. A paused listing 404s (it's a private draft, invisible to everyone but its owner, and there's no requester here to except)."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
           "name": "waitlist",
           "description": "",
           "item": [
@@ -3793,7 +3818,7 @@
                       "key": "tab",
                       "value": "active",
                       "disabled": true,
-                      "description": "Grouped tab filter — all, active, completed, disputed, stalled, or refunded (refunded also folds in cancelled). Ignored if status is given."
+                      "description": "Grouped tab filter — all, active, completed, disputed, or refunded (refunded also folds in cancelled). Ignored if status is given."
                     },
                     {
                       "key": "startDate",
@@ -3835,7 +3860,34 @@
                     "{{transactionId}}"
                   ]
                 },
-                "description": "Resolves by raw id or by the human reference (TXN-YYYY-#####) — Transactions have no separate slug field, the reference already fills that role. Adds, beyond the list shape: listing further populated (images, video, category {_id,title}, brand, condition, price, description, slug, status, createdAt, hasDefect, defectDescription, location, locationLabel, address); escrow further populated (slug, createdAt, amount); gateway/paymentMethod/gatewayProcessingFee (renamed from paystackFee); activityLog (full AuditLog timeline, oldest-first, with resolved actor + metadata — unlike the buyer/seller-facing progress field, nothing is hidden here); communicationLog (every real push/email actually sent for this transaction, one row per recipient per channel — never collapsed into a single 'both' row, since buyer/seller wording usually differs; no SMS, this app has no SMS gateway); transactionNotes (admin-only internal notes, newest first); inspectionReminderCount (null if the buyer's inspectionReminders setting is off, a real count otherwise); insights ({transactionAmount, escrowAmount, transactionDuration (human string), currentStage}). currentStage judgment call: 'payment secured' and 'seller notified' happen in the same synchronous webhook call, so they're not independently observable — both report as 'Inspection' the moment escrow_active is reached; a 5th stage is still to be defined."
+                "description": "Resolves by raw id or by the human reference (TXN-YYYY-#####) — Transactions have no separate slug field, the reference already fills that role. Adds, beyond the list shape: listing further populated (images, video, category {_id,title}, brand, condition, price, description, slug, status, createdAt, hasDefect, defectDescription, location, locationLabel, address); escrow further populated (slug, createdAt, amount); gateway/paymentMethod/gatewayProcessingFee (renamed from paystackFee); disputeStatus (under_investigation/refunded/resolved — present only once the transaction has been disputed; see DisputeStatus); inspectionOutcome (pending/Accepted/Disputed, mirrors inspectionStatus's own transitions); activityLog (the transaction's AuditLog timeline, oldest-first — trimmed to {id, slug, event, label, metadata, actor}, where actor now also carries rolePlayed: buyer/seller/admin/system/webhook); communicationLog (every real push/email actually sent for this transaction, one row per recipient per channel — never collapsed into a single 'both' row, since buyer/seller wording usually differs; no SMS, this app has no SMS gateway); transactionNotes (admin-only internal notes, newest first); inspectionReminderCount (null if the buyer's inspectionReminders setting is off, a real count otherwise); insights ({transactionAmount, escrowAmount, transactionDuration (human string), currentStage}); currentStage (top-level replica of insights.currentStage) — now one of Awaiting payment / Inspection / Resolved (completed) / Refund Processed (refunded) / Under Dispute (disputed) / Buyer's decision (cancelled, not one of the named outcomes); refundInfo (only present when status is refunded — {id, slug, amount, reason, status, payoutAccountNumber, payoutBankCode, refundedAt, reference, createdAt, approvedBy (null for a buyer-initiated refund, else {id, name, role})})."
+              },
+              "response": []
+            },
+            {
+              "name": "Export transaction (CSV)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/transactions/{{transactionId}}/export",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "transactions",
+                    "{{transactionId}}",
+                    "export"
+                  ]
+                },
+                "description": "Single-transaction CSV, resolved by raw id or reference — one flattened row (status/disputeStatus/inspectionStatus/inspectionOutcome/currentStage, money fields, buyer/seller/listing/escrow summaries, inspection timestamps, and refund fields when the transaction is refunded)."
               },
               "response": []
             },
@@ -3848,8 +3900,22 @@
                     "key": "Authorization",
                     "value": "Bearer {{adminAccessToken}}",
                     "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
                   }
                 ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reminderType\": \"inspection_reminder\",\n  \"channel\": \"push\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
                 "url": {
                   "raw": "{{baseUrl}}/admin/transactions/{{transactionId}}/send-inspection-reminder",
                   "host": [
@@ -3862,7 +3928,7 @@
                     "send-inspection-reminder"
                   ]
                 },
-                "description": "Only while escrow_active, inspectionStatus is awaiting, and inspectionPeriodEnded is still false (a proactive nudge while the window is open — a lapsed window auto-refunds before an admin could act on it). Increments inspectionReminderCount and notifies the buyer via the inspection_reminder type (gated by their own inspectionReminders setting, same as any other notify() call)."
+                "description": "Only while escrow_active, inspectionStatus is awaiting, and inspectionPeriodEnded is still false (a proactive nudge while the window is open — a lapsed window auto-refunds before an admin could act on it). reminderType is one of inspection_reminder/deadline_warning/custom_message (each maps to a predefined message); custom_message requires a message field (1-500 chars), sent verbatim. channel is exactly one of push or email — no 'both'. Increments inspectionReminderCount and notifies the buyer via the inspection_reminder type on the chosen channel only (still gated by their own inspectionReminders setting, same as any other notify() call)."
               },
               "response": []
             }

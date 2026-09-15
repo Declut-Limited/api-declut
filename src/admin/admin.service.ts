@@ -28,6 +28,7 @@ import {
 import { SuspendUserDto } from './dto/suspend-user.dto';
 import { EmailSellerDto } from './dto/email-seller.dto';
 import { CreateTransactionNoteDto } from './dto/create-transaction-note.dto';
+import { SendInspectionReminderDto } from './dto/send-inspection-reminder.dto';
 import type { DashboardInsightsFilter } from './dto/dashboard.dto';
 import { toCsv } from '../common/utils/csv.util';
 import { countTrend } from '../common/utils/trend.util';
@@ -441,10 +442,17 @@ export class AdminService {
     return this.transactionsService.adminFindByIdOrReference(idOrReference);
   }
 
-  sendInspectionReminder(transactionId: string, adminId: string) {
+  sendInspectionReminder(
+    transactionId: string,
+    adminId: string,
+    dto: SendInspectionReminderDto,
+  ) {
     return this.transactionsService.sendInspectionReminder(
       transactionId,
       adminId,
+      dto.reminderType,
+      dto.channel,
+      dto.message,
     );
   }
 
@@ -454,6 +462,10 @@ export class AdminService {
       adminId,
       dto.description,
     );
+  }
+
+  exportTransactionCsv(idOrReference: string) {
+    return this.transactionsService.exportTransactionCsv(idOrReference);
   }
 
   listReviews(dto: AdminListReviewsDto) {

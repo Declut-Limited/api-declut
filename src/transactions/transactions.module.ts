@@ -5,6 +5,7 @@ import {
   TransactionNote,
   TransactionNoteSchema,
 } from './schemas/transaction-note.schema';
+import { Refund, RefundSchema } from './schemas/refund.schema';
 import { TransactionsService } from './transactions.service';
 import { TransactionsController } from './transactions.controller';
 import { ListingsModule } from '../listings/listings.module';
@@ -24,6 +25,7 @@ import { BankAccountsModule } from '../bank-accounts/bank-accounts.module';
     MongooseModule.forFeature([
       { name: Transaction.name, schema: TransactionSchema },
       { name: TransactionNote.name, schema: TransactionNoteSchema },
+      { name: Refund.name, schema: RefundSchema },
     ]),
     ListingsModule,
     PaymentsModule,

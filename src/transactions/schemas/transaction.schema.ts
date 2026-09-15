@@ -40,6 +40,28 @@ export enum PaymentMethod {
   CARD = 'card',
 }
 
+// Only meaningful once a transaction has actually gone DISPUTED (set at that
+// same moment) — 2026-09-15, explicit instruction. Stays at its terminal
+// value (REFUNDED/RESOLVED) after the transaction moves on from DISPUTED, as
+// a permanent marker of how the dispute was resolved; a transaction that was
+// never disputed simply never has this field set.
+export enum DisputeStatus {
+  UNDER_INVESTIGATION = 'under_investigation',
+  REFUNDED = 'refunded',
+  RESOLVED = 'resolved',
+}
+
+// Mirrors InspectionStatus's own AWAITING/COMPLETED/FAILED transitions 1:1 —
+// ACCEPTED wherever inspectionStatus becomes COMPLETED (confirmReceipt(),
+// adminRelease()), DISPUTED wherever it becomes FAILED (the webhook race
+// loss, cancelPurchaseWithRefund(), adminRefund(), the inspection-expiry
+// auto-refund). Casing matches the exact values given, 2026-09-15.
+export enum InspectionOutcome {
+  PENDING = 'pending',
+  ACCEPTED = 'Accepted',
+  DISPUTED = 'Disputed',
+}
+
 @Schema({ timestamps: true })
 export class Transaction {
   @Prop({
@@ -172,6 +194,22 @@ export class Transaction {
   // confirmation. Added 2026-09-15, explicit instruction.
   @Prop()
   buyerInspectionConfirmedAt?: Date;
+
+  // Set to UNDER_INVESTIGATION the moment status becomes DISPUTED, then to
+  // REFUNDED/RESOLVED by adminRefund()/adminRelease() — see DisputeStatus.
+  // No default: absent entirely for a transaction that's never been
+  // disputed. Added 2026-09-15, explicit instruction.
+  @Prop({ type: String, enum: DisputeStatus })
+  disputeStatus?: DisputeStatus;
+
+  // See InspectionOutcome — mirrors inspectionStatus's own transitions.
+  // Added 2026-09-15, explicit instruction.
+  @Prop({
+    type: String,
+    enum: InspectionOutcome,
+    default: InspectionOutcome.PENDING,
+  })
+  inspectionOutcome: InspectionOutcome;
 
   createdAt: Date;
   updatedAt: Date;

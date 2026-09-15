@@ -23,6 +23,7 @@ import { SetKycStatusDto } from './dto/set-kyc-status.dto';
 import { SuspendUserDto } from './dto/suspend-user.dto';
 import { EmailSellerDto } from './dto/email-seller.dto';
 import { CreateTransactionNoteDto } from './dto/create-transaction-note.dto';
+import { SendInspectionReminderDto } from './dto/send-inspection-reminder.dto';
 import { UpdateListingDto } from '../listings/dto/update-listing.dto';
 import { DashboardInsightsDto, RevenueTrendsDto } from './dto/dashboard.dto';
 import { UpdateGeneralSettingsDto } from '../settings/dto/update-general-settings.dto';
@@ -248,13 +249,29 @@ export class AdminController {
     return this.adminService.getTransactionDetail(idOrRef);
   }
 
+  @Get('transactions/:idOrRef/export')
+  @RequirePermission('transactions', 'view')
+  async exportTransaction(
+    @Param('idOrRef') idOrRef: string,
+    @Res() res: Response,
+  ) {
+    const csv = await this.adminService.exportTransactionCsv(idOrRef);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="transaction-${idOrRef}.csv"`,
+    );
+    res.send(csv);
+  }
+
   @Post('transactions/:id/send-inspection-reminder')
   @RequirePermission('transactions', 'write')
   sendInspectionReminder(
     @Param('id') id: string,
+    @Body() dto: SendInspectionReminderDto,
     @CurrentAdmin() admin: AdminAccessTokenPayload,
   ) {
-    return this.adminService.sendInspectionReminder(id, admin.sub);
+    return this.adminService.sendInspectionReminder(id, admin.sub, dto);
   }
 
   @Post('transaction-notes')

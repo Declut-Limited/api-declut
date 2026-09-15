@@ -12,6 +12,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Model, Types, isValidObjectId } from 'mongoose';
 import {
+  DisputeStatus,
+  InspectionOutcome,
   InspectionStatus,
   PaymentMethod,
   Transaction,
@@ -22,6 +24,8 @@ import {
   TransactionNote,
   TransactionNoteDocument,
 } from './schemas/transaction-note.schema';
+import { Refund, RefundDocument, RefundStatus } from './schemas/refund.schema';
+import { InspectionReminderType } from './dto/inspection-reminder-type.enum';
 import { EscrowStatus } from '../escrow/schemas/escrow.schema';
 import { EscrowService } from '../escrow/escrow.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
@@ -51,6 +55,7 @@ import { MONTH_ABBREVIATIONS } from '../common/utils/date.util';
 import { PopulatedParty, shapeParty } from '../common/utils/party.util';
 import { buildDateRangeFilter } from '../common/utils/date-range.util';
 import { DateRangeDto } from '../common/dto/date-range.dto';
+import { toCsv } from '../common/utils/csv.util';
 
 interface PaystackWebhookPayload {
   event: string;
@@ -110,6 +115,8 @@ export class TransactionsService {
     private transactionModel: Model<TransactionDocument>,
     @InjectModel(TransactionNote.name)
     private transactionNoteModel: Model<TransactionNoteDocument>,
+    @InjectModel(Refund.name)
+    private refundModel: Model<RefundDocument>,
     private readonly escrowService: EscrowService,
     private readonly listingsService: ListingsService,
     private readonly usersService: UsersService,
@@ -361,7 +368,9 @@ export class TransactionsService {
     if (!claimed) {
       const lostRaceOldStatus = transaction.status;
       transaction.status = TransactionStatus.DISPUTED;
+      transaction.disputeStatus = DisputeStatus.UNDER_INVESTIGATION;
       transaction.inspectionStatus = InspectionStatus.FAILED;
+      transaction.inspectionOutcome = InspectionOutcome.DISPUTED;
       transaction.gatewayProcessingFee = paystackFeeKobo / 100;
       transaction.paymentMethod = paymentMethod;
       await transaction.save();
@@ -512,6 +521,7 @@ export class TransactionsService {
     transaction.commissionAmount = commissionAmount;
     transaction.sellerPayoutAmount = sellerPayoutAmount;
     transaction.inspectionStatus = InspectionStatus.COMPLETED;
+    transaction.inspectionOutcome = InspectionOutcome.ACCEPTED;
     transaction.buyerInspectionConfirmedAt = new Date();
     await transaction.save();
     await this.escrowService.updateStatusForTransaction(
@@ -694,15 +704,20 @@ export class TransactionsService {
     this.logger.log(
       `[cancel-purchase] calling Paystack refund — transaction=${transactionId} reference=${transaction.reference} refundAmount=${refundAmount} cancellationFee=${commissionAmount}`,
     );
-    await this.paystackService.refund(
-      transaction.reference,
-      Math.round(refundAmount * 100),
-    );
+    await this.refundAndRecord({
+      transactionId,
+      buyerId: transaction.buyer.toString(),
+      reference: transaction.reference,
+      amountKobo: Math.round(refundAmount * 100),
+      amount: refundAmount,
+      reason: 'Cancelled by buyer before completing the purchase',
+    });
 
     const oldStatus = transaction.status;
     transaction.status = TransactionStatus.REFUNDED;
     transaction.commissionAmount = commissionAmount;
     transaction.inspectionStatus = InspectionStatus.FAILED;
+    transaction.inspectionOutcome = InspectionOutcome.DISPUTED;
     await transaction.save();
     await this.escrowService.updateStatusForTransaction(
       transaction._id.toString(),
@@ -998,13 +1013,16 @@ export class TransactionsService {
 
     const transactionId = transaction._id.toString();
     const buyerParty = transaction.buyer as unknown as PopulatedParty | null;
+    const sellerParty = transaction.seller as unknown as PopulatedParty | null;
     const buyerId = buyerParty?._id?.toString();
+    const sellerId = sellerParty?._id?.toString();
 
     const [activityLog, notifications, transactionNotes, buyerSettings] =
       await Promise.all([
         this.auditLogService.findAdminTimelineForEntity(
           'transaction',
           transactionId,
+          { buyerId, sellerId },
         ),
         this.notificationsService.findForTransaction(transactionId),
         this.findNotesForTransaction(transactionId),
@@ -1034,6 +1052,15 @@ export class TransactionsService {
       ? transaction.inspectionReminderCount
       : null;
     shaped.insights = this.buildTransactionInsights(transaction);
+    // Replica of insights.currentStage at the top level — explicit
+    // instruction, 2026-09-15.
+    shaped.currentStage = (
+      shaped.insights as { currentStage: string }
+    ).currentStage;
+
+    if (transaction.status === TransactionStatus.REFUNDED) {
+      shaped.refundInfo = await this.getRefundInfo(transactionId);
+    }
 
     return shaped;
   }
@@ -1134,21 +1161,25 @@ export class TransactionsService {
     };
   }
 
+  // The 5th ("dynamic") stage, resolved 2026-09-15, explicit instruction:
+  // completed -> Resolved, refunded -> Refund Processed, disputed -> Under
+  // Dispute. CANCELLED isn't one of the named outcomes — kept at the prior
+  // catch-all ("Buyer's decision") as a judgment call, flagged.
   private computeCurrentStage(transaction: TransactionDocument): string {
-    if (transaction.status === TransactionStatus.PENDING_PAYMENT) {
-      return 'Awaiting payment';
+    switch (transaction.status) {
+      case TransactionStatus.PENDING_PAYMENT:
+        return 'Awaiting payment';
+      case TransactionStatus.COMPLETED:
+        return 'Resolved';
+      case TransactionStatus.REFUNDED:
+        return 'Refund Processed';
+      case TransactionStatus.DISPUTED:
+        return 'Under Dispute';
+      case TransactionStatus.CANCELLED:
+        return "Buyer's decision";
+      default:
+        return 'Inspection';
     }
-    if (
-      [
-        TransactionStatus.COMPLETED,
-        TransactionStatus.REFUNDED,
-        TransactionStatus.CANCELLED,
-        TransactionStatus.DISPUTED,
-      ].includes(transaction.status)
-    ) {
-      return "Buyer's decision";
-    }
-    return 'Inspection';
   }
 
   // Buyer-only, one-time, gated by explicit instruction to inspectionPeriodEnded
@@ -1158,7 +1189,13 @@ export class TransactionsService {
   // regardless of what the buyer's own inspectionReminders setting allows —
   // notify() itself silently no-ops the actual push/email if it's off, same
   // as everywhere else notify() is gated.
-  async sendInspectionReminder(transactionId: string, adminId: string) {
+  async sendInspectionReminder(
+    transactionId: string,
+    adminId: string,
+    reminderType: InspectionReminderType,
+    channel: 'push' | 'email',
+    message?: string,
+  ) {
     const transaction = await this.findRaw(transactionId);
     if (transaction.status !== TransactionStatus.ESCROW_ACTIVE) {
       throw new BadRequestException(
@@ -1176,6 +1213,8 @@ export class TransactionsService {
       );
     }
 
+    const { title, body } = this.buildReminderContent(reminderType, message);
+
     transaction.inspectionReminderCount =
       (transaction.inspectionReminderCount ?? 0) + 1;
     await transaction.save();
@@ -1186,19 +1225,48 @@ export class TransactionsService {
       adminId,
       transaction.inspectionStatus,
       transaction.inspectionStatus,
-      { reminderCount: transaction.inspectionReminderCount },
+      {
+        reminderCount: transaction.inspectionReminderCount,
+        reminderType,
+        channel,
+      },
     );
 
     await this.notificationsService.notify({
       recipientType: NotificationRecipientType.USER,
       recipientId: transaction.buyer.toString(),
       type: 'inspection_reminder',
-      title: 'Inspection reminder',
-      body: "Don't forget to inspect your item and confirm receipt before your inspection window ends.",
+      title,
+      body,
       data: { transactionId },
+      forceChannels: [channel],
     });
 
     return { inspectionReminderCount: transaction.inspectionReminderCount };
+  }
+
+  // reminderType picks which of 3 predefined messages to send — 2026-09-15,
+  // explicit instruction. CUSTOM_MESSAGE's `message` is required by the DTO
+  // (SendInspectionReminderDto) whenever that type is selected.
+  private buildReminderContent(
+    reminderType: InspectionReminderType,
+    message?: string,
+  ): { title: string; body: string } {
+    switch (reminderType) {
+      case InspectionReminderType.DEADLINE_WARNING:
+        return {
+          title: 'Inspection deadline approaching',
+          body: 'Your inspection window is closing soon — confirm receipt or reach out to support before it ends.',
+        };
+      case InspectionReminderType.CUSTOM_MESSAGE:
+        return { title: 'Message from Declut', body: message! };
+      case InspectionReminderType.INSPECTION_REMINDER:
+      default:
+        return {
+          title: 'Inspection reminder',
+          body: "Don't forget to inspect your item and confirm receipt before your inspection window ends.",
+        };
+    }
   }
 
   // Admin-only (gated at the controller). transactionId/description come
@@ -1262,6 +1330,108 @@ export class TransactionsService {
             id: writtenBy._id.toString(),
             name: writtenBy.name,
             role: writtenBy.role?.name,
+          }
+        : null,
+    };
+  }
+
+  // Wraps PaystackService.refund() to guarantee a Refund audit record either
+  // way — success or failure — before propagating any error, so a failed
+  // refund attempt is still visible for the admin, not silently missing.
+  // Added 2026-09-15, explicit instruction — only called from the two
+  // requester-triggered refund flows (buyer's own cancelPurchaseWithRefund(),
+  // admin's adminRefund()); the system-triggered inspection-expiry
+  // auto-refund deliberately doesn't create a Refund record, since it never
+  // results in TransactionStatus.REFUNDED (see autoRefundExpiredInspection()).
+  private async refundAndRecord(params: {
+    transactionId: string;
+    buyerId: string;
+    reference: string;
+    amount: number;
+    amountKobo?: number;
+    reason?: string;
+    approvedBy?: string;
+  }): Promise<void> {
+    try {
+      await this.paystackService.refund(params.reference, params.amountKobo);
+    } catch (err) {
+      await this.createRefundRecord({ ...params, succeeded: false });
+      throw err;
+    }
+    await this.createRefundRecord({ ...params, succeeded: true });
+  }
+
+  // payoutAccountNumber/payoutBankCode are best-effort context from the
+  // buyer's own BankAccount, if one exists — Paystack's refund reverses to
+  // the original payment source, not a chosen bank account, so these
+  // describe the buyer's account on file, not necessarily where the refund
+  // actually landed.
+  private async createRefundRecord(params: {
+    transactionId: string;
+    buyerId: string;
+    amount: number;
+    reason?: string;
+    approvedBy?: string;
+    reference: string;
+    succeeded: boolean;
+  }): Promise<void> {
+    const [bankAccount, slug] = await Promise.all([
+      this.bankAccountsService.findRawByUser(params.buyerId),
+      this.counterService.nextSlug('refund', 'RFD', 4),
+    ]);
+    await this.refundModel.create({
+      transaction: params.transactionId,
+      user: params.buyerId,
+      amount: params.amount,
+      reason: params.reason,
+      status: params.succeeded ? RefundStatus.PROCESSED : RefundStatus.FAILED,
+      approvedBy: params.approvedBy,
+      payoutAccountNumber: bankAccount?.accountNumber,
+      payoutBankCode: bankAccount?.bankCode,
+      refundedAt: params.succeeded ? new Date() : undefined,
+      slug,
+      reference: params.reference,
+    });
+  }
+
+  // Backs the admin transaction detail's `refundInfo` — only ever called
+  // when transaction.status === REFUNDED (see adminFindByIdOrReference()).
+  // Picks the most recent processed refund row, in case more than one was
+  // ever attempted (e.g. a retried failed refund).
+  private async getRefundInfo(transactionId: string) {
+    const refund = await this.refundModel
+      .findOne({ transaction: transactionId, status: RefundStatus.PROCESSED })
+      .sort({ createdAt: -1 })
+      .populate({
+        path: 'approvedBy',
+        select: 'name role',
+        populate: { path: 'role', select: 'name' },
+      })
+      .exec();
+    if (!refund) {
+      return null;
+    }
+    const approvedBy = refund.approvedBy as unknown as {
+      _id: Types.ObjectId;
+      name: string;
+      role?: { name: string } | null;
+    } | null;
+    return {
+      id: refund._id.toString(),
+      slug: refund.slug,
+      amount: refund.amount,
+      reason: refund.reason,
+      status: refund.status,
+      payoutAccountNumber: refund.payoutAccountNumber,
+      payoutBankCode: refund.payoutBankCode,
+      refundedAt: refund.refundedAt,
+      reference: refund.reference,
+      createdAt: refund.createdAt,
+      approvedBy: approvedBy
+        ? {
+            id: approvedBy._id.toString(),
+            name: approvedBy.name,
+            role: approvedBy.role?.name,
           }
         : null,
     };
@@ -1408,9 +1578,11 @@ export class TransactionsService {
 
     const oldStatus = transaction.status;
     transaction.status = TransactionStatus.COMPLETED;
+    transaction.disputeStatus = DisputeStatus.RESOLVED;
     transaction.commissionAmount = commissionAmount;
     transaction.sellerPayoutAmount = sellerPayoutAmount;
     transaction.inspectionStatus = InspectionStatus.COMPLETED;
+    transaction.inspectionOutcome = InspectionOutcome.ACCEPTED;
     await transaction.save();
     await this.escrowService.updateStatusForTransaction(
       transaction._id.toString(),
@@ -1466,11 +1638,20 @@ export class TransactionsService {
     }
 
     // Paystack call before the local write — same ordering rule as everywhere else money moves in this module.
-    await this.paystackService.refund(transaction.reference);
+    await this.refundAndRecord({
+      transactionId,
+      buyerId: transaction.buyer.toString(),
+      reference: transaction.reference,
+      amount: transaction.amount,
+      reason,
+      approvedBy: adminId,
+    });
 
     const oldStatus = transaction.status;
     transaction.status = TransactionStatus.REFUNDED;
+    transaction.disputeStatus = DisputeStatus.REFUNDED;
     transaction.inspectionStatus = InspectionStatus.FAILED;
+    transaction.inspectionOutcome = InspectionOutcome.DISPUTED;
     await transaction.save();
     await this.escrowService.updateStatusForTransaction(
       transaction._id.toString(),
@@ -1587,6 +1768,7 @@ export class TransactionsService {
     const oldStatus = transaction.status;
     transaction.status = TransactionStatus.CANCELLED;
     transaction.inspectionStatus = InspectionStatus.FAILED;
+    transaction.inspectionOutcome = InspectionOutcome.DISPUTED;
     transaction.commissionAmount = commissionAmount;
     transaction.inspectionPeriodEnded = true;
     await transaction.save();
@@ -2170,6 +2352,120 @@ export class TransactionsService {
       transaction.seller as unknown as PopulatedParty | null,
       'seller',
     );
+    // Belt-and-suspenders fallback for a currently-disputed transaction
+    // whose disputeStatus somehow wasn't set (e.g. legacy data predating
+    // this field) — a transaction that's never been disputed simply keeps
+    // the raw (undefined) value, omitted from the JSON response.
+    obj.disputeStatus =
+      transaction.status === TransactionStatus.DISPUTED
+        ? (transaction.disputeStatus ?? DisputeStatus.UNDER_INVESTIGATION)
+        : transaction.disputeStatus;
     return obj;
+  }
+
+  // Single-transaction CSV export — GET /admin/transactions/:idOrRef/export,
+  // added 2026-09-15. One row, flattened, same convention as every other
+  // export in this app.
+  async exportTransactionCsv(idOrReference: string): Promise<string> {
+    const filter = isValidObjectId(idOrReference)
+      ? { _id: idOrReference }
+      : { reference: idOrReference };
+
+    const transaction = await this.transactionModel
+      .findOne(filter)
+      .populate('buyer', PARTY_POPULATE_FIELDS)
+      .populate('seller', PARTY_POPULATE_FIELDS)
+      .populate('listing', LISTING_POPULATE_FIELDS)
+      .populate('escrow', '_id status slug amount')
+      .exec();
+    if (!transaction) {
+      throw new NotFoundException('Transaction not found');
+    }
+
+    const buyer = transaction.buyer as unknown as PopulatedParty | null;
+    const seller = transaction.seller as unknown as PopulatedParty | null;
+    const listing = transaction.listing as unknown as {
+      title?: string;
+    } | null;
+    const escrow = transaction.escrow as unknown as {
+      status?: string;
+      amount?: number;
+    } | null;
+    const refundInfo =
+      transaction.status === TransactionStatus.REFUNDED
+        ? await this.getRefundInfo(transaction._id.toString())
+        : null;
+
+    const row = {
+      id: transaction._id.toString(),
+      reference: transaction.reference,
+      status: transaction.status,
+      disputeStatus:
+        transaction.status === TransactionStatus.DISPUTED
+          ? (transaction.disputeStatus ?? DisputeStatus.UNDER_INVESTIGATION)
+          : (transaction.disputeStatus ?? ''),
+      inspectionStatus: transaction.inspectionStatus,
+      inspectionOutcome: transaction.inspectionOutcome,
+      currentStage: this.computeCurrentStage(transaction),
+      amount: transaction.amount,
+      commissionPercentage: transaction.commissionPercentage,
+      commissionAmount: transaction.commissionAmount ?? '',
+      sellerPayoutAmount: transaction.sellerPayoutAmount ?? '',
+      gatewayProcessingFee: transaction.gatewayProcessingFee ?? '',
+      gateway: transaction.gateway,
+      paymentMethod: transaction.paymentMethod,
+      buyerName: buyer?.name ?? '',
+      buyerEmail: buyer?.email ?? '',
+      sellerName: seller?.name ?? '',
+      sellerEmail: seller?.email ?? '',
+      listingTitle: listing?.title ?? '',
+      escrowStatus: escrow?.status ?? '',
+      escrowAmount: escrow?.amount ?? '',
+      inspectionDeadlineAt: transaction.inspectionDeadlineAt ?? '',
+      inspectionExtended: transaction.inspectionExtended,
+      inspectionPeriodEnded: transaction.inspectionPeriodEnded,
+      buyerInspectionConfirmedAt: transaction.buyerInspectionConfirmedAt ?? '',
+      refundAmount: refundInfo?.amount ?? '',
+      refundedAt: refundInfo?.refundedAt ?? '',
+      refundReason: refundInfo?.reason ?? '',
+      createdAt: (transaction as unknown as { createdAt: Date }).createdAt,
+      updatedAt: (transaction as unknown as { updatedAt: Date }).updatedAt,
+    };
+
+    return toCsv(
+      [row],
+      [
+        'id',
+        'reference',
+        'status',
+        'disputeStatus',
+        'inspectionStatus',
+        'inspectionOutcome',
+        'currentStage',
+        'amount',
+        'commissionPercentage',
+        'commissionAmount',
+        'sellerPayoutAmount',
+        'gatewayProcessingFee',
+        'gateway',
+        'paymentMethod',
+        'buyerName',
+        'buyerEmail',
+        'sellerName',
+        'sellerEmail',
+        'listingTitle',
+        'escrowStatus',
+        'escrowAmount',
+        'inspectionDeadlineAt',
+        'inspectionExtended',
+        'inspectionPeriodEnded',
+        'buyerInspectionConfirmedAt',
+        'refundAmount',
+        'refundedAt',
+        'refundReason',
+        'createdAt',
+        'updatedAt',
+      ],
+    );
   }
 }

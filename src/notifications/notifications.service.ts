@@ -122,12 +122,20 @@ export class NotificationsService {
     data?: Record<string, string>;
     broadcastId?: string;
     recipientInfo?: RecipientInfo;
+    // When given, restricts the send to exactly these channels — still
+    // intersected with resolveChannels()'s own type/settings gating below,
+    // so this can only narrow, never bypass, what the recipient allows.
+    // Added 2026-09-15 for the admin's single-channel inspection reminder.
+    forceChannels?: NotificationChannel[];
   }): Promise<void> {
-    const channels = await this.resolveChannels(
+    let channels = await this.resolveChannels(
       params.type,
       params.recipientType,
       params.recipientId,
     );
+    if (params.forceChannels) {
+      channels = channels.filter((c) => params.forceChannels!.includes(c));
+    }
 
     const doc = await this.notificationModel.create({
       recipientType: params.recipientType,

@@ -67,20 +67,63 @@ export class AuditLogService {
       .exec();
   }
 
-  // Same oldest-first, unlimited shape as findTimelineForEntity() below, but
-  // for an admin audience — reuses shapeSummary() so metadata (commission/
-  // refund amounts, admin reasons) and the resolved actor are both included,
-  // neither of which the buyer/seller-facing timeline exposes. Backs the
-  // admin transaction detail's activityLog.
+  // Same oldest-first, unlimited query as findTimelineForEntity() below, but
+  // for an admin audience — includes metadata (commission/refund amounts,
+  // admin reasons) and a resolved actor, neither of which the buyer/seller-
+  // facing timeline exposes. Backs the admin transaction detail's
+  // activityLog. Trimmed to a purpose-built shape (not shapeSummary(), which
+  // is shared by the general Activity Log page and must stay unchanged) —
+  // entityId/entityType/target/createdAt/ipAddress/newState/oldState are
+  // dropped and actor gains a `rolePlayed` (buyer/seller/admin/system/
+  // webhook), 2026-09-15, explicit instruction. `context` lets the caller
+  // (currently only the transaction detail) resolve rolePlayed against its
+  // own buyer/seller ids.
   async findAdminTimelineForEntity(
     entityType: string,
     entityId: string,
+    context?: { buyerId?: string; sellerId?: string },
   ): Promise<Record<string, unknown>[]> {
     const entries = await this.auditLogModel
       .find({ entityType, entityId })
       .sort({ createdAt: 1 })
       .exec();
-    return Promise.all(entries.map((entry) => this.shapeSummary(entry)));
+    return Promise.all(
+      entries.map((entry) => this.shapeTransactionActivity(entry, context)),
+    );
+  }
+
+  private async shapeTransactionActivity(
+    entry: AuditLogDocument,
+    context?: { buyerId?: string; sellerId?: string },
+  ): Promise<Record<string, unknown>> {
+    const actor = await this.resolveActorSummary(entry.actor);
+    return {
+      id: entry._id.toString(),
+      slug: entry.slug,
+      event: entry.event,
+      label: describeEvent(entry.event),
+      metadata: entry.metadata,
+      actor: {
+        ...actor,
+        rolePlayed: this.resolveRolePlayed(entry.actor, actor.role, context),
+      },
+    };
+  }
+
+  // buyer/seller take precedence over the resolved account role — an admin
+  // could in principle share an id namespace collision with a party (it
+  // can't in practice, different collections), but checking party ids first
+  // is the more meaningful "what did this actor do here" answer regardless.
+  private resolveRolePlayed(
+    actor: string,
+    accountRole: ActorSummary['role'],
+    context?: { buyerId?: string; sellerId?: string },
+  ): string {
+    if (context?.buyerId && actor === context.buyerId) return 'buyer';
+    if (context?.sellerId && actor === context.sellerId) return 'seller';
+    if (accountRole === 'Admin') return 'admin';
+    if (actor === 'webhook') return 'webhook';
+    return 'system';
   }
 
   // Full chronological (oldest-first) timeline for one entity — backs a
