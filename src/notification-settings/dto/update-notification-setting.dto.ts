@@ -11,8 +11,11 @@ class UpdateNotificationChannelsDto {
   email?: boolean;
 }
 
-// paymentAndEscrowUpdates/listingActivity/productUpdates/referralAndRewards
+// paymentAndEscrowUpdates/listingActivity/productUpdates/inspectionReminders
 // are deliberately absent — required, not user-toggleable (see the schema).
+// inspectionReminders moved into this excluded group 2026-09-16 (was
+// user-toggleable); referralAndRewards moved the other way the same day
+// (was excluded, now toggleable below) — both explicit instruction.
 export class UpdateNotificationSettingDto {
   @IsOptional()
   @ValidateNested()
@@ -25,9 +28,9 @@ export class UpdateNotificationSettingDto {
 
   @IsOptional()
   @IsBoolean()
-  inspectionReminders?: boolean;
+  disputeUpdates?: boolean;
 
   @IsOptional()
   @IsBoolean()
-  disputeUpdates?: boolean;
+  referralAndRewards?: boolean;
 }

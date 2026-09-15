@@ -44,17 +44,17 @@ export class NotificationSettingsService {
     if (dto.channels?.email !== undefined) {
       setFields['channels.email'] = dto.channels.email;
     }
-    // paymentAndEscrowUpdates/listingActivity/productUpdates/referralAndRewards
+    // paymentAndEscrowUpdates/listingActivity/productUpdates/inspectionReminders
     // are deliberately excluded — required, not user-toggleable, and not on
     // the DTO at all (forbidNonWhitelisted 400s a client that tries anyway).
     const fields = [
       'transactionUpdates',
-      'inspectionReminders',
       'disputeUpdates',
+      'referralAndRewards',
     ] as const;
     for (const field of fields) {
       if (dto[field] !== undefined) {
-        setFields[field] = dto[field] as boolean;
+        setFields[field] = dto[field];
       }
     }
 

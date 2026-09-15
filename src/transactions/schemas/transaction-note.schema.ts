@@ -4,9 +4,12 @@ import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 export type TransactionNoteDocument = HydratedDocument<TransactionNote>;
 
 // Admin-only internal notes on a transaction — never shown to the buyer/seller,
-// only on the admin detail view (GET /admin/transactions/:idOrSlug). No
-// updatedAt — a note is never edited after creation, only ever added.
-@Schema({ timestamps: { createdAt: true, updatedAt: false } })
+// only on the admin detail view (GET /admin/transactions/:idOrRef). Editable
+// as of 2026-09-16 (PATCH /admin/transaction-notes/:id, description only —
+// transaction/writtenBy are fixed at creation and never change), hence the
+// real timestamps: true (was createdAt-only when a note could never be
+// edited after creation).
+@Schema({ timestamps: true })
 export class TransactionNote {
   @Prop({
     type: MongooseSchema.Types.ObjectId,
@@ -28,6 +31,7 @@ export class TransactionNote {
   description: string;
 
   createdAt: Date;
+  updatedAt: Date;
 }
 
 export const TransactionNoteSchema =

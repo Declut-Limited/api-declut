@@ -31,16 +31,23 @@ export class NotificationSetting {
   @Prop({ default: false })
   transactionUpdates: boolean;
 
-  @Prop({ default: true })
-  inspectionReminders: boolean;
-
   @Prop({ default: false })
   disputeUpdates: boolean;
+
+  // User-toggleable as of 2026-09-16 (explicit instruction) — default true
+  // (opt-out, not opt-in, unlike the two above), no immutable flag.
+  @Prop({ default: true })
+  referralAndRewards: boolean;
 
   // Required, not user-toggleable — always true, excluded from
   // UpdateNotificationSettingDto entirely (forbidNonWhitelisted 400s a
   // client that tries to send one) and marked immutable at the schema
   // level as a second line of defense against any other write path.
+  // inspectionReminders moved into this group 2026-09-16 (explicit
+  // instruction) — was user-toggleable, default false; now locked true.
+  @Prop({ default: true, immutable: true })
+  inspectionReminders: boolean;
+
   @Prop({ default: true, immutable: true })
   paymentAndEscrowUpdates: boolean;
 
@@ -49,9 +56,6 @@ export class NotificationSetting {
 
   @Prop({ default: true, immutable: true })
   productUpdates: boolean;
-
-  @Prop({ default: true, immutable: true })
-  referralAndRewards: boolean;
 
   createdAt: Date;
   updatedAt: Date;

@@ -28,6 +28,7 @@ import {
 import { SuspendUserDto } from './dto/suspend-user.dto';
 import { EmailSellerDto } from './dto/email-seller.dto';
 import { CreateTransactionNoteDto } from './dto/create-transaction-note.dto';
+import { UpdateTransactionNoteDto } from './dto/update-transaction-note.dto';
 import { SendInspectionReminderDto } from './dto/send-inspection-reminder.dto';
 import type { DashboardInsightsFilter } from './dto/dashboard.dto';
 import { toCsv } from '../common/utils/csv.util';
@@ -468,6 +469,19 @@ export class AdminService {
       adminId,
       dto.description,
     );
+  }
+
+  updateTransactionNote(
+    id: string,
+    adminId: string,
+    dto: UpdateTransactionNoteDto,
+  ) {
+    return this.transactionsService.updateNote(id, adminId, dto.description);
+  }
+
+  async removeTransactionNote(id: string, adminId: string) {
+    await this.transactionsService.removeNote(id, adminId);
+    return { removed: true };
   }
 
   listReviews(dto: AdminListReviewsDto) {

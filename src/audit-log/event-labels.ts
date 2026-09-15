@@ -37,6 +37,8 @@ const EVENT_LABELS: Record<string, string> = {
     'Automatically refunded — inspection window expired',
   admin_sent_inspection_reminder: 'Inspection reminder sent by admin',
   transaction_note_added: 'Admin note added',
+  transaction_note_updated: 'Admin note updated',
+  transaction_note_removed: 'Admin note removed',
   // code_mismatch_max_attempts: 'Marked as disputed after repeated wrong codes',
   // code_mismatch: 'Wrong confirmation code entered',
 };

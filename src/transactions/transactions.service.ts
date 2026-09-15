@@ -63,7 +63,7 @@ interface PaystackWebhookPayload {
 }
 
 const PARTY_POPULATE_FIELDS = 'name email accountStatus slug company';
-const LISTING_POPULATE_FIELDS = 'title mainImageUrl';
+const LISTING_POPULATE_FIELDS = 'title mainImageUrl slug';
 // Detail-view-only (GET /admin/transactions/:idOrSlug) — deliberately not
 // used by the list/user-facing paths above, same "detail view gets extra
 // fields, list doesn't" precedent Listings already established.
@@ -1383,6 +1383,77 @@ export class TransactionsService {
     return this.shapeNote(note);
   }
 
+  // Admin-only (gated at the controller). Only description is editable —
+  // transaction/writtenBy are fixed at creation and can never change, so
+  // neither is accepted here at all (see UpdateTransactionNoteDto). Object-
+  // level ownership: only the admin who wrote the note can edit it — an
+  // initial pass allowed any admin with transactions/write, corrected the
+  // same day, explicit instruction ("only the admin who wrote it can edit
+  // or delete"). 403, not 404 — same "the resource exists, you're just not
+  // allowed to touch it" posture as every other ownership check in this app.
+  async updateNote(noteId: string, adminId: string, description: string) {
+    const note = await this.findRawNote(noteId);
+    if (note.writtenBy.toString() !== adminId) {
+      throw new ForbiddenException(
+        'Only the admin who wrote this note can edit it',
+      );
+    }
+    const oldDescription = note.description;
+    note.description = description;
+    await note.save();
+
+    await this.audit(
+      note.transaction.toString(),
+      'transaction_note_updated',
+      adminId,
+      oldDescription,
+      description,
+      { noteId },
+    );
+
+    await note.populate({
+      path: 'writtenBy',
+      select: 'name role',
+      populate: { path: 'role', select: 'name' },
+    });
+    return this.shapeNote(note);
+  }
+
+  // Hard delete — a note has no downstream reference the way Listings/
+  // Transactions do (nothing stores a noteId anywhere else). Same
+  // writtenBy-only ownership check as updateNote() above.
+  async removeNote(noteId: string, adminId: string): Promise<void> {
+    const note = await this.findRawNote(noteId);
+    if (note.writtenBy.toString() !== adminId) {
+      throw new ForbiddenException(
+        'Only the admin who wrote this note can remove it',
+      );
+    }
+    const transactionId = note.transaction.toString();
+    const description = note.description;
+    await note.deleteOne();
+
+    await this.audit(
+      transactionId,
+      'transaction_note_removed',
+      adminId,
+      description,
+      'deleted',
+      { noteId },
+    );
+  }
+
+  private async findRawNote(id: string): Promise<TransactionNoteDocument> {
+    if (!isValidObjectId(id)) {
+      throw new NotFoundException('Transaction note not found');
+    }
+    const note = await this.transactionNoteModel.findById(id);
+    if (!note) {
+      throw new NotFoundException('Transaction note not found');
+    }
+    return note;
+  }
+
   private async findNotesForTransaction(transactionId: string) {
     const notes = await this.transactionNoteModel
       .find({ transaction: transactionId })
@@ -1406,6 +1477,7 @@ export class TransactionsService {
       id: note._id.toString(),
       description: note.description,
       createdAt: note.createdAt,
+      updatedAt: note.updatedAt,
       writtenBy: writtenBy
         ? {
             id: writtenBy._id.toString(),

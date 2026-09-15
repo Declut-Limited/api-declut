@@ -2201,7 +2201,7 @@
                 "{{userId}}"
               ]
             },
-            "description": "Restricted to the caller's own id — 403 on any other userId. Auto-creates with defaults on first call (paymentAndEscrowUpdates/listingActivity/productUpdates/referralAndRewards default true and can't be changed; everything else defaults false)."
+            "description": "Restricted to the caller's own id — 403 on any other userId. Auto-creates with defaults on first call (paymentAndEscrowUpdates/listingActivity/productUpdates/inspectionReminders default true and can't be changed; referralAndRewards defaults true and can be changed; transactionUpdates/disputeUpdates default false)."
           },
           "response": []
         },
@@ -2232,10 +2232,10 @@
                 "{{userId}}"
               ]
             },
-            "description": "Partial update. channels.push/channels.email merge individually (patching one doesn't reset the other). paymentAndEscrowUpdates/listingActivity/productUpdates/referralAndRewards are not on this DTO at all — sending any of them 400s.",
+            "description": "Partial update. channels.push/channels.email merge individually (patching one doesn't reset the other). paymentAndEscrowUpdates/listingActivity/productUpdates/inspectionReminders are not on this DTO at all — sending any of them 400s (inspectionReminders moved here 2026-09-16, was toggleable before). referralAndRewards moved the other way the same day — now toggleable (default true, opt-out).",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"channels\": {\n    \"push\": true,\n    \"email\": false\n  },\n  \"transactionUpdates\": true,\n  \"inspectionReminders\": false,\n  \"disputeUpdates\": true\n}",
+              "raw": "{\n  \"channels\": {\n    \"push\": true,\n    \"email\": false\n  },\n  \"transactionUpdates\": true,\n  \"disputeUpdates\": true,\n  \"referralAndRewards\": false\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3769,7 +3769,7 @@
                     }
                   ]
                 },
-                "description": "tab groups related statuses (active/completed/disputed/refunded). status is an exact single-status override, taking precedence over tab. escrow is populated ({_id, status}) on each row, and EscrowStatus includes FROZEN (held/refunded/released/frozen). startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate). See 'Get transaction detail' for the single-record view."
+                "description": "tab groups related statuses (active/completed/disputed/refunded). status is an exact single-status override, taking precedence over tab. escrow is populated ({_id, status}) on each row, and EscrowStatus includes FROZEN (held/refunded/released/frozen). listing is populated with title/mainImageUrl/slug. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate). See 'Get transaction detail' for the single-record view."
               },
               "response": []
             },
@@ -3934,6 +3934,72 @@
                   ]
                 },
                 "description": "Admin-only internal note on a transaction — never shown to the buyer/seller, only on the admin detail view. writtenBy always comes from the caller's own token, never the body."
+              },
+              "response": []
+            },
+            {
+              "name": "Update transaction note",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"description\": \"Buyer called back — item condition confirmed, no defect.\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/transaction-notes/{{transactionNoteId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "transaction-notes",
+                    "{{transactionNoteId}}"
+                  ]
+                },
+                "description": "Only description is editable — transactionId/writtenBy are fixed at creation and aren't accepted here at all. Only the admin who wrote the note can edit it — 403 for any other admin, even with transactions/write."
+              },
+              "response": []
+            },
+            {
+              "name": "Remove transaction note",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/transaction-notes/{{transactionNoteId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "transaction-notes",
+                    "{{transactionNoteId}}"
+                  ]
+                },
+                "description": "Hard delete — a note has no downstream reference elsewhere. Only the admin who wrote the note can remove it — 403 for any other admin, even with transactions/delete."
               },
               "response": []
             }
@@ -6742,6 +6808,11 @@
     },
     {
       "key": "waitlistId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "transactionNoteId",
       "value": "",
       "type": "string"
     }

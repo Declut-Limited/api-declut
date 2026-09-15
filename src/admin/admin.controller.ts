@@ -23,6 +23,7 @@ import { SetKycStatusDto } from './dto/set-kyc-status.dto';
 import { SuspendUserDto } from './dto/suspend-user.dto';
 import { EmailSellerDto } from './dto/email-seller.dto';
 import { CreateTransactionNoteDto } from './dto/create-transaction-note.dto';
+import { UpdateTransactionNoteDto } from './dto/update-transaction-note.dto';
 import { SendInspectionReminderDto } from './dto/send-inspection-reminder.dto';
 import { UpdateListingDto } from '../listings/dto/update-listing.dto';
 import { DashboardInsightsDto, RevenueTrendsDto } from './dto/dashboard.dto';
@@ -263,6 +264,25 @@ export class AdminController {
     @CurrentAdmin() admin: AdminAccessTokenPayload,
   ) {
     return this.adminService.createTransactionNote(dto, admin.sub);
+  }
+
+  @Patch('transaction-notes/:id')
+  @RequirePermission('transactions', 'write')
+  updateTransactionNote(
+    @Param('id') id: string,
+    @Body() dto: UpdateTransactionNoteDto,
+    @CurrentAdmin() admin: AdminAccessTokenPayload,
+  ) {
+    return this.adminService.updateTransactionNote(id, admin.sub, dto);
+  }
+
+  @Delete('transaction-notes/:id')
+  @RequirePermission('transactions', 'delete')
+  removeTransactionNote(
+    @Param('id') id: string,
+    @CurrentAdmin() admin: AdminAccessTokenPayload,
+  ) {
+    return this.adminService.removeTransactionNote(id, admin.sub);
   }
 
   @Get('reviews')
