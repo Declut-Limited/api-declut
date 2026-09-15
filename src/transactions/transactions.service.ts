@@ -13,10 +13,15 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { Model, Types, isValidObjectId } from 'mongoose';
 import {
   InspectionStatus,
+  PaymentMethod,
   Transaction,
   TransactionDocument,
   TransactionStatus,
 } from './schemas/transaction.schema';
+import {
+  TransactionNote,
+  TransactionNoteDocument,
+} from './schemas/transaction-note.schema';
 import { EscrowStatus } from '../escrow/schemas/escrow.schema';
 import { EscrowService } from '../escrow/escrow.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
@@ -27,7 +32,12 @@ import { UsersService } from '../users/users.service';
 import { PaystackService } from '../payments/paystack.service';
 import { TrustScoreService } from '../trust-score/trust-score.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { NotificationRecipientType } from '../notifications/schemas/notification.schema';
+import {
+  NotificationChannelStatus,
+  NotificationDocument,
+  NotificationRecipientType,
+} from '../notifications/schemas/notification.schema';
+import { NotificationSettingsService } from '../notification-settings/notification-settings.service';
 import { SettingsService } from '../settings/settings.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { CounterService } from '../common/counter/counter.service';
@@ -49,6 +59,11 @@ interface PaystackWebhookPayload {
 
 const PARTY_POPULATE_FIELDS = 'name email accountStatus slug company';
 const LISTING_POPULATE_FIELDS = 'title mainImageUrl';
+// Detail-view-only (GET /admin/transactions/:idOrSlug) — deliberately not
+// used by the list/user-facing paths above, same "detail view gets extra
+// fields, list doesn't" precedent Listings already established.
+const ADMIN_DETAIL_LISTING_FIELDS =
+  'title mainImageUrl images video category specs condition price description slug status createdAt hasDefect defectDescription location locationLabel address';
 // Flat rate kept on a buyer-initiated cancel-purchase refund — fixed, not
 // tied to AppSettings' (admin-configurable) commissionPercentage.
 const CANCELLATION_FEE_PERCENTAGE = 10;
@@ -67,6 +82,25 @@ const MONTH_NAMES = [
   'December',
 ];
 
+// Human-readable elapsed/total duration for the admin detail's insights.transactionDuration.
+function formatDuration(ms: number): string {
+  const totalMinutes = Math.floor(ms / (60 * 1000));
+  if (totalMinutes < 1) {
+    return 'less than a minute';
+  }
+  const days = Math.floor(totalMinutes / (60 * 24));
+  const hours = Math.floor((totalMinutes % (60 * 24)) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (days > 0) {
+    return `${days} day${days === 1 ? '' : 's'}, ${hours} hour${hours === 1 ? '' : 's'}`;
+  }
+  if (hours > 0) {
+    return `${hours} hour${hours === 1 ? '' : 's'}, ${minutes} minute${minutes === 1 ? '' : 's'}`;
+  }
+  return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+}
+
 @Injectable()
 export class TransactionsService {
   private readonly logger = new Logger(TransactionsService.name);
@@ -74,12 +108,15 @@ export class TransactionsService {
   constructor(
     @InjectModel(Transaction.name)
     private transactionModel: Model<TransactionDocument>,
+    @InjectModel(TransactionNote.name)
+    private transactionNoteModel: Model<TransactionNoteDocument>,
     private readonly escrowService: EscrowService,
     private readonly listingsService: ListingsService,
     private readonly usersService: UsersService,
     private readonly paystackService: PaystackService,
     private readonly trustScoreService: TrustScoreService,
     private readonly notificationsService: NotificationsService,
+    private readonly notificationSettingsService: NotificationSettingsService,
     private readonly settingsService: SettingsService,
     private readonly auditLogService: AuditLogService,
     private readonly counterService: CounterService,
@@ -304,6 +341,13 @@ export class TransactionsService {
         `[webhook] transaction=${transaction._id.toString()} reference=${reference} — buyer paid a ₦${(paystackFeeKobo / 100).toFixed(2)} surplus over the listing price (Paystack's own fee, grossed onto the payer by the channel used) — recording, not blocking`,
       );
     }
+    // Only 'card' is tracked as its own bucket — every other real Paystack
+    // channel (bank/ussd/qr/mobile_money/eft/bank_transfer) folds into
+    // BANK_TRANSFER, per explicit instruction.
+    const paymentMethod =
+      verification.channel === 'card'
+        ? PaymentMethod.CARD
+        : PaymentMethod.BANK_TRANSFER;
 
     // Claim the listing before finalizing escrow — atomic, so two webhooks
     // racing for the same listing (two buyers both reached pending_payment
@@ -318,7 +362,8 @@ export class TransactionsService {
       const lostRaceOldStatus = transaction.status;
       transaction.status = TransactionStatus.DISPUTED;
       transaction.inspectionStatus = InspectionStatus.FAILED;
-      transaction.paystackFee = paystackFeeKobo / 100;
+      transaction.gatewayProcessingFee = paystackFeeKobo / 100;
+      transaction.paymentMethod = paymentMethod;
       await transaction.save();
       this.logger.error(
         `[webhook] transaction=${transaction._id.toString()} reference=${reference} paid but listing=${transaction.listing.toString()} is no longer active — likely claimed by another buyer's payment first. Flagged disputed for manual review.`,
@@ -357,7 +402,8 @@ export class TransactionsService {
       escrowActivatedAt.getTime() +
         inspectionWindow.inspectionPeriod * 24 * 60 * 60 * 1000,
     );
-    transaction.paystackFee = paystackFeeKobo / 100;
+    transaction.gatewayProcessingFee = paystackFeeKobo / 100;
+    transaction.paymentMethod = paymentMethod;
     await transaction.save();
 
     // One Escrow per Transaction, created the moment payment is verified —
@@ -466,6 +512,7 @@ export class TransactionsService {
     transaction.commissionAmount = commissionAmount;
     transaction.sellerPayoutAmount = sellerPayoutAmount;
     transaction.inspectionStatus = InspectionStatus.COMPLETED;
+    transaction.buyerInspectionConfirmedAt = new Date();
     await transaction.save();
     await this.escrowService.updateStatusForTransaction(
       transaction._id.toString(),
@@ -922,15 +969,302 @@ export class TransactionsService {
     };
   }
 
-  // Currently unused (superseded by adminFindByIdDetailed() below) — kept populated too so it isn't a landmine if something starts calling it.
-  async adminFindById(transactionId: string) {
+  // Rich single-transaction admin view, by id or reference — this app has no
+  // separate "slug" concept for a Transaction, its human-facing TXN-YYYY-#####
+  // reference already fills that role, same as Listings' slug. Replaces the
+  // old unused adminFindById() — 2026-09-15, explicit instruction. Scoped
+  // entirely to this one endpoint: none of the extra populate/derived fields
+  // here touch adminList() or the user-facing findForUserDisplay()/toResponseShape().
+  async adminFindByIdOrReference(idOrReference: string) {
+    const filter = isValidObjectId(idOrReference)
+      ? { _id: idOrReference }
+      : { reference: idOrReference };
+
+    const transaction = await this.transactionModel
+      .findOne(filter)
+      .populate('buyer', PARTY_POPULATE_FIELDS)
+      .populate('seller', PARTY_POPULATE_FIELDS)
+      .populate({
+        path: 'listing',
+        select: ADMIN_DETAIL_LISTING_FIELDS,
+        populate: { path: 'category', select: 'title' },
+      })
+      .populate('escrow', '_id status slug createdAt amount')
+      .exec();
+
+    if (!transaction) {
+      throw new NotFoundException('Transaction not found');
+    }
+
+    const transactionId = transaction._id.toString();
+    const buyerParty = transaction.buyer as unknown as PopulatedParty | null;
+    const buyerId = buyerParty?._id?.toString();
+
+    const [activityLog, notifications, transactionNotes, buyerSettings] =
+      await Promise.all([
+        this.auditLogService.findAdminTimelineForEntity(
+          'transaction',
+          transactionId,
+        ),
+        this.notificationsService.findForTransaction(transactionId),
+        this.findNotesForTransaction(transactionId),
+        buyerId
+          ? this.notificationSettingsService.findRawForUser(buyerId)
+          : Promise.resolve(null),
+      ]);
+
+    const shaped = this.toAdminResponseShape(transaction);
+    shaped.listing = this.shapeAdminListingDetail(shaped.listing);
+    shaped.activityLog = activityLog;
+    shaped.communicationLog = this.buildCommunicationLog(
+      notifications,
+      transaction,
+    );
+    shaped.transactionNotes = transactionNotes;
+    // Null when the buyer has inspectionReminders off (nothing could ever
+    // have been delivered, so nothing meaningful to count) — explicit
+    // instruction, 2026-09-15. A never-configured buyer (no settings
+    // document at all) falls back to the schema's own default (true) rather
+    // than being treated as off — findRawForUser() is a plain findOne with
+    // no upsert, so it can't apply Mongoose's setDefaultsOnInsert for us.
+    const inspectionRemindersOn = buyerSettings
+      ? buyerSettings.inspectionReminders
+      : true;
+    shaped.inspectionReminderCount = inspectionRemindersOn
+      ? transaction.inspectionReminderCount
+      : null;
+    shaped.insights = this.buildTransactionInsights(transaction);
+
+    return shaped;
+  }
+
+  // Listing.specs.brand flattened to a top-level `brand` on the response,
+  // matching how CreateListingDto already treats brand as flat even though
+  // the schema stores it nested — only this one detail endpoint's shape,
+  // not the schema itself.
+  private shapeAdminListingDetail(listing: unknown) {
+    if (!listing || typeof listing !== 'object') {
+      return listing;
+    }
+    const obj = { ...(listing as Record<string, unknown>) };
+    const specs = obj.specs as { brand?: string } | undefined;
+    obj.brand = specs?.brand;
+    delete obj.specs;
+    return obj;
+  }
+
+  // Every real (status: sent) push/email attempt ever made for this
+  // transaction, one row per recipient per channel — buyer and seller are
+  // always notified via two separate notify() calls with often-different
+  // wording, so this deliberately never collapses them into one "both" row
+  // (explicit instruction, 2026-09-15). Failed/skipped attempts are omitted —
+  // this is a log of what was actually communicated, not a delivery-debug view.
+  private buildCommunicationLog(
+    notifications: NotificationDocument[],
+    transaction: TransactionDocument,
+  ) {
+    const buyerParty = transaction.buyer as unknown as PopulatedParty | null;
+    const sellerParty = transaction.seller as unknown as PopulatedParty | null;
+    const buyerId = buyerParty?._id?.toString();
+    const sellerId = sellerParty?._id?.toString();
+
+    const log: Array<{
+      channel: 'push' | 'email';
+      recipient: 'buyer' | 'seller' | 'unknown';
+      title: string;
+      body: string;
+      sentAt: Date;
+    }> = [];
+
+    for (const notification of notifications) {
+      const recipientId = notification.recipient.toString();
+      const recipient =
+        recipientId === buyerId
+          ? 'buyer'
+          : recipientId === sellerId
+            ? 'seller'
+            : 'unknown';
+
+      (['push', 'email'] as const).forEach((channel) => {
+        if (
+          notification.channels?.[channel]?.status ===
+          NotificationChannelStatus.SENT
+        ) {
+          log.push({
+            channel,
+            recipient,
+            title: notification.title,
+            body: notification.body,
+            sentAt: notification.createdAt,
+          });
+        }
+      });
+    }
+
+    return log;
+  }
+
+  // transactionDuration/currentStage are both derived, not stored.
+  // currentStage judgment call, flagged: "payment secured" and "seller
+  // notified" happen synchronously in the same webhook call (see
+  // handlePaystackWebhook()) — there's no backend state where one is true
+  // and the other isn't, so both collapse into "Inspection" the moment
+  // escrow_active is reached, since that's the first state anyone could
+  // ever actually observe a transaction resting in. A 5th stage was
+  // mentioned as still to be defined — not implemented, only 3 of the 5
+  // named stages are reachable from current transaction state today.
+  private buildTransactionInsights(transaction: TransactionDocument) {
+    const escrow = transaction.escrow as unknown as { amount?: number } | null;
+    const createdAt = (transaction as unknown as { createdAt: Date }).createdAt;
+    const updatedAt = (transaction as unknown as { updatedAt: Date }).updatedAt;
+    const isTerminal = [
+      TransactionStatus.COMPLETED,
+      TransactionStatus.REFUNDED,
+      TransactionStatus.CANCELLED,
+      TransactionStatus.DISPUTED,
+    ].includes(transaction.status);
+    const endMoment = isTerminal ? updatedAt : new Date();
+    const durationMs = endMoment.getTime() - createdAt.getTime();
+
+    return {
+      transactionAmount: transaction.amount,
+      escrowAmount: escrow?.amount ?? 0,
+      transactionDuration: formatDuration(durationMs),
+      currentStage: this.computeCurrentStage(transaction),
+    };
+  }
+
+  private computeCurrentStage(transaction: TransactionDocument): string {
+    if (transaction.status === TransactionStatus.PENDING_PAYMENT) {
+      return 'Awaiting payment';
+    }
+    if (
+      [
+        TransactionStatus.COMPLETED,
+        TransactionStatus.REFUNDED,
+        TransactionStatus.CANCELLED,
+        TransactionStatus.DISPUTED,
+      ].includes(transaction.status)
+    ) {
+      return "Buyer's decision";
+    }
+    return 'Inspection';
+  }
+
+  // Buyer-only, one-time, gated by explicit instruction to inspectionPeriodEnded
+  // still being FALSE — a proactive nudge while the window is still open, not
+  // a post-expiry one (a lapsed window auto-refunds via sweepEndedInspectionPeriods()
+  // before an admin could ever act on it). Increments inspectionReminderCount
+  // regardless of what the buyer's own inspectionReminders setting allows —
+  // notify() itself silently no-ops the actual push/email if it's off, same
+  // as everywhere else notify() is gated.
+  async sendInspectionReminder(transactionId: string, adminId: string) {
     const transaction = await this.findRaw(transactionId);
-    await transaction.populate([
-      { path: 'buyer', select: PARTY_POPULATE_FIELDS },
-      { path: 'seller', select: PARTY_POPULATE_FIELDS },
-      { path: 'listing', select: LISTING_POPULATE_FIELDS },
-    ]);
-    return this.toAdminResponseShape(transaction);
+    if (transaction.status !== TransactionStatus.ESCROW_ACTIVE) {
+      throw new BadRequestException(
+        `Transaction is ${transaction.status} — a reminder can't be sent`,
+      );
+    }
+    if (transaction.inspectionStatus !== InspectionStatus.AWAITING) {
+      throw new BadRequestException(
+        'Inspection has already been resolved for this transaction',
+      );
+    }
+    if (transaction.inspectionPeriodEnded) {
+      throw new BadRequestException(
+        'The inspection window has already ended for this transaction',
+      );
+    }
+
+    transaction.inspectionReminderCount =
+      (transaction.inspectionReminderCount ?? 0) + 1;
+    await transaction.save();
+
+    await this.audit(
+      transactionId,
+      'admin_sent_inspection_reminder',
+      adminId,
+      transaction.inspectionStatus,
+      transaction.inspectionStatus,
+      { reminderCount: transaction.inspectionReminderCount },
+    );
+
+    await this.notificationsService.notify({
+      recipientType: NotificationRecipientType.USER,
+      recipientId: transaction.buyer.toString(),
+      type: 'inspection_reminder',
+      title: 'Inspection reminder',
+      body: "Don't forget to inspect your item and confirm receipt before your inspection window ends.",
+      data: { transactionId },
+    });
+
+    return { inspectionReminderCount: transaction.inspectionReminderCount };
+  }
+
+  // Admin-only (gated at the controller). transactionId/description come
+  // from the request body, writtenBy always from the caller's own token.
+  async createNote(
+    transactionId: string,
+    adminId: string,
+    description: string,
+  ) {
+    const transaction = await this.findRaw(transactionId);
+
+    const note = await this.transactionNoteModel.create({
+      transaction: transaction._id,
+      writtenBy: adminId,
+      description,
+    });
+
+    await this.audit(
+      transactionId,
+      'transaction_note_added',
+      adminId,
+      transaction.status,
+      transaction.status,
+      { noteId: note._id.toString() },
+    );
+
+    await note.populate({
+      path: 'writtenBy',
+      select: 'name role',
+      populate: { path: 'role', select: 'name' },
+    });
+
+    return this.shapeNote(note);
+  }
+
+  private async findNotesForTransaction(transactionId: string) {
+    const notes = await this.transactionNoteModel
+      .find({ transaction: transactionId })
+      .sort({ createdAt: -1 })
+      .populate({
+        path: 'writtenBy',
+        select: 'name role',
+        populate: { path: 'role', select: 'name' },
+      })
+      .exec();
+    return notes.map((note) => this.shapeNote(note));
+  }
+
+  private shapeNote(note: TransactionNoteDocument) {
+    const writtenBy = note.writtenBy as unknown as {
+      _id: Types.ObjectId;
+      name: string;
+      role?: { name: string } | null;
+    } | null;
+    return {
+      id: note._id.toString(),
+      description: note.description,
+      createdAt: note.createdAt,
+      writtenBy: writtenBy
+        ? {
+            id: writtenBy._id.toString(),
+            name: writtenBy.name,
+            role: writtenBy.role?.name,
+          }
+        : null,
+    };
   }
 
   // Used by the admin Users detail view's "Insights" panel.

@@ -67,6 +67,22 @@ export class AuditLogService {
       .exec();
   }
 
+  // Same oldest-first, unlimited shape as findTimelineForEntity() below, but
+  // for an admin audience — reuses shapeSummary() so metadata (commission/
+  // refund amounts, admin reasons) and the resolved actor are both included,
+  // neither of which the buyer/seller-facing timeline exposes. Backs the
+  // admin transaction detail's activityLog.
+  async findAdminTimelineForEntity(
+    entityType: string,
+    entityId: string,
+  ): Promise<Record<string, unknown>[]> {
+    const entries = await this.auditLogModel
+      .find({ entityType, entityId })
+      .sort({ createdAt: 1 })
+      .exec();
+    return Promise.all(entries.map((entry) => this.shapeSummary(entry)));
+  }
+
   // Full chronological (oldest-first) timeline for one entity — backs a
   // "progress"/history view on the entity's own detail response, unlike
   // findForEntity() above (newest-first, capped) which backs a "recent

@@ -27,6 +27,7 @@ import {
 } from './dto/admin-list.dto';
 import { SuspendUserDto } from './dto/suspend-user.dto';
 import { EmailSellerDto } from './dto/email-seller.dto';
+import { CreateTransactionNoteDto } from './dto/create-transaction-note.dto';
 import type { DashboardInsightsFilter } from './dto/dashboard.dto';
 import { toCsv } from '../common/utils/csv.util';
 import { countTrend } from '../common/utils/trend.util';
@@ -433,6 +434,25 @@ export class AdminService {
       dto.limit ?? 20,
       statuses,
       dto,
+    );
+  }
+
+  getTransactionDetail(idOrReference: string) {
+    return this.transactionsService.adminFindByIdOrReference(idOrReference);
+  }
+
+  sendInspectionReminder(transactionId: string, adminId: string) {
+    return this.transactionsService.sendInspectionReminder(
+      transactionId,
+      adminId,
+    );
+  }
+
+  createTransactionNote(dto: CreateTransactionNoteDto, adminId: string) {
+    return this.transactionsService.createNote(
+      dto.transactionId,
+      adminId,
+      dto.description,
     );
   }
 

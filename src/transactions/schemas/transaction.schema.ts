@@ -31,6 +31,15 @@ export enum InspectionStatus {
   FAILED = 'failed',
 }
 
+// Only these 2 buckets, per explicit instruction — Paystack's own channel
+// can be card/bank/ussd/qr/mobile_money/bank_transfer/eft; every non-card
+// channel is folded into BANK_TRANSFER at webhook time (see
+// handlePaystackWebhook()), not modeled as its own enum value.
+export enum PaymentMethod {
+  BANK_TRANSFER = 'bank_transfer',
+  CARD = 'card',
+}
+
 @Schema({ timestamps: true })
 export class Transaction {
   @Prop({
@@ -74,14 +83,30 @@ export class Transaction {
   @Prop()
   sellerPayoutAmount?: number;
 
-  // Paystack's own processing fee, in Naira — the surplus the buyer actually paid above `amount`
-  // (listing price), collected because the buyer's chosen payment channel grossed Paystack's fee
-  // onto them rather than it being deducted from settlement. Computed at webhook time as
-  // (amount Paystack actually received) − (amount). Zero for channels that don't gross the fee
-  // onto the payer. The buyer bears this — separate from commissionAmount (Declut's own cut,
-  // taken from the seller's side at release, not from the buyer at checkout).
+  // The gateway's own processing fee, in Naira — the surplus the buyer actually paid above
+  // `amount` (listing price), collected because the buyer's chosen payment channel grossed the
+  // gateway's fee onto them rather than it being deducted from settlement. Computed at webhook
+  // time as (amount the gateway actually received) − (amount). Zero for channels that don't gross
+  // the fee onto the payer. The buyer bears this — separate from commissionAmount (Declut's own
+  // cut, taken from the seller's side at release, not from the buyer at checkout). Renamed from
+  // paystackFee 2026-09-15, explicit instruction, alongside gateway/paymentMethod below.
   @Prop({ default: 0 })
-  paystackFee?: number;
+  gatewayProcessingFee?: number;
+
+  // Both added 2026-09-15, explicit instruction ("we need to start collecting the transaction
+  // means from paystack"). gateway is a fixed literal for now (Paystack is the only integration
+  // this app has) but stored rather than hardcoded, since a future second gateway would need to
+  // tell transactions apart by this field. paymentMethod is read from Paystack's real webhook
+  // channel — see handlePaystackWebhook().
+  @Prop({ default: 'paystack' })
+  gateway: string;
+
+  @Prop({
+    type: String,
+    enum: PaymentMethod,
+    default: PaymentMethod.BANK_TRANSFER,
+  })
+  paymentMethod: PaymentMethod;
 
   @Prop({
     type: String,
@@ -131,6 +156,22 @@ export class Transaction {
   // Set by the hourly sweep once the effective deadline (inspectionExtensionEndDate if extended, else inspectionDeadlineAt) has passed. add-inspection-extension refuses once this is true — an extension can only be requested while the window is still open.
   @Prop({ default: false })
   inspectionPeriodEnded: boolean;
+
+  // Incremented each time an admin successfully sends a manual inspection
+  // reminder (POST /admin/transactions/:id/send-inspection-reminder). Shown
+  // as null on the admin detail response when the buyer's own
+  // inspectionReminders notification setting is off — added 2026-09-15,
+  // explicit instruction.
+  @Prop({ default: 0 })
+  inspectionReminderCount: number;
+
+  // Set once, only inside confirmReceipt() — the moment the buyer confirms
+  // they received the item and their own action releases funds to the
+  // seller. Never set by adminRelease(), cancelPurchaseWithRefund(), or the
+  // automatic expiry-refund — those aren't the buyer's own inspection
+  // confirmation. Added 2026-09-15, explicit instruction.
+  @Prop()
+  buyerInspectionConfirmedAt?: Date;
 
   createdAt: Date;
   updatedAt: Date;

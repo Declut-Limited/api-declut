@@ -3787,7 +3787,7 @@
                       "key": "status",
                       "value": "disputed",
                       "disabled": true,
-                      "description": "Exact status — pending_payment, escrow_active, awaiting_inspection, completed, stalled, disputed, refunded, or cancelled. Overrides tab when both are given."
+                      "description": "Exact status — pending_payment, escrow_active, awaiting_inspection, completed, disputed, refunded, or cancelled. Overrides tab when both are given."
                     },
                     {
                       "key": "tab",
@@ -3809,7 +3809,105 @@
                     }
                   ]
                 },
-                "description": "tab groups related statuses (active/completed/disputed/refunded) — stalled removed 2026-09-13, TransactionStatus.STALLED no longer exists; status is an exact single-status override, taking precedence over tab. Get-by-id and get-by-reference were removed 2026-08-28 (explicit instruction) — list is the only transaction read endpoint now; release/refund were already deferred. escrow is now populated ({_id, status}) on each row, and EscrowStatus gained FROZEN (held/refunded/released/frozen). startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
+                "description": "tab groups related statuses (active/completed/disputed/refunded). status is an exact single-status override, taking precedence over tab. escrow is populated ({_id, status}) on each row, and EscrowStatus includes FROZEN (held/refunded/released/frozen). startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate). See 'Get transaction detail' for the single-record view."
+              },
+              "response": []
+            },
+            {
+              "name": "Get transaction detail (by id or reference)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/transactions/{{transactionId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "transactions",
+                    "{{transactionId}}"
+                  ]
+                },
+                "description": "Resolves by raw id or by the human reference (TXN-YYYY-#####) — Transactions have no separate slug field, the reference already fills that role. Adds, beyond the list shape: listing further populated (images, video, category {_id,title}, brand, condition, price, description, slug, status, createdAt, hasDefect, defectDescription, location, locationLabel, address); escrow further populated (slug, createdAt, amount); gateway/paymentMethod/gatewayProcessingFee (renamed from paystackFee); activityLog (full AuditLog timeline, oldest-first, with resolved actor + metadata — unlike the buyer/seller-facing progress field, nothing is hidden here); communicationLog (every real push/email actually sent for this transaction, one row per recipient per channel — never collapsed into a single 'both' row, since buyer/seller wording usually differs; no SMS, this app has no SMS gateway); transactionNotes (admin-only internal notes, newest first); inspectionReminderCount (null if the buyer's inspectionReminders setting is off, a real count otherwise); insights ({transactionAmount, escrowAmount, transactionDuration (human string), currentStage}). currentStage judgment call: 'payment secured' and 'seller notified' happen in the same synchronous webhook call, so they're not independently observable — both report as 'Inspection' the moment escrow_active is reached; a 5th stage is still to be defined."
+              },
+              "response": []
+            },
+            {
+              "name": "Send inspection reminder",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/transactions/{{transactionId}}/send-inspection-reminder",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "transactions",
+                    "{{transactionId}}",
+                    "send-inspection-reminder"
+                  ]
+                },
+                "description": "Only while escrow_active, inspectionStatus is awaiting, and inspectionPeriodEnded is still false (a proactive nudge while the window is open — a lapsed window auto-refunds before an admin could act on it). Increments inspectionReminderCount and notifies the buyer via the inspection_reminder type (gated by their own inspectionReminders setting, same as any other notify() call)."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "transaction-notes",
+          "description": "",
+          "item": [
+            {
+              "name": "Create transaction note",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"transactionId\": \"{{transactionId}}\",\n  \"description\": \"Buyer called to confirm item condition matched the listing.\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/transaction-notes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "transaction-notes"
+                  ]
+                },
+                "description": "Admin-only internal note on a transaction — never shown to the buyer/seller, only on the admin detail view. writtenBy always comes from the caller's own token, never the body."
               },
               "response": []
             }

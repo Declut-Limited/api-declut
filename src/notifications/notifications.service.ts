@@ -193,6 +193,16 @@ export class NotificationsService {
     }
   }
 
+  // Every transaction-lifecycle notify() call stamps data.transactionId —
+  // used by the admin transaction detail's communication log to pull every
+  // real push/email attempt ever made for one transaction, oldest first.
+  findForTransaction(transactionId: string): Promise<NotificationDocument[]> {
+    return this.notificationModel
+      .find({ 'data.transactionId': transactionId })
+      .sort({ createdAt: 1 })
+      .exec();
+  }
+
   // GET /notifications and GET /admin/notifications both call this — same shape either way.
   async listForRecipient(
     recipientType: NotificationRecipientType,

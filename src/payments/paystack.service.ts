@@ -1,4 +1,8 @@
-import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'crypto';
 
@@ -11,6 +15,7 @@ export interface VerifyTransactionResult {
   successful: boolean;
   amountKobo: number;
   currency: string;
+  channel: string;
 }
 
 export interface PaystackBank {
@@ -82,12 +87,14 @@ export class PaystackService {
       status: string;
       amount: number;
       currency: string;
+      channel: string;
     }>(`/transaction/verify/${encodeURIComponent(reference)}`, 'GET');
 
     return {
       successful: response.data.status === 'success',
       amountKobo: response.data.amount,
       currency: response.data.currency,
+      channel: response.data.channel,
     };
   }
 
@@ -189,13 +196,17 @@ export class PaystackService {
     signature: string | undefined,
   ): boolean {
     if (!signature) {
-      this.logger.warn('[webhook signature] no x-paystack-signature header on request');
+      this.logger.warn(
+        '[webhook signature] no x-paystack-signature header on request',
+      );
       return false;
     }
 
     const secretKey = this.config.get<string>('PAYSTACK_SECRET_KEY');
     if (!secretKey) {
-      this.logger.error('[webhook signature] PAYSTACK_SECRET_KEY is not set — cannot verify');
+      this.logger.error(
+        '[webhook signature] PAYSTACK_SECRET_KEY is not set — cannot verify',
+      );
       return false;
     }
 
@@ -234,7 +245,9 @@ export class PaystackService {
     const safeBody = body
       ? { ...body, email: body.email ? '(redacted)' : undefined }
       : undefined;
-    this.logger.log(`[paystack] -> ${method} ${path} ${safeBody ? JSON.stringify(safeBody) : ''}`);
+    this.logger.log(
+      `[paystack] -> ${method} ${path} ${safeBody ? JSON.stringify(safeBody) : ''}`,
+    );
 
     let response: Response;
     try {
@@ -247,7 +260,10 @@ export class PaystackService {
         ...(body && { body: JSON.stringify(body) }),
       });
     } catch (err) {
-      this.logger.error(`[paystack] network error calling ${method} ${path}`, err as Error);
+      this.logger.error(
+        `[paystack] network error calling ${method} ${path}`,
+        err as Error,
+      );
       throw err;
     }
 

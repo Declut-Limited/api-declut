@@ -131,6 +131,18 @@ export const NOTIFICATION_TYPES = {
       [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
     },
   },
+  // Admin-triggered nudge (POST /admin/transactions/:id/send-inspection-reminder), gated by
+  // inspectionReminders same as inspection_extended — added 2026-09-15.
+  inspection_reminder: {
+    label: 'Inspection reminder',
+    channels: {
+      [NotificationRecipientType.USER]: [
+        'push',
+        'email',
+      ] as NotificationChannel[],
+      [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
+    },
+  },
 } as const;
 
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;
@@ -168,4 +180,5 @@ export const NOTIFICATION_SETTING_CATEGORY: Partial<
   // it's a payment-lifecycle event, not a dispute one.
   purchase_cancelled_refunded: 'paymentAndEscrowUpdates',
   inspection_extended: 'inspectionReminders',
+  inspection_reminder: 'inspectionReminders',
 };

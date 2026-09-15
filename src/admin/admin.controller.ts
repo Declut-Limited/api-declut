@@ -22,6 +22,7 @@ import {
 import { SetKycStatusDto } from './dto/set-kyc-status.dto';
 import { SuspendUserDto } from './dto/suspend-user.dto';
 import { EmailSellerDto } from './dto/email-seller.dto';
+import { CreateTransactionNoteDto } from './dto/create-transaction-note.dto';
 import { UpdateListingDto } from '../listings/dto/update-listing.dto';
 import { DashboardInsightsDto, RevenueTrendsDto } from './dto/dashboard.dto';
 import { UpdateGeneralSettingsDto } from '../settings/dto/update-general-settings.dto';
@@ -239,6 +240,30 @@ export class AdminController {
   @RequirePermission('transactions', 'view')
   listTransactions(@Query() dto: AdminListTransactionsDto) {
     return this.adminService.listTransactions(dto);
+  }
+
+  @Get('transactions/:idOrSlug')
+  @RequirePermission('transactions', 'view')
+  getTransactionDetail(@Param('idOrSlug') idOrSlug: string) {
+    return this.adminService.getTransactionDetail(idOrSlug);
+  }
+
+  @Post('transactions/:id/send-inspection-reminder')
+  @RequirePermission('transactions', 'write')
+  sendInspectionReminder(
+    @Param('id') id: string,
+    @CurrentAdmin() admin: AdminAccessTokenPayload,
+  ) {
+    return this.adminService.sendInspectionReminder(id, admin.sub);
+  }
+
+  @Post('transaction-notes')
+  @RequirePermission('transactions', 'write')
+  createTransactionNote(
+    @Body() dto: CreateTransactionNoteDto,
+    @CurrentAdmin() admin: AdminAccessTokenPayload,
+  ) {
+    return this.adminService.createTransactionNote(dto, admin.sub);
   }
 
   @Get('reviews')

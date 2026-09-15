@@ -31,7 +31,7 @@ export class NotificationSetting {
   @Prop({ default: false })
   transactionUpdates: boolean;
 
-  @Prop({ default: false })
+  @Prop({ default: true })
   inspectionReminders: boolean;
 
   @Prop({ default: false })

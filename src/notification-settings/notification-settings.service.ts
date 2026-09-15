@@ -90,6 +90,17 @@ export class NotificationSettingsService {
     );
   }
 
+  // Read-only, no ownership check, no upsert — for a system-facing display
+  // read (e.g. the admin transaction detail's inspectionReminderCount
+  // null-vs-count logic) that must never create a settings row as a side
+  // effect of a GET. Returns null for a never-configured user; the caller
+  // applies whatever default that implies for its own purpose.
+  async findRawForUser(
+    userId: string,
+  ): Promise<NotificationSettingDocument | null> {
+    return this.notificationSettingModel.findOne({ user: userId });
+  }
+
   private assertOwnership(requesterId: string, userId: string): void {
     if (requesterId !== userId) {
       throw new ForbiddenException(
