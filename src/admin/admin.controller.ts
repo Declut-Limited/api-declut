@@ -242,10 +242,10 @@ export class AdminController {
     return this.adminService.listTransactions(dto);
   }
 
-  @Get('transactions/:idOrSlug')
+  @Get('transactions/:idOrRef')
   @RequirePermission('transactions', 'view')
-  getTransactionDetail(@Param('idOrSlug') idOrSlug: string) {
-    return this.adminService.getTransactionDetail(idOrSlug);
+  getTransactionDetail(@Param('idOrRef') idOrRef: string) {
+    return this.adminService.getTransactionDetail(idOrRef);
   }
 
   @Post('transactions/:id/send-inspection-reminder')
