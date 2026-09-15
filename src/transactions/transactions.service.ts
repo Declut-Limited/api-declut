@@ -984,6 +984,87 @@ export class TransactionsService {
     };
   }
 
+  // Bulk CSV export — GET /admin/transactions/export, added 2026-09-15,
+  // explicit instruction ("see how we did it for the listing"), same
+  // convention as ListingsService.exportCsv(): unpaginated, same
+  // status/tab/date-range filter as the list, one flattened row per
+  // transaction. Deliberately skips the per-row `refundInfo` lookup the
+  // single-transaction export/detail view do — that's a query per refunded
+  // row, fine for one detail view, an N+1 risk across a potentially large
+  // unpaginated export.
+  async exportTransactionsCsv(
+    statuses?: TransactionStatus[],
+    dateRange: DateRangeDto = {},
+  ): Promise<string> {
+    const filter = {
+      ...(statuses && statuses.length ? { status: { $in: statuses } } : {}),
+      ...buildDateRangeFilter(dateRange),
+    };
+    const transactions = await this.transactionModel
+      .find(filter)
+      .populate('buyer', PARTY_POPULATE_FIELDS)
+      .populate('seller', PARTY_POPULATE_FIELDS)
+      .populate('listing', LISTING_POPULATE_FIELDS)
+      .populate('escrow', '_id status')
+      .sort({ createdAt: -1 })
+      .exec();
+
+    const rows = transactions.map((t) => {
+      const buyer = t.buyer as unknown as PopulatedParty | null;
+      const seller = t.seller as unknown as PopulatedParty | null;
+      const listing = t.listing as unknown as { title?: string } | null;
+      const escrow = t.escrow as unknown as { status?: string } | null;
+      return {
+        id: t._id.toString(),
+        reference: t.reference,
+        status: t.status,
+        disputeStatus:
+          t.status === TransactionStatus.DISPUTED
+            ? (t.disputeStatus ?? DisputeStatus.UNDER_INVESTIGATION)
+            : (t.disputeStatus ?? ''),
+        inspectionStatus: t.inspectionStatus,
+        inspectionOutcome: t.inspectionOutcome,
+        amount: t.amount,
+        commissionAmount: t.commissionAmount ?? '',
+        sellerPayoutAmount: t.sellerPayoutAmount ?? '',
+        gatewayProcessingFee: t.gatewayProcessingFee ?? '',
+        gateway: t.gateway,
+        paymentMethod: t.paymentMethod,
+        buyerName: buyer?.name ?? '',
+        buyerEmail: buyer?.email ?? '',
+        sellerName: seller?.name ?? '',
+        sellerEmail: seller?.email ?? '',
+        listingTitle: listing?.title ?? '',
+        escrowStatus: escrow?.status ?? '',
+        createdAt: (t as unknown as { createdAt: Date }).createdAt,
+        updatedAt: (t as unknown as { updatedAt: Date }).updatedAt,
+      };
+    });
+
+    return toCsv(rows, [
+      'id',
+      'reference',
+      'status',
+      'disputeStatus',
+      'inspectionStatus',
+      'inspectionOutcome',
+      'amount',
+      'commissionAmount',
+      'sellerPayoutAmount',
+      'gatewayProcessingFee',
+      'gateway',
+      'paymentMethod',
+      'buyerName',
+      'buyerEmail',
+      'sellerName',
+      'sellerEmail',
+      'listingTitle',
+      'escrowStatus',
+      'createdAt',
+      'updatedAt',
+    ]);
+  }
+
   // Rich single-transaction admin view, by id or reference — this app has no
   // separate "slug" concept for a Transaction, its human-facing TXN-YYYY-#####
   // reference already fills that role, same as Listings' slug. Replaces the

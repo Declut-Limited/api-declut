@@ -423,19 +423,33 @@ export class AdminService {
     refunded: [TransactionStatus.REFUNDED, TransactionStatus.CANCELLED],
   };
 
-  listTransactions(dto: AdminListTransactionsDto) {
-    let statuses: TransactionStatus[] | undefined;
+  // Shared by listTransactions()/exportTransactionsCsv() — status takes
+  // precedence over tab, same rule both callers need identically.
+  private static resolveTransactionStatuses(
+    dto: AdminListTransactionsDto,
+  ): TransactionStatus[] | undefined {
     if (dto.status) {
-      statuses = [dto.status];
-    } else if (dto.tab && dto.tab !== 'all') {
-      statuses = AdminService.TAB_STATUS_MAP[dto.tab];
+      return [dto.status];
     }
+    if (dto.tab && dto.tab !== 'all') {
+      return AdminService.TAB_STATUS_MAP[dto.tab];
+    }
+    return undefined;
+  }
+
+  listTransactions(dto: AdminListTransactionsDto) {
+    const statuses = AdminService.resolveTransactionStatuses(dto);
     return this.transactionsService.adminList(
       dto.page ?? 1,
       dto.limit ?? 20,
       statuses,
       dto,
     );
+  }
+
+  exportTransactionsCsv(dto: AdminListTransactionsDto) {
+    const statuses = AdminService.resolveTransactionStatuses(dto);
+    return this.transactionsService.exportTransactionsCsv(statuses, dto);
   }
 
   getTransactionDetail(idOrReference: string) {

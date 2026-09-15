@@ -243,6 +243,22 @@ export class AdminController {
     return this.adminService.listTransactions(dto);
   }
 
+  // Must come before 'transactions/:idOrRef' — otherwise Nest matches "export" as the idOrRef (same hazard as 'listings/export' above).
+  @Get('transactions/export')
+  @RequirePermission('transactions', 'view')
+  async exportTransactions(
+    @Query() dto: AdminListTransactionsDto,
+    @Res() res: Response,
+  ) {
+    const csv = await this.adminService.exportTransactionsCsv(dto);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="transactions.csv"',
+    );
+    res.send(csv);
+  }
+
   @Get('transactions/:idOrRef')
   @RequirePermission('transactions', 'view')
   getTransactionDetail(@Param('idOrRef') idOrRef: string) {

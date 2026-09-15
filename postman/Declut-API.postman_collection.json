@@ -3839,6 +3839,58 @@
               "response": []
             },
             {
+              "name": "Export transactions (CSV)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/transactions/export?status=disputed&tab=active&startDate=2026-08-01&endDate=2026-08-29",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "transactions",
+                    "export"
+                  ],
+                  "query": [
+                    {
+                      "key": "status",
+                      "value": "disputed",
+                      "disabled": true,
+                      "description": "Exact status — pending_payment, escrow_active, awaiting_inspection, completed, disputed, refunded, or cancelled. Overrides tab when both are given."
+                    },
+                    {
+                      "key": "tab",
+                      "value": "active",
+                      "disabled": true,
+                      "description": "Grouped tab filter — all, active, completed, disputed, or refunded (refunded also folds in cancelled). Ignored if status is given."
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-08-01",
+                      "disabled": true,
+                      "description": "Filter to records created on/after this date (YYYY-MM-DD). Optional, combinable with endDate."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-08-29",
+                      "disabled": true,
+                      "description": "Filter to records created on/through this date (YYYY-MM-DD), inclusive of the full day. Must not be earlier than startDate; same-day is valid."
+                    }
+                  ]
+                },
+                "description": "Bulk export — every transaction matching the same status/tab/date-range filters as 'List transactions (all)', unpaginated, one flattened CSV row each (status, disputeStatus, inspectionStatus, inspectionOutcome, money fields, buyer/seller/listing/escrow summaries). Doesn't include per-row refund details (payoutAccountNumber/reason/etc.) — see 'Get transaction detail' or the single-transaction 'Export transaction (CSV)' for those."
+              },
+              "response": []
+            },
+            {
               "name": "Get transaction detail (by id or reference)",
               "request": {
                 "method": "GET",
