@@ -200,6 +200,35 @@ export class ListingsService {
     return shaped;
   }
 
+  // Fully public (no auth), by slug only — not idOrSlug, since this backs a
+  // Next.js server-side metadata/OG-tag fetch for a listing's public share
+  // link, which only ever has the slug. Lean by design (just the 4 fields
+  // needed for a title/description/og:image tag; more can be added later).
+  // Paused stays hidden — there's no requester to except as the owner here,
+  // so it always 404s, same "don't reveal it exists" posture as
+  // findByIdForDisplay()'s paused check. Added 2026-09-15, explicit
+  // instruction.
+  async findPublicBySlug(slug: string): Promise<{
+    _id: string;
+    title: string;
+    description: string;
+    mainImageUrl?: string;
+  }> {
+    const listing = await this.listingModel
+      .findOne({ slug, status: { $ne: ListingStatus.PAUSED } })
+      .select('title description mainImageUrl')
+      .exec();
+    if (!listing) {
+      throw new NotFoundException('Listing not found');
+    }
+    return {
+      _id: listing._id.toString(),
+      title: listing.title,
+      description: listing.description,
+      mainImageUrl: listing.mainImageUrl,
+    };
+  }
+
   async update(
     id: string,
     userId: string,

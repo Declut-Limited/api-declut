@@ -8,6 +8,7 @@ import {
 } from '../transactions/schemas/transaction.schema';
 import { ListingsService } from './listings.service';
 import { ListingsController } from './listings.controller';
+import { PublicListingsController } from './public-listings.controller';
 import { CategoriesModule } from '../categories/categories.module';
 import { CounterModule } from '../common/counter/counter.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
@@ -28,7 +29,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     CounterModule,
     AuditLogModule,
   ],
-  controllers: [ListingsController],
+  controllers: [ListingsController, PublicListingsController],
   providers: [ListingsService],
   exports: [ListingsService],
 })
