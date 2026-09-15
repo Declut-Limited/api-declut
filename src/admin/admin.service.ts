@@ -368,14 +368,6 @@ export class AdminService {
     return { sent: true };
   }
 
-  reportListing(id: string, adminId: string) {
-    return this.listingsService.report(id, adminId);
-  }
-
-  resolveReportedListing(id: string, adminId: string) {
-    return this.listingsService.unreport(id, adminId);
-  }
-
   delistListing(id: string, adminId: string) {
     return this.listingsService.delist(id, adminId);
   }
@@ -476,10 +468,6 @@ export class AdminService {
       adminId,
       dto.description,
     );
-  }
-
-  exportTransactionCsv(idOrReference: string) {
-    return this.transactionsService.exportTransactionCsv(idOrReference);
   }
 
   listReviews(dto: AdminListReviewsDto) {

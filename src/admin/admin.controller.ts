@@ -191,25 +191,6 @@ export class AdminController {
     return this.adminService.adminUpdateListing(id, admin.sub, dto);
   }
 
-  // Renamed from flag/unflag 2026-09-12 — "flagged" is no longer a concept in this app, see ListingStatus.REPORTED on the schema.
-  @Patch('listings/:id/report')
-  @RequirePermission('listings', 'write')
-  reportListing(
-    @CurrentAdmin() admin: AdminAccessTokenPayload,
-    @Param('id') id: string,
-  ) {
-    return this.adminService.reportListing(id, admin.sub);
-  }
-
-  @Patch('listings/:id/unreport')
-  @RequirePermission('listings', 'write')
-  resolveReportedListing(
-    @CurrentAdmin() admin: AdminAccessTokenPayload,
-    @Param('id') id: string,
-  ) {
-    return this.adminService.resolveReportedListing(id, admin.sub);
-  }
-
   @Patch('listings/:id/delist')
   @RequirePermission('listings', 'write')
   delistListing(
@@ -263,21 +244,6 @@ export class AdminController {
   @RequirePermission('transactions', 'view')
   getTransactionDetail(@Param('idOrRef') idOrRef: string) {
     return this.adminService.getTransactionDetail(idOrRef);
-  }
-
-  @Get('transactions/:idOrRef/export')
-  @RequirePermission('transactions', 'view')
-  async exportTransaction(
-    @Param('idOrRef') idOrRef: string,
-    @Res() res: Response,
-  ) {
-    const csv = await this.adminService.exportTransactionCsv(idOrRef);
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="transaction-${idOrRef}.csv"`,
-    );
-    res.send(csv);
   }
 
   @Post('transactions/:id/send-inspection-reminder')

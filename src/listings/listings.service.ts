@@ -1272,7 +1272,14 @@ export class ListingsService {
     return listing;
   }
 
-  // Renamed from unflag() 2026-09-12.
+  // Renamed from unflag() 2026-09-12. Orphaned 2026-09-15, explicit
+  // instruction ("admin cannot report a listing or unreport it") removed
+  // its only caller (AdminController's PATCH /admin/listings/:id/unreport) —
+  // left in place rather than deleted, same "unused but might be wired up
+  // again" posture as AppSettings.maxCodeAttempts, since nothing currently
+  // reverses a REPORTED listing back to active at all (ReportsService's
+  // resolve/dismiss never touched the listing either). Flag if that gap
+  // needs a real fix.
   async unreport(id: string, adminId: string): Promise<ListingDocument> {
     const listing = await this.adminFindById(id);
     if (listing.status !== ListingStatus.REPORTED) {
