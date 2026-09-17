@@ -30,6 +30,7 @@ import { EmailSellerDto } from './dto/email-seller.dto';
 import { CreateTransactionNoteDto } from './dto/create-transaction-note.dto';
 import { UpdateTransactionNoteDto } from './dto/update-transaction-note.dto';
 import { SendInspectionReminderDto } from './dto/send-inspection-reminder.dto';
+import { ResolveDisputeDto } from './dto/resolve-dispute.dto';
 import type { DashboardInsightsFilter } from './dto/dashboard.dto';
 import { toCsv } from '../common/utils/csv.util';
 import { countTrend } from '../common/utils/trend.util';
@@ -101,6 +102,8 @@ export class AdminService {
       listingsCount: number;
       status: string;
       joinedAt: Date;
+      // User rows only — Admin has no concept of a policy strike.
+      policyStrike?: number;
     };
 
     const userRows: Row[] = users.map((u) => ({
@@ -113,6 +116,7 @@ export class AdminService {
       listingsCount: listingCounts.get(u._id.toString())?.total ?? 0,
       status: u.accountStatus,
       joinedAt: (u as unknown as { createdAt: Date }).createdAt,
+      policyStrike: u.policyStrike,
     }));
 
     const adminRows: Row[] = admins.map((a) => {
@@ -165,21 +169,27 @@ export class AdminService {
   }
 
   async getUserOrAdminDetail(id: string) {
-    const user = await this.usersService.findById(id);
+    // findByIdOrSlug (not findById) — 2026-09-17, so this genuinely
+    // resolves by either a raw id or a USR-#### slug, matching how this
+    // detail view is described elsewhere ("user by id or by slug").
+    const user = await this.usersService.findByIdOrSlug(id);
     if (user) {
+      // The route param can now be a slug — every downstream lookup below
+      // needs the user's real ObjectId, not whatever was passed in.
+      const userId = user._id.toString();
       const [listingCounts, txInsights, recentTransactions, kycHistory] =
         await Promise.all([
-          this.listingsService.countsBySeller([id]),
-          this.transactionsService.getUserTransactionInsights(id),
-          this.transactionsService.getRecentForUser(id, 3),
-          this.kycService.history(id),
+          this.listingsService.countsBySeller([userId]),
+          this.transactionsService.getUserTransactionInsights(userId),
+          this.transactionsService.getRecentForUser(userId, 3),
+          this.kycService.history(userId),
         ]);
       const latestKyc = kycHistory[0];
 
       return {
         type: 'user' as const,
         insights: {
-          listings: listingCounts.get(id) ?? { total: 0, active: 0 },
+          listings: listingCounts.get(userId) ?? { total: 0, active: 0 },
           sales: txInsights.sales,
           purchases: txInsights.purchases,
           rating: {
@@ -208,6 +218,8 @@ export class AdminService {
           slug: user.slug,
           email: user.email,
           phone: user.phone,
+          // Admin-only — see User.policyStrike's own schema comment.
+          policyStrike: user.policyStrike,
         },
         recentTransactions,
       };
@@ -377,11 +389,6 @@ export class AdminService {
     return this.listingsService.relist(id, adminId);
   }
 
-  async removeListing(id: string, adminId: string) {
-    await this.listingsService.adminRemove(id, adminId);
-    return { removed: true };
-  }
-
   async getListingsByUser(
     idOrSlug: string,
     page: number,
@@ -447,6 +454,36 @@ export class AdminService {
 
   getTransactionDetail(idOrReference: string) {
     return this.transactionsService.adminFindByIdOrReference(idOrReference);
+  }
+
+  // Three ways to resolve a disputed transaction — see TransactionsService
+  // for the actual behavior of each. Added 2026-09-17.
+  resolveDisputeRelease(transactionId: string, adminId: string) {
+    return this.transactionsService.adminRelease(transactionId, adminId);
+  }
+
+  resolveDisputeRefund(
+    transactionId: string,
+    adminId: string,
+    dto: ResolveDisputeDto,
+  ) {
+    return this.transactionsService.adminRefund(
+      transactionId,
+      adminId,
+      dto.reason,
+    );
+  }
+
+  resolveDisputeDelistAndRefund(
+    transactionId: string,
+    adminId: string,
+    dto: ResolveDisputeDto,
+  ) {
+    return this.transactionsService.adminDelistAndRefund(
+      transactionId,
+      adminId,
+      dto.reason,
+    );
   }
 
   sendInspectionReminder(

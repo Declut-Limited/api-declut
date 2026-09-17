@@ -140,6 +140,16 @@ export class User {
   @Prop({ default: 0 })
   trustScore: number;
 
+  // A simple incrementing count of admin-issued policy strikes — distinct
+  // from trustScore (a formula-derived, recalculable number). Only ever
+  // incremented by TrustScoreService.applyPolicyStrike(), called from
+  // TransactionsService.adminDelistAndRefund() when an admin upholds a
+  // buyer's report. Admin-visible only (GET /admin/users list, user detail
+  // by id/slug) plus the user's own GET /users/me — never on the public
+  // profile or any listing/seller summary. Added 2026-09-17.
+  @Prop({ default: 0 })
+  policyStrike: number;
+
   createdAt: Date;
   updatedAt: Date;
 }

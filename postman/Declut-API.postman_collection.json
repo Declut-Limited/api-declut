@@ -2444,7 +2444,7 @@
             "description": "User-facing — a user files their own report directly (reporterId must equal the caller's own id, or 403). At least one of listingId/userId is required. If listingId is given, that listing is immediately reported (status becomes 'reported', shown via GET /listings/mine?status=reported).",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Listing photos appear to be stolen from another site\",\n  \"reason\": \"Buyer called in claiming this listing's photos were lifted from a competitor's page.\",\n  \"listingId\": \"{{listingId}}\",\n  \"reporterId\": \"{{reporterId}}\"\n}",
+              "raw": "{\n  \"reason\": \"Buyer called in claiming this listing's photos were lifted from a competitor's page.\",\n  \"listingId\": \"{{listingId}}\",\n  \"reporterId\": \"{{reporterId}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3641,32 +3641,6 @@
                   "response": []
                 },
                 {
-                  "name": "Remove listing",
-                  "request": {
-                    "method": "DELETE",
-                    "header": [
-                      {
-                        "key": "Authorization",
-                        "value": "Bearer {{adminAccessToken}}",
-                        "type": "text"
-                      }
-                    ],
-                    "url": {
-                      "raw": "{{baseUrl}}/admin/listings/{{listingId}}",
-                      "host": [
-                        "{{baseUrl}}"
-                      ],
-                      "path": [
-                        "admin",
-                        "listings",
-                        "{{listingId}}"
-                      ]
-                    },
-                    "description": "Same mechanism as the owner's own delete, no ownership check. This is a real hard delete — the listing document is permanently removed, not soft-deleted."
-                  },
-                  "response": []
-                },
-                {
                   "name": "email-seller",
                   "description": "",
                   "item": [
@@ -3922,7 +3896,119 @@
                     "{{transactionId}}"
                   ]
                 },
-                "description": "Resolves by raw id or by the human reference (TXN-YYYY-#####) — Transactions have no separate slug field, the reference already fills that role. Adds, beyond the list shape: listing further populated (images, video, category {_id,title}, brand, condition, price, description, slug, status, createdAt, hasDefect, defectDescription, location, locationLabel, address); escrow further populated (slug, createdAt, amount); gateway/paymentMethod/gatewayProcessingFee (renamed from paystackFee); disputeStatus (under_investigation/refunded/resolved — present only once the transaction has been disputed; see DisputeStatus); inspectionOutcome (pending/Accepted/Disputed, mirrors inspectionStatus's own transitions); activityLog (the transaction's AuditLog timeline, oldest-first — trimmed to {id, slug, event, label, metadata, actor}, where actor now also carries rolePlayed: buyer/seller/admin/system/webhook); communicationLog (every real push/email actually sent for this transaction, one row per recipient per channel — never collapsed into a single 'both' row, since buyer/seller wording usually differs; no SMS, this app has no SMS gateway); transactionNotes (admin-only internal notes, newest first); inspectionReminderCount (null if the buyer's inspectionReminders setting is off, a real count otherwise); insights ({transactionAmount, escrowAmount, transactionDuration (human string), currentStage}); currentStage (top-level replica of insights.currentStage) — now one of Awaiting payment / Inspection / Resolved (completed) / Refund Processed (refunded) / Under Dispute (disputed) / Buyer's decision (cancelled, not one of the named outcomes); refundInfo (only present when status is refunded — {id, slug, amount, reason, status, payoutAccountNumber, payoutBankCode, refundedAt, reference, createdAt, approvedBy (null for a buyer-initiated refund, else {id, name, role})})."
+                "description": "Resolves by raw id or by the human reference (TXN-YYYY-#####) — Transactions have no separate slug field, the reference already fills that role. Adds, beyond the list shape: listing further populated (images, video, category {_id,title}, brand, condition, price, description, slug, status, createdAt, hasDefect, defectDescription, location, locationLabel, address); escrow further populated (slug, createdAt, amount); gateway/paymentMethod/gatewayProcessingFee (renamed from paystackFee); disputeStatus (under_investigation/refunded/resolved — present only once the transaction has been disputed; see DisputeStatus); inspectionOutcome (pending/Accepted/Disputed, mirrors inspectionStatus's own transitions); activityLog (the transaction's AuditLog timeline, oldest-first — trimmed to {id, slug, event, label, metadata, actor}, where actor now also carries rolePlayed: buyer/seller/admin/system/webhook); communicationLog (every real push/email actually sent for this transaction, one row per recipient per channel — never collapsed into a single 'both' row, since buyer/seller wording usually differs; no SMS, this app has no SMS gateway); transactionNotes (admin-only internal notes, newest first); inspectionReminderCount (null if the buyer's inspectionReminders setting is off, a real count otherwise); insights ({transactionAmount, escrowAmount, transactionDuration (human string), currentStage}); currentStage (top-level replica of insights.currentStage) — now one of Awaiting payment / Inspection / Reported / Resolved (completed) / Refund Processed (refunded) / Under Dispute (disputed) / Buyer's decision (cancelled, not one of the named outcomes); refundInfo (present when status is refunded, OR status is disputed with disputeStatus refunded — {id, slug, amount, reason, status (pending/processed/failed — Paystack refunds aren't instant, a reconciliation sweep corrects a pending row later), triggeredBy ({id, name, slug, role, rolePlayed} — rolePlayed is buyer/seller/admin/system), payoutAccountNumber, payoutBankCode, refundedAt, reference, refundCode, createdAt}); payoutInfo (present when status is completed — same shape as refundInfo minus reason/refundedAt, plus transferCode/completedAt). disputeInfo (present when status is disputed and the transaction has a real seller-raised Dispute behind it — absent for the older payment-race-loss auto-dispute path, which has none — {createdAt, status (the underlying Report's own moderation status: new/investigating/resolved/dismissed), slug (the Report's slug), buyerStatement (the Report's reason), sellerStatement (the Dispute's disputeClaim), evidenceImages, evidenceVideo})."
+              },
+              "response": []
+            },
+            {
+              "name": "Resolve dispute — release to seller",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/transactions/{{transactionId}}/resolve/release",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "transactions",
+                    "{{transactionId}}",
+                    "resolve",
+                    "release"
+                  ]
+                },
+                "description": "Side with the seller — releases the held money to them (minus the admin-configured commission), same as a normal completed sale. Only valid on a DISPUTED transaction. Records a Payout row (see GET transaction detail's payoutInfo) and closes the report behind the dispute, if any."
+              },
+              "response": []
+            },
+            {
+              "name": "Resolve dispute — refund buyer",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/transactions/{{transactionId}}/resolve/refund",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "transactions",
+                    "{{transactionId}}",
+                    "resolve",
+                    "refund"
+                  ]
+                },
+                "description": "Refund the buyer in full — the listing stays up (reverts to active). Only valid on a DISPUTED transaction. Unlike every other refund path in this app, the transaction's own status stays DISPUTED — only disputeStatus moves to 'refunded' (a permanent marker of the outcome). Closes the report behind the dispute, if any. Optional `reason` in the body.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reason\": \"Reviewed the evidence submitted by both parties.\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Resolve dispute — delist listing & refund buyer",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/transactions/{{transactionId}}/resolve/delist-and-refund",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "transactions",
+                    "{{transactionId}}",
+                    "resolve",
+                    "delist-and-refund"
+                  ]
+                },
+                "description": "Upholds the buyer's report — full refund to the buyer, delists the seller's listing, and applies a policy strike against the seller's trust score (a flat deduction, separate from the normal recalculated score). Only valid on a DISPUTED transaction. Same 'stays DISPUTED, disputeStatus -> refunded' shape as the refund-only action above. Closes the report behind the dispute, if any. Optional `reason` in the body.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reason\": \"Reviewed the evidence submitted by both parties.\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
               },
               "response": []
             },

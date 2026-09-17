@@ -75,7 +75,6 @@ export class ReportsService {
     const slug = await this.counterService.nextSlug('report', 'RPT', 4);
     const report = await this.reportModel.create({
       slug,
-      title: dto.title,
       reason: dto.reason,
       listing: dto.listingId,
       user: dto.userId,
@@ -149,7 +148,6 @@ export class ReportsService {
         { name?: string; email?: string } | undefined;
       return {
         slug: r.slug,
-        title: r.title,
         reason: r.reason,
         listingTitle: listing?.title ?? '',
         userName: user?.name ?? '',
@@ -161,7 +159,6 @@ export class ReportsService {
 
     return toCsv(rows, [
       'slug',
-      'title',
       'reason',
       'listingTitle',
       'userName',
@@ -212,7 +209,7 @@ export class ReportsService {
         recipientId: report.reporter.toString(),
         type: 'report_resolved',
         title: 'Your report has been resolved',
-        body: `Your report "${report.title}" has been resolved.`,
+        body: `Your report (${report.slug}) has been resolved.`,
       });
     }
 

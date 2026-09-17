@@ -376,6 +376,7 @@ export class UsersService {
       hasPayoutDetails: user.hasPayoutDetails,
       profileImageUrl: user.profileImage,
       trustScore: user.trustScore,
+      policyStrike: user.policyStrike,
       ...stats,
       createdAt: (user as unknown as { createdAt: Date }).createdAt,
     };

@@ -31,6 +31,13 @@ import {
   RefundTriggeredByType,
 } from './schemas/refund.schema';
 import { Payout, PayoutDocument, PayoutStatus } from './schemas/payout.schema';
+import { Admin, AdminDocument } from '../admin-auth/schemas/admin.schema';
+import {
+  Report,
+  ReportDocument,
+  ReportStatus,
+} from '../reports/schemas/report.schema';
+import { Dispute, DisputeDocument } from '../disputes/schemas/dispute.schema';
 import { InspectionReminderType } from './dto/inspection-reminder-type.enum';
 import { EscrowStatus } from '../escrow/schemas/escrow.schema';
 import { EscrowService } from '../escrow/escrow.service';
@@ -125,6 +132,12 @@ export class TransactionsService {
     private refundModel: Model<RefundDocument>,
     @InjectModel(Payout.name)
     private payoutModel: Model<PayoutDocument>,
+    @InjectModel(Admin.name)
+    private adminModel: Model<AdminDocument>,
+    @InjectModel(Report.name)
+    private reportModel: Model<ReportDocument>,
+    @InjectModel(Dispute.name)
+    private disputeModel: Model<DisputeDocument>,
     private readonly escrowService: EscrowService,
     private readonly listingsService: ListingsService,
     private readonly usersService: UsersService,
@@ -907,6 +920,12 @@ export class TransactionsService {
       EscrowStatus.REFUNDED,
     );
     await this.listingsService.revertToActive(transaction.listing.toString());
+    // No dispute was ever raised here — the report just closes as resolved,
+    // same as the three admin dispute-resolution paths below.
+    await this.closeActiveReportForListing(
+      transaction.listing,
+      transaction.buyer,
+    );
 
     await this.audit(
       transactionId,
@@ -1009,6 +1028,58 @@ export class TransactionsService {
       body: 'The seller disputed your report — an admin will review it.',
       data: { transactionId },
     });
+
+    // Every admin, bell channel only — explicit instruction. dispute_raised_admin
+    // has no push/email channels configured at all (see notification-types.ts),
+    // so this only creates the in-app Notification row + fires the live
+    // WebSocket bell (notify()'s unconditional emitToAdmin() for ADMIN
+    // recipients), never an email.
+    const adminIds = await this.notificationsService.getAllAdminIds();
+    await Promise.all(
+      adminIds.map((adminId) =>
+        this.notificationsService.notify({
+          recipientType: NotificationRecipientType.ADMIN,
+          recipientId: adminId,
+          type: 'dispute_raised_admin',
+          title: 'New dispute raised',
+          body: `A seller raised a dispute on transaction ${transaction.reference}.`,
+          data: { transactionId },
+        }),
+      ),
+    );
+  }
+
+  // Closes the still-open report tied to a buyer's report on this
+  // transaction's listing — used only by sellerRefundReportedPurchase(),
+  // where the seller refunded directly and no Dispute (and therefore no
+  // Dispute.report link) was ever created. A no-op if none matches.
+  private async closeActiveReportForListing(
+    listingId: Types.ObjectId,
+    buyerId: Types.ObjectId,
+  ): Promise<void> {
+    await this.reportModel.updateOne(
+      { listing: listingId, reporter: buyerId, status: ReportStatus.NEW },
+      { status: ReportStatus.RESOLVED },
+    );
+  }
+
+  // Closes the Report behind a resolved dispute, via the Dispute document
+  // linking transaction -> report (Report itself carries no transaction
+  // reference). A transaction can reach DISPUTED two ways — a seller-raised
+  // dispute (has a real Dispute+Report behind it) or the pre-existing
+  // payment-race-loss auto-dispute (has neither) — this is a no-op for the
+  // latter. Used by all three admin dispute-resolution actions below.
+  private async closeReportIfDisputed(transactionId: string): Promise<void> {
+    const dispute = await this.disputeModel
+      .findOne({ transaction: transactionId })
+      .exec();
+    if (!dispute) {
+      return;
+    }
+    await this.reportModel.updateOne(
+      { _id: dispute.report },
+      { status: ReportStatus.RESOLVED },
+    );
   }
 
   async cancel(transactionId: string, buyerId: string) {
@@ -1383,11 +1454,22 @@ export class TransactionsService {
       shaped.insights as { currentStage: string }
     ).currentStage;
 
-    if (transaction.status === TransactionStatus.REFUNDED) {
-      shaped.refundInfo = await this.getRefundInfo(transactionId);
+    // A dispute resolved via refund (adminRefund()/adminDelistAndRefund())
+    // now stays at status DISPUTED, with disputeStatus carrying the REFUNDED
+    // outcome instead — see both methods below — so this gate has to check
+    // both shapes, not just the plain (non-disputed) REFUNDED status.
+    if (
+      transaction.status === TransactionStatus.REFUNDED ||
+      (transaction.status === TransactionStatus.DISPUTED &&
+        transaction.disputeStatus === DisputeStatus.REFUNDED)
+    ) {
+      shaped.refundInfo = await this.getRefundInfo(transactionId, buyerId);
     }
     if (transaction.status === TransactionStatus.COMPLETED) {
-      shaped.payoutInfo = await this.getPayoutInfo(transactionId);
+      shaped.payoutInfo = await this.getPayoutInfo(transactionId, buyerId);
+    }
+    if (transaction.status === TransactionStatus.DISPUTED) {
+      shaped.disputeInfo = await this.getDisputeInfo(transactionId);
     }
 
     return shaped;
@@ -1819,12 +1901,68 @@ export class TransactionsService {
     });
   }
 
-  // Backs the admin transaction detail's `refundInfo` — only ever called
-  // when transaction.status === REFUNDED (see adminFindByIdOrReference()).
-  // Picks the most recent refund row regardless of status (not just
-  // 'processed') — showing a still-pending refund is the whole point of
-  // tracking this now, rather than only ever showing a finished one.
-  private async getRefundInfo(transactionId: string) {
+  // Resolves a polymorphic triggeredBy (Refund.triggeredByType/triggeredBy,
+  // Payout.triggeredByType/triggeredBy) into a display-ready shape —
+  // {id, name, slug, role, rolePlayed}. No Mongoose `ref` exists on either
+  // field (it can point at User or Admin), so this can't lean on
+  // .populate() the way TransactionNote.writtenBy does; it queries
+  // manually instead. buyerId/sellerId (already on hand at every call site)
+  // are what decide rolePlayed for a User — 'buyer' or 'seller' — without a
+  // second query. 2026-09-17, explicit instruction.
+  private async resolveTriggeredBy(
+    type: 'user' | 'admin' | 'system',
+    id: Types.ObjectId | undefined,
+    buyerId?: string,
+  ): Promise<{
+    id: string | null;
+    name: string | null;
+    slug: string | null;
+    role: string | null;
+    rolePlayed: 'buyer' | 'seller' | 'admin' | 'system';
+  }> {
+    if (type === 'system' || !id) {
+      return {
+        id: null,
+        name: 'System',
+        slug: null,
+        role: null,
+        rolePlayed: 'system',
+      };
+    }
+    if (type === 'admin') {
+      const admin = await this.adminModel
+        .findById(id)
+        .select('name slug role')
+        .populate({ path: 'role', select: 'name' })
+        .exec();
+      const role = admin?.role as unknown as { name?: string } | null;
+      return {
+        id: id.toString(),
+        name: admin?.name ?? null,
+        slug: admin?.slug ?? null,
+        role: role?.name ?? null,
+        rolePlayed: 'admin',
+      };
+    }
+    // 'user'
+    const user = await this.usersService.findById(id.toString());
+    const rolePlayed = id.toString() === buyerId ? 'buyer' : 'seller';
+    return {
+      id: id.toString(),
+      name: user?.name ?? null,
+      slug: user?.slug ?? null,
+      role: null,
+      rolePlayed,
+    };
+  }
+
+  // Backs the admin transaction detail's `refundInfo` — shown for a
+  // REFUNDED transaction, or a DISPUTED one whose disputeStatus is REFUNDED
+  // (see adminFindByIdOrReference()). Picks the most recent refund row
+  // regardless of status (not just 'processed') — showing a still-pending
+  // refund is the whole point of tracking this now, rather than only ever
+  // showing a finished one.
+  private async getRefundInfo(transactionId: string, buyerId?: string) {
     const refund = await this.refundModel
       .findOne({ transaction: transactionId })
       .sort({ createdAt: -1 })
@@ -1838,8 +1976,11 @@ export class TransactionsService {
       amount: refund.amount,
       reason: refund.reason,
       status: refund.status,
-      triggeredByType: refund.triggeredByType,
-      triggeredBy: refund.triggeredBy?.toString() ?? null,
+      triggeredBy: await this.resolveTriggeredBy(
+        refund.triggeredByType,
+        refund.triggeredBy,
+        buyerId,
+      ),
       payoutAccountNumber: refund.payoutAccountNumber,
       payoutBankCode: refund.payoutBankCode,
       refundedAt: refund.refundedAt,
@@ -1852,7 +1993,7 @@ export class TransactionsService {
   // Sibling of getRefundInfo(), for the release-to-seller side — only ever
   // called when transaction.status === COMPLETED. Same "most recent row,
   // whatever status it's currently at" shape.
-  private async getPayoutInfo(transactionId: string) {
+  private async getPayoutInfo(transactionId: string, buyerId?: string) {
     const payout = await this.payoutModel
       .findOne({ transaction: transactionId })
       .sort({ createdAt: -1 })
@@ -1860,18 +2001,61 @@ export class TransactionsService {
     if (!payout) {
       return null;
     }
+    // Payout has no stored triggeredByType (only 'user'/buyer or 'admin' are
+    // ever possible, unlike Refund's three) — inferred here by comparing
+    // against the transaction's own buyer id instead.
+    const triggeredByType =
+      payout.triggeredBy.toString() === buyerId ? 'user' : 'admin';
     return {
       id: payout._id.toString(),
       slug: payout.slug,
       amount: payout.amount,
       status: payout.status,
-      triggeredBy: payout.triggeredBy?.toString() ?? null,
+      triggeredBy: await this.resolveTriggeredBy(
+        triggeredByType,
+        payout.triggeredBy,
+        buyerId,
+      ),
       payoutAccountNumber: payout.payoutAccountNumber,
       payoutBankCode: payout.payoutBankCode,
       reference: payout.reference,
       transferCode: payout.transferCode,
       completedAt: payout.completedAt,
       createdAt: payout.createdAt,
+    };
+  }
+
+  // Backs the admin transaction detail's `disputeInfo` — only ever called
+  // when transaction.status === DISPUTED. Pulls from both the Dispute (the
+  // seller's own submission) and the Report it points at (status + the
+  // buyer's original reason) — a Dispute has no `listing`/status of its
+  // own, see the Disputes Module docs. Returns null for the pre-existing
+  // payment-race-loss auto-dispute path, which has no Dispute document at
+  // all (only a seller-raised dispute does). 2026-09-17, explicit
+  // instruction.
+  private async getDisputeInfo(transactionId: string) {
+    const dispute = await this.disputeModel
+      .findOne({ transaction: transactionId })
+      .populate({ path: 'report', select: 'slug status reason' })
+      .exec();
+    if (!dispute) {
+      return null;
+    }
+    const report = dispute.report as unknown as {
+      slug?: string;
+      status?: string;
+      reason?: string;
+    } | null;
+    return {
+      createdAt: dispute.createdAt,
+      // The report's own moderation status (new/investigating/resolved/
+      // dismissed) — not the transaction's own status.
+      status: report?.status ?? null,
+      slug: report?.slug ?? null,
+      buyerStatement: report?.reason ?? null,
+      sellerStatement: dispute.disputeClaim,
+      evidenceImages: dispute.evidenceImages,
+      evidenceVideo: dispute.evidenceVideo,
     };
   }
 
@@ -2079,6 +2263,11 @@ export class TransactionsService {
   }
 
   // Money moves automatically only on the unambiguous "correct code entered" case (confirmCode()) — everything else requires this explicit admin action, per CLAUDE.md's transaction state machine step 8.
+  // Option 3 of the three admin dispute-resolution actions — side with the
+  // seller, release the held money to them (taking the admin-configured
+  // commission). Unchanged behavior except: now also records a Payout row
+  // (triggeredByType 'admin' — adminRelease() never created one before
+  // 2026-09-17) and closes the report behind the dispute, if any.
   async adminRelease(transactionId: string, adminId: string) {
     const transaction = await this.findRaw(transactionId);
     if (transaction.status !== TransactionStatus.DISPUTED) {
@@ -2111,12 +2300,13 @@ export class TransactionsService {
       Math.round((transaction.amount - commissionAmount) * 100) / 100;
 
     // Paystack call before the local write — same money-movement ordering rule as confirmCode()'s release path.
-    await this.paystackService.releaseToSeller({
+    const payoutReference = `declut_admin_release_${transaction._id.toString()}`;
+    const transferResult = await this.paystackService.releaseToSeller({
       bankCode: bankAccount.bankCode,
       accountNumber: bankAccount.accountNumber,
       accountName: bankAccount.accountHolderName,
       amountKobo: Math.round(sellerPayoutAmount * 100),
-      reference: `declut_admin_release_${transaction._id.toString()}`,
+      reference: payoutReference,
     });
 
     const oldStatus = transaction.status;
@@ -2132,6 +2322,24 @@ export class TransactionsService {
       EscrowStatus.RELEASED,
     );
     await this.listingsService.markSold(transaction.listing.toString());
+
+    await this.payoutModel.create({
+      transaction: transaction._id,
+      user: transaction.seller,
+      amount: sellerPayoutAmount,
+      status:
+        transferResult.status === 'success'
+          ? PayoutStatus.SUCCESS
+          : PayoutStatus.PENDING,
+      triggeredBy: adminId,
+      payoutAccountNumber: bankAccount.accountNumber,
+      payoutBankCode: bankAccount.bankCode,
+      reference: payoutReference,
+      transferCode: transferResult.transferCode,
+      completedAt: transferResult.status === 'success' ? new Date() : undefined,
+      slug: await this.counterService.nextSlug('payout', 'PYO', 4),
+    });
+    await this.closeReportIfDisputed(transactionId);
 
     await this.audit(
       transactionId,
@@ -2172,6 +2380,43 @@ export class TransactionsService {
     return this.toAdminResponseShape(transaction);
   }
 
+  // Shared by Option 1 (adminDelistAndRefund) and Option 2 (adminRefund)
+  // below — both are a full refund to the buyer, and both leave
+  // Transaction.status at DISPUTED rather than transitioning it to REFUNDED
+  // (explicit instruction, 2026-09-17, a deliberate change from how every
+  // other refund path in this app behaves) — only disputeStatus moves to
+  // REFUNDED, a permanent marker of how the dispute concluded. Doesn't
+  // touch the listing or the report — the two callers diverge there.
+  private async resolveDisputeWithRefund(
+    transaction: TransactionDocument,
+    adminId: string,
+    reason?: string,
+  ): Promise<void> {
+    await this.refundAndRecord({
+      transactionId: transaction._id.toString(),
+      buyerId: transaction.buyer.toString(),
+      reference: transaction.reference,
+      amount: transaction.amount,
+      amountKobo: Math.round(transaction.amount * 100),
+      reason,
+      triggeredByType: 'admin',
+      triggeredBy: adminId,
+    });
+
+    transaction.disputeStatus = DisputeStatus.REFUNDED;
+    transaction.inspectionStatus = InspectionStatus.FAILED;
+    transaction.inspectionOutcome = InspectionOutcome.DISPUTED;
+    await transaction.save();
+    await this.escrowService.updateStatusForTransaction(
+      transaction._id.toString(),
+      EscrowStatus.REFUNDED,
+    );
+  }
+
+  // Option 2 — refund the buyer in full; the listing stays up (reverts to
+  // active if it wasn't already), no penalty against the seller. Reworked
+  // 2026-09-17: transaction.status now stays DISPUTED (see
+  // resolveDisputeWithRefund() above) instead of transitioning to REFUNDED.
   async adminRefund(transactionId: string, adminId: string, reason?: string) {
     const transaction = await this.findRaw(transactionId);
     if (transaction.status !== TransactionStatus.DISPUTED) {
@@ -2181,35 +2426,17 @@ export class TransactionsService {
     }
 
     // Paystack call before the local write — same ordering rule as everywhere else money moves in this module.
-    await this.refundAndRecord({
-      transactionId,
-      buyerId: transaction.buyer.toString(),
-      reference: transaction.reference,
-      amount: transaction.amount,
-      reason,
-      triggeredByType: 'admin',
-      triggeredBy: adminId,
-    });
-
-    const oldStatus = transaction.status;
-    transaction.status = TransactionStatus.REFUNDED;
-    transaction.disputeStatus = DisputeStatus.REFUNDED;
-    transaction.inspectionStatus = InspectionStatus.FAILED;
-    transaction.inspectionOutcome = InspectionOutcome.DISPUTED;
-    await transaction.save();
-    await this.escrowService.updateStatusForTransaction(
-      transaction._id.toString(),
-      EscrowStatus.REFUNDED,
-    );
+    await this.resolveDisputeWithRefund(transaction, adminId, reason);
     await this.listingsService.revertToActive(transaction.listing.toString());
+    await this.closeReportIfDisputed(transactionId);
 
     await this.audit(
       transactionId,
       'admin_refunded',
       adminId,
-      oldStatus,
-      TransactionStatus.REFUNDED,
-      { reason },
+      TransactionStatus.DISPUTED,
+      TransactionStatus.DISPUTED,
+      { reason, disputeStatus: DisputeStatus.REFUNDED },
     );
 
     await Promise.all([
@@ -2229,10 +2456,75 @@ export class TransactionsService {
       recipientType: NotificationRecipientType.USER,
       recipientId: transaction.seller.toString(),
       type: 'admin_refunded',
-      title: 'Transaction refunded',
-      body: 'An admin reviewed a transaction on your listing and refunded the buyer.',
+      title: 'Please review your listing',
+      body: "An admin refunded the buyer's report against your listing — please review and edit it before it's purchased again.",
       data: { transactionId },
     });
+
+    await transaction.populate([
+      { path: 'buyer', select: PARTY_POPULATE_FIELDS },
+      { path: 'seller', select: PARTY_POPULATE_FIELDS },
+      { path: 'listing', select: LISTING_POPULATE_FIELDS },
+    ]);
+    return this.toAdminResponseShape(transaction);
+  }
+
+  // Option 1 — refund the buyer in full, delist the seller's listing, and
+  // apply a policy strike against the seller's trust score. Added
+  // 2026-09-17, explicit instruction. Same "transaction stays DISPUTED,
+  // disputeStatus -> REFUNDED" shape as adminRefund() above — the two
+  // differ only in what happens to the listing and the seller.
+  async adminDelistAndRefund(
+    transactionId: string,
+    adminId: string,
+    reason?: string,
+  ) {
+    const transaction = await this.findRaw(transactionId);
+    if (transaction.status !== TransactionStatus.DISPUTED) {
+      throw new BadRequestException(
+        `Transaction is ${transaction.status} — this action only applies to disputed transactions`,
+      );
+    }
+
+    await this.resolveDisputeWithRefund(transaction, adminId, reason);
+    await this.listingsService.adminDelistFromDispute(
+      transaction.listing.toString(),
+      adminId,
+    );
+    await this.closeReportIfDisputed(transactionId);
+
+    await this.audit(
+      transactionId,
+      'admin_delisted_and_refunded',
+      adminId,
+      TransactionStatus.DISPUTED,
+      TransactionStatus.DISPUTED,
+      { reason, disputeStatus: DisputeStatus.REFUNDED },
+    );
+
+    // Recalculate BEFORE the policy strike, not after — recalculate()
+    // fully overwrites trustScore from the formula, which has no "policy
+    // violation" input, so a strike applied first would just get discarded
+    // the instant recalculate() runs.
+    await Promise.all([
+      this.trustScoreService.recalculate(transaction.buyer.toString()),
+      this.trustScoreService.recalculate(transaction.seller.toString()),
+    ]);
+    await this.trustScoreService.applyPolicyStrike(
+      transaction.seller.toString(),
+    );
+
+    await this.notificationsService.notify({
+      recipientType: NotificationRecipientType.USER,
+      recipientId: transaction.buyer.toString(),
+      type: 'admin_refunded',
+      title: 'Transaction refunded',
+      body: 'An admin reviewed your transaction and issued a refund.',
+      data: { transactionId },
+    });
+    // The seller's own delisting notification is sent by
+    // ListingsService.adminDelistFromDispute() itself (listing_unlisted) —
+    // not duplicated here.
 
     await transaction.populate([
       { path: 'buyer', select: PARTY_POPULATE_FIELDS },

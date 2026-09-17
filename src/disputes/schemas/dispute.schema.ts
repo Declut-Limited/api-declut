@@ -37,7 +37,7 @@ export class Dispute {
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Report', required: true })
   report: Types.ObjectId;
 
-  @Prop({ required: true, trim: true, maxlength: 2000 })
+  @Prop({ required: true, trim: true, maxlength: 5000 })
   disputeClaim: string;
 
   // Same MediaAsset shape Listing.images/video use — the client uploads

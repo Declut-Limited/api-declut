@@ -16,9 +16,6 @@ export class Report {
   @Prop({ required: true, unique: true })
   slug: string;
 
-  @Prop({ required: true, trim: true, maxlength: 120 })
-  title: string;
-
   @Prop({ required: true, trim: true, maxlength: 2000 })
   reason: string;
 

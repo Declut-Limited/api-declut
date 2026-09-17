@@ -17,6 +17,10 @@ export interface PrivateUserProfile {
   hasPayoutDetails: boolean;
   profileImageUrl?: string;
   trustScore: number;
+  // Admin-visible elsewhere (GET /admin/users list, user detail by
+  // id/slug) — the one exception is the user's own GET /users/me. Never on
+  // PublicUserProfile below.
+  policyStrike: number;
   listingCount: number;
   soldCount: number;
   purchaseCount: number;

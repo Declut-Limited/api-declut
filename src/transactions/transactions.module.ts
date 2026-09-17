@@ -7,6 +7,9 @@ import {
 } from './schemas/transaction-note.schema';
 import { Refund, RefundSchema } from './schemas/refund.schema';
 import { Payout, PayoutSchema } from './schemas/payout.schema';
+import { Admin, AdminSchema } from '../admin-auth/schemas/admin.schema';
+import { Report, ReportSchema } from '../reports/schemas/report.schema';
+import { Dispute, DisputeSchema } from '../disputes/schemas/dispute.schema';
 import { TransactionsService } from './transactions.service';
 import { TransactionsController } from './transactions.controller';
 import { ListingsModule } from '../listings/listings.module';
@@ -28,6 +31,16 @@ import { BankAccountsModule } from '../bank-accounts/bank-accounts.module';
       { name: TransactionNote.name, schema: TransactionNoteSchema },
       { name: Refund.name, schema: RefundSchema },
       { name: Payout.name, schema: PayoutSchema },
+      // Registered directly rather than importing AdminAuthModule/
+      // ReportsModule/DisputesModule, which would cycle (ReportsModule and
+      // DisputesModule both already import TransactionsModule) — same
+      // raw-schema-registration workaround UsersModule/ListingsModule use
+      // elsewhere in this app. Narrow, read-only-ish access: resolving a
+      // Payout/Refund's triggeredBy admin (name/slug/role), and closing the
+      // Report tied to a resolved dispute. 2026-09-17.
+      { name: Admin.name, schema: AdminSchema },
+      { name: Report.name, schema: ReportSchema },
+      { name: Dispute.name, schema: DisputeSchema },
     ]),
     ListingsModule,
     PaymentsModule,

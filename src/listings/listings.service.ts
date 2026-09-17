@@ -1089,8 +1089,8 @@ export class ListingsService {
     });
   }
 
-  // Used internally as a mutation target (flag/adminRemove) and by
-  // AdminService.emailSeller() for the raw seller id — deliberately
+  // Used internally as a mutation target (report/delist/adminDelistFromDispute)
+  // and by AdminService.emailSeller() for the raw seller id — deliberately
   // unpopulated. See adminFindByIdWithCategory() for the display variant.
   async adminFindById(id: string): Promise<ListingDocument> {
     if (!isValidObjectId(id)) {
@@ -1339,6 +1339,41 @@ export class ListingsService {
     return listing;
   }
 
+  // A second, narrower delist path used only by
+  // TransactionsService.adminDelistAndRefund() to resolve an upheld dispute
+  // — unlike delist() above (owner-status-only, ACTIVE required), this has
+  // no status guard at all: by the time a purchase is disputed the listing
+  // is already REPORTED (see report() below), not ACTIVE, so delist()'s own
+  // guard would always 400 here. Matches this app's existing "admin can act
+  // on a listing regardless of lifecycle state" precedent. 2026-09-17.
+  async adminDelistFromDispute(id: string, adminId: string): Promise<void> {
+    const listing = await this.adminFindById(id);
+    const oldState = listing.status;
+    listing.status = ListingStatus.DELISTED;
+    await listing.save();
+    await this.auditLogService.record({
+      entityType: 'listing',
+      entityId: id,
+      event: 'listing.delisted_policy_violation',
+      actor: adminId,
+      oldState,
+      newState: listing.status,
+    });
+
+    await this.notificationsService.notify({
+      recipientType: NotificationRecipientType.USER,
+      recipientId: listing.seller.toString(),
+      type: 'listing_unlisted',
+      title: 'Your listing was delisted',
+      body: `Your listing "${listing.title}" was delisted after a buyer's report was upheld.`,
+    });
+    this.appRealtimeService.emitListingStatusChange(
+      id,
+      listing.seller.toString(),
+      { status: listing.status, oldStatus: oldState },
+    );
+  }
+
   async relist(id: string, adminId: string): Promise<ListingDocument> {
     const listing = await this.adminFindById(id);
     if (listing.status !== ListingStatus.DELISTED) {
@@ -1361,27 +1396,6 @@ export class ListingsService {
       { status: listing.status, oldStatus: oldState },
     );
     return listing;
-  }
-
-  // Admin removal — same soft-delete mechanism as a seller's own delete,
-  // just without the ownership check.
-  // Real hard delete, same as the owner's own remove() above — admin removal
-  // is deliberately not restricted to `active` (an admin needs to be able to
-  // remove a listing regardless of its current lifecycle state).
-  async adminRemove(id: string, adminId: string): Promise<void> {
-    const listing = await this.adminFindById(id);
-    const oldState = listing.status;
-    const sellerId = listing.seller.toString();
-    await listing.deleteOne();
-    await this.auditLogService.record({
-      entityType: 'listing',
-      entityId: id,
-      event: 'listing.deleted_by_admin',
-      actor: adminId,
-      oldState,
-      newState: 'deleted',
-    });
-    this.appRealtimeService.emitListingChanged(id, sellerId, 'deleted');
   }
 
   // Friendly GET /listings/mine filter keys → real ListingStatus.

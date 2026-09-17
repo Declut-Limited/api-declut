@@ -176,6 +176,17 @@ export const NOTIFICATION_TYPES = {
       [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
     },
   },
+  // Every admin, bell-channel only (explicit instruction) — no email/push at
+  // all; the Notification row + live WebSocket echo (notify()'s
+  // unconditional emitToAdmin() for ADMIN recipients) are what the bell
+  // reads. 2026-09-17.
+  dispute_raised_admin: {
+    label: 'New dispute raised',
+    channels: {
+      [NotificationRecipientType.USER]: [] as NotificationChannel[],
+      [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
+    },
+  },
 } as const;
 
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;

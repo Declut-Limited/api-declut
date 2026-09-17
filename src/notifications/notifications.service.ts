@@ -415,6 +415,15 @@ export class NotificationsService {
     });
   }
 
+  // Used by TransactionsService.markDisputedFromSellerDispute() to notify
+  // every admin (bell channel only, see dispute_raised_admin in
+  // notification-types.ts) that a new dispute landed. Reuses the Admin
+  // model this service already injects for attemptEmail()'s admin lookup.
+  async getAllAdminIds(): Promise<string[]> {
+    const admins = await this.adminModel.find({}, '_id').lean().exec();
+    return admins.map((a) => a._id.toString());
+  }
+
   // Force-drops an admin's live socket connection — the JWT access token itself stays valid until natural expiry (this app's access tokens are stateless, not blacklistable), so this doesn't revoke the token, it just stops the bell from staying live past logout.
   disconnectAdminSockets(adminId: string): void {
     this.gateway.disconnectAdmin(adminId);

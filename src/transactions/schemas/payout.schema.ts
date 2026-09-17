@@ -37,10 +37,13 @@ export class Payout {
   @Prop({ type: String, enum: PayoutStatus, default: PayoutStatus.PENDING })
   status: PayoutStatus;
 
-  // The buyer who triggered this release — always a User, never an admin
-  // (adminRelease() doesn't create a Payout row, per explicit instruction —
-  // only the buyer-confirmed path does).
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true })
+  // Who triggered this release — the buyer (confirmReceipt()) or an admin
+  // (adminRelease()). No `ref` and no separate type field (explicit
+  // instruction, 2026-09-17) — a payout only ever has these two possible
+  // triggering roles, so TransactionsService infers which one by comparing
+  // this id against the transaction's own buyer id, rather than storing a
+  // redundant flag.
+  @Prop({ type: MongooseSchema.Types.ObjectId, required: true })
   triggeredBy: Types.ObjectId;
 
   @Prop()

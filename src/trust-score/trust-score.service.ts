@@ -72,4 +72,21 @@ export class TrustScoreService {
 
     await this.userModel.updateOne({ _id: userId }, { trustScore }).exec();
   }
+
+  async applyPolicyStrike(userId: string, trustScorePoints = 5): Promise<void> {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      return;
+    }
+    const trustScore = Math.max(
+      0,
+      Math.min(100, (user.trustScore ?? 0) - trustScorePoints),
+    );
+    await this.userModel
+      .updateOne(
+        { _id: userId },
+        { $set: { trustScore }, $inc: { policyStrike: 1 } },
+      )
+      .exec();
+  }
 }

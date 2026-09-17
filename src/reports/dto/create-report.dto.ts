@@ -9,11 +9,6 @@ import {
 export class CreateReportDto {
   @IsString()
   @MinLength(3)
-  @MaxLength(120)
-  title: string;
-
-  @IsString()
-  @MinLength(3)
   @MaxLength(2000)
   reason: string;
 
