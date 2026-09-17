@@ -17,9 +17,12 @@ import * as bcrypt from 'bcrypt';
 import type { StringValue } from 'ms';
 import {
   Admin,
+  AdminAccountStatus,
   AdminDocument,
   DashboardPreferences,
+  Phone,
 } from './schemas/admin.schema';
+import { normalizeNigerianPhone } from '../common/utils/phone.util';
 import { Role, RoleDocument } from '../roles/schemas/role.schema';
 import { AdminLoginDto } from './dto/admin-login.dto';
 import { CreateSubAdminDto } from './dto/create-sub-admin.dto';
@@ -56,7 +59,8 @@ export interface AdminProfile {
   name: string;
   firstName?: string;
   lastName?: string;
-  phone?: string;
+  phone?: Phone;
+  accountStatus: AdminAccountStatus;
   dashboardPreferences?: DashboardPreferences;
   passwordChangedAt?: Date | null;
   lastLoginAt?: Date | null;
@@ -190,6 +194,41 @@ export class AdminAuthService {
     return this.toProfile(admin);
   }
 
+  // Three flat status flips, mirroring UsersService's own
+  // suspend/deactivate/reactivate/ban — no Suspension-style metadata
+  // sub-document, since none was asked for here. No 'ban' counterpart —
+  // ban is user-only (explicit instruction, 2026-09-17). Neither login()
+  // above nor AdminJwtAuthGuard/PermissionsGuard currently check
+  // accountStatus — same gap User's own accountStatus already has (nothing
+  // in AuthService.login() checks it either) — so these set the field for
+  // visibility/filtering but don't yet block API access; flagged, not
+  // fixed, since enforcing it wasn't asked for.
+  async suspendAdmin(adminId: string): Promise<AdminProfile> {
+    return this.setAccountStatus(adminId, AdminAccountStatus.SUSPENDED);
+  }
+
+  async deactivateAdmin(adminId: string): Promise<AdminProfile> {
+    return this.setAccountStatus(adminId, AdminAccountStatus.DEACTIVATED);
+  }
+
+  async reactivateAdmin(adminId: string): Promise<AdminProfile> {
+    return this.setAccountStatus(adminId, AdminAccountStatus.ACTIVE);
+  }
+
+  private async setAccountStatus(
+    adminId: string,
+    accountStatus: AdminAccountStatus,
+  ): Promise<AdminProfile> {
+    const admin = await this.adminModel.findById(adminId).exec();
+    if (!admin) {
+      throw new NotFoundException('Admin not found');
+    }
+    admin.accountStatus = accountStatus;
+    await admin.save();
+    await admin.populate('role', ROLE_POPULATE_FIELDS);
+    return this.toProfile(admin);
+  }
+
   // Backs RolesService.findAll()/remove() — how many admins are currently assigned to a role, computed live rather than cached (see the Role schema comment).
   countByRole(roleId: string): Promise<number> {
     return this.adminModel.countDocuments({ role: roleId }).exec();
@@ -230,7 +269,7 @@ export class AdminAuthService {
       admin.email = dto.email.toLowerCase();
     }
     if (dto.phone !== undefined) {
-      admin.phone = dto.phone;
+      admin.phone = normalizeNigerianPhone(dto.phone);
     }
     if (dto.firstName !== undefined) {
       admin.firstName = dto.firstName;
@@ -537,6 +576,7 @@ export class AdminAuthService {
       firstName: admin.firstName,
       lastName: admin.lastName,
       phone: admin.phone,
+      accountStatus: admin.accountStatus,
       dashboardPreferences: admin.dashboardPreferences,
       passwordChangedAt: admin.passwordChangedAt ?? null,
       lastLoginAt: admin.lastLoginAt ?? null,

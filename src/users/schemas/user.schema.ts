@@ -17,11 +17,18 @@ export enum KycStatus {
 
 // 'pending' = not yet completed email verification (distinct from
 // kycStatus, which tracks identity verification separately). Flips to
-// 'active' the moment emailVerified becomes true.
+// 'active' the moment emailVerified becomes true. DEACTIVATED/BANNED added
+// 2026-09-17, explicit instruction, alongside two new admin actions
+// (UsersService.deactivate()/ban()) — 'suspended' stays a distinct,
+// time-boxed action with its own Suspension sub-document; these two are
+// simpler flat status flips, undone the same way suspend already is, via
+// reactivate().
 export enum AccountStatus {
   ACTIVE = 'active',
   SUSPENDED = 'suspended',
   PENDING = 'pending',
+  DEACTIVATED = 'deactivated',
+  BANNED = 'banned',
 }
 
 @Schema({ _id: false })

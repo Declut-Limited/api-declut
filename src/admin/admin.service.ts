@@ -65,9 +65,13 @@ export class AdminService {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
 
-    // A status filter is a User-only concept (Admins have no accountStatus)
-    // — applying one narrows the federated view down to Users only, same as
-    // an explicit type='user'. type='admin' skips the Users query entirely.
+    // `status` filters by User's own AccountStatus values — Admin has its
+    // own narrower AdminAccountStatus (active/suspended/deactivated, see
+    // admin.schema.ts), a distinct enum, so this filter still narrows the
+    // federated view down to Users only, same as an explicit type='user'.
+    // type='admin' skips the Users query entirely. An Admin row's real
+    // status is still shown (see adminRows below) — just not filterable
+    // through this one param.
     const includeUsers = dto.type !== 'admin';
     const includeAdmins =
       dto.type === 'admin' || (dto.type !== 'user' && !dto.status);
@@ -133,7 +137,7 @@ export class AdminService {
         roleId: populatedRole?._id?.toString(),
         roleName: populatedRole?.name,
         listingsCount: 0,
-        status: 'active',
+        status: a.accountStatus,
         joinedAt: (a as unknown as { createdAt: Date }).createdAt,
       };
     });
@@ -271,6 +275,19 @@ export class AdminService {
     return this.usersService.getPrivateProfile(userId);
   }
 
+  // Simpler counterparts to suspendUser() above — flat status flips, no
+  // duration/reason/outcome. Both undone via reactivateUser() above, same as
+  // suspend. 2026-09-17, explicit instruction.
+  async deactivateUser(userId: string) {
+    await this.usersService.deactivate(userId);
+    return this.usersService.getPrivateProfile(userId);
+  }
+
+  async banUser(userId: string) {
+    await this.usersService.ban(userId);
+    return this.usersService.getPrivateProfile(userId);
+  }
+
   async overrideKycStatus(userId: string, status: KycStatus) {
     await this.usersService.setKycStatus(userId, status);
     if (status === KycStatus.VERIFIED) {
@@ -309,9 +326,14 @@ export class AdminService {
     >['recentActivity'],
   ) {
     const sellerId = listing.seller.toString();
-    const [seller, listingCounts] = await Promise.all([
+    const [seller, listingCounts, buyerReview] = await Promise.all([
       this.usersService.findById(sellerId),
       this.listingsService.countsBySeller([sellerId]),
+      // Only a SOLD listing can have a completed-purchase review behind it —
+      // 2026-09-17, explicit instruction.
+      listing.status === ListingStatus.SOLD
+        ? this.reviewsService.getForListingAdmin(listing._id.toString())
+        : Promise.resolve(null),
     ]);
 
     return {
@@ -337,6 +359,7 @@ export class AdminService {
       },
       priceHistory: listing.priceHistory,
       recentActivity,
+      buyerReview,
       seller: seller
         ? {
             id: seller._id.toString(),

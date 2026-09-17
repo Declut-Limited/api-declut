@@ -111,10 +111,12 @@ export class UsersService {
       name: params.name,
       googleId: params.googleId,
       authProvider: AuthProvider.GOOGLE,
-      // Google already verified the email — no signup-OTP step, and no
-      // 'pending' account gap either since there's nothing left to wait on.
+      // Google already verified the email — no signup-OTP step needed for
+      // that half. accountStatus still starts PENDING though (2026-09-17,
+      // explicit instruction) — KYC verification is the other half of the
+      // activation gate now, and Google sign-in doesn't skip that.
       emailVerified: true,
-      accountStatus: AccountStatus.ACTIVE,
+      accountStatus: AccountStatus.PENDING,
       slug,
     });
   }
@@ -156,6 +158,9 @@ export class UsersService {
 
   async setKycStatus(userId: string, kycStatus: KycStatus): Promise<void> {
     await this.userModel.updateOne({ _id: userId }, { kycStatus }).exec();
+    if (kycStatus === KycStatus.VERIFIED) {
+      await this.activateIfEligible(userId);
+    }
   }
 
   async updateKycFlags(
@@ -177,17 +182,40 @@ export class UsersService {
   }
 
   async setEmailVerified(userId: string): Promise<void> {
-    // Also completes onboarding: pending -> active. Only touches accountStatus
-    // when it's still pending, so this can never accidentally reactivate a
-    // suspended account.
+    await this.userModel
+      .updateOne({ _id: userId }, { emailVerified: true })
+      .exec();
+    // Email verification is only half the activation gate now — see
+    // activateIfEligible() below. 2026-09-17, explicit instruction.
+    await this.activateIfEligible(userId);
+  }
+
+  // accountStatus only ever advances PENDING -> ACTIVE here, and only once
+  // both halves are true: emailVerified (already true at creation for a
+  // Google account, since Google's email arrives pre-verified) and
+  // kycStatus === VERIFIED. Called from both setEmailVerified() and
+  // setKycStatus() above, since either one can be the half that completes
+  // the pair. Never touches a suspended/deactivated/banned account — the
+  // conditional update only ever matches a still-PENDING document.
+  // 2026-09-17, explicit instruction.
+  private async activateIfEligible(userId: string): Promise<void> {
+    const user = await this.userModel
+      .findById(userId)
+      .select('emailVerified kycStatus accountStatus')
+      .exec();
+    if (
+      !user ||
+      user.accountStatus !== AccountStatus.PENDING ||
+      !user.emailVerified ||
+      user.kycStatus !== KycStatus.VERIFIED
+    ) {
+      return;
+    }
     await this.userModel
       .updateOne(
         { _id: userId, accountStatus: AccountStatus.PENDING },
         { accountStatus: AccountStatus.ACTIVE },
       )
-      .exec();
-    await this.userModel
-      .updateOne({ _id: userId }, { emailVerified: true })
       .exec();
   }
 
@@ -225,6 +253,29 @@ export class UsersService {
     }
     user.accountStatus = AccountStatus.ACTIVE;
     user.suspension = undefined;
+    await user.save();
+    return user;
+  }
+
+  // Simpler flat status flips than suspend() — no duration/reason/outcome
+  // sub-document, since none was asked for. Both undone via reactivate()
+  // above, same as suspend. 2026-09-17, explicit instruction.
+  async deactivate(userId: string): Promise<UserDocument> {
+    const user = await this.userModel.findById(userId).exec();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    user.accountStatus = AccountStatus.DEACTIVATED;
+    await user.save();
+    return user;
+  }
+
+  async ban(userId: string): Promise<UserDocument> {
+    const user = await this.userModel.findById(userId).exec();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    user.accountStatus = AccountStatus.BANNED;
     await user.save();
     return user;
   }

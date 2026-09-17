@@ -120,6 +120,18 @@ export class AdminController {
     return this.adminService.reactivateUser(id);
   }
 
+  @Patch('users/:id/deactivate')
+  @RequirePermission('users', 'write')
+  deactivateUser(@Param('id') id: string) {
+    return this.adminService.deactivateUser(id);
+  }
+
+  @Patch('users/:id/ban')
+  @RequirePermission('users', 'write')
+  banUser(@Param('id') id: string) {
+    return this.adminService.banUser(id);
+  }
+
   @Patch('users/:id/kyc')
   @RequirePermission('users', 'write')
   overrideKycStatus(@Param('id') id: string, @Body() dto: SetKycStatusDto) {

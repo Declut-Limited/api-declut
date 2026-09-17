@@ -3126,7 +3126,7 @@
                       "key": "status",
                       "value": "active",
                       "disabled": true,
-                      "description": "active, suspended, or pending — Users only; Admins have no accountStatus and are excluded by this filter."
+                      "description": "active, suspended, pending, deactivated, or banned — Users only; Admins have their own narrower accountStatus (active/suspended/deactivated) and are excluded by this filter (still shown, just not filterable through this param — see the type param)."
                     },
                     {
                       "key": "type",
@@ -3154,7 +3154,7 @@
                     }
                   ]
                 },
-                "description": "Federated view — merges Users and Admins into one list, sorted by joinedAt. status filter narrows to Users only. type explicitly picks all/user/admin (default all) — type=admin/type=user skip the other collection's query entirely. User rows carry slug (USR-####); Admin rows carry roleId (the assigned Role's id, see the roles folder) instead. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
+                "description": "Federated view — merges Users and Admins into one list, sorted by joinedAt. status filter narrows to Users only. type explicitly picks all/user/admin (default all) — type=admin/type=user skip the other collection's query entirely. User rows carry slug (USR-####); Admin rows carry roleId (the assigned Role's id, see the roles folder) instead. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate). Admin rows now carry their own real accountStatus (active/suspended/deactivated) in the status field too, instead of a hardcoded 'active'."
               },
               "response": []
             },
@@ -3309,6 +3309,72 @@
                           ]
                         },
                         "description": ""
+                      },
+                      "response": []
+                    }
+                  ]
+                },
+                {
+                  "name": "deactivate",
+                  "description": "",
+                  "item": [
+                    {
+                      "name": "Deactivate user",
+                      "request": {
+                        "method": "PATCH",
+                        "header": [
+                          {
+                            "key": "Authorization",
+                            "value": "Bearer {{adminAccessToken}}",
+                            "type": "text"
+                          }
+                        ],
+                        "url": {
+                          "raw": "{{baseUrl}}/admin/users/{{userId}}/deactivate",
+                          "host": [
+                            "{{baseUrl}}"
+                          ],
+                          "path": [
+                            "admin",
+                            "users",
+                            "{{userId}}",
+                            "deactivate"
+                          ]
+                        },
+                        "description": "Flat status flip to deactivated — no duration/reason, unlike suspend. Undone via reactivate."
+                      },
+                      "response": []
+                    }
+                  ]
+                },
+                {
+                  "name": "ban",
+                  "description": "",
+                  "item": [
+                    {
+                      "name": "Ban user",
+                      "request": {
+                        "method": "PATCH",
+                        "header": [
+                          {
+                            "key": "Authorization",
+                            "value": "Bearer {{adminAccessToken}}",
+                            "type": "text"
+                          }
+                        ],
+                        "url": {
+                          "raw": "{{baseUrl}}/admin/users/{{userId}}/ban",
+                          "host": [
+                            "{{baseUrl}}"
+                          ],
+                          "path": [
+                            "admin",
+                            "users",
+                            "{{userId}}",
+                            "ban"
+                          ]
+                        },
+                        "description": "Flat status flip to banned — user-only, no Admin equivalent. Undone via reactivate."
                       },
                       "response": []
                     }
@@ -3518,7 +3584,7 @@
                             "{{listingId}}"
                           ]
                         },
-                        "description": "Same rich detail shape as Get listing by slug — seller info, specs + condition, price history, last-3 activity log entries, location (GeoJSON Point) and locationLabel. 404s if the listing is paused (2026-09-13) — invisible to admin, same as a nonexistent listing."
+                        "description": "Same rich detail shape as Get listing by slug — seller info, specs + condition, price history, last-3 activity log entries, location (GeoJSON Point) and locationLabel. 404s if the listing is paused (2026-09-13) — invisible to admin, same as a nonexistent listing. A SOLD listing also carries buyerReview — {_id, rating, comment, status} for the completed purchase's review, or null if none exists yet. Always null for any other status."
                       },
                       "response": []
                     }
@@ -3552,7 +3618,7 @@
                         "{{listingSlug}}"
                       ]
                     },
-                    "description": "Rich detail: seller info, specs + condition, price history, last-3 activity log entries, location (GeoJSON Point) and locationLabel. 404s if the listing is paused (2026-09-13) — invisible to admin, same as a nonexistent listing."
+                    "description": "Rich detail: seller info, specs + condition, price history, last-3 activity log entries, location (GeoJSON Point) and locationLabel. 404s if the listing is paused (2026-09-13) — invisible to admin, same as a nonexistent listing. A SOLD listing also carries buyerReview — {_id, rating, comment, status} for the completed purchase's review, or null if none exists yet. Always null for any other status."
                   },
                   "response": []
                 }
@@ -5656,7 +5722,7 @@
                         "me"
                       ]
                     },
-                    "description": "Not gated by PermissionsGuard — any authenticated admin can always read their own profile, regardless of role/permissions. Now also returns firstName, lastName, phone, dashboardPreferences, passwordChangedAt, lastLoginAt, lastProfileUpdateAt."
+                    "description": "Returns the caller's own admin profile — includes slug (ADM-####), phone as {phoneNumber, countryCode} (countryCode is always \"+234\" for now), and accountStatus (active/suspended/deactivated). Not PermissionsGuard-gated — any authenticated admin can always read their own profile."
                   },
                   "response": []
                 },
@@ -5688,7 +5754,7 @@
                         "general"
                       ]
                     },
-                    "description": "Partial update — only send fields you're changing. Not gated by PermissionsGuard, same as the rest of /admin/auth/me/*. Changing firstName/lastName recomputes name as \"${firstName} ${lastName}\". Changing email checks it isn't already taken by another admin (409 if so).",
+                    "description": "Partial update — only send fields you're changing. Not gated by PermissionsGuard, same as the rest of /admin/auth/me/*. Changing firstName/lastName recomputes name as \"${firstName} ${lastName}\". Changing email checks it isn't already taken by another admin (409 if so). phone is still sent as a plain Nigerian-format string (07/08/09-prefixed local or +234 international) — the server normalizes it into {phoneNumber, countryCode} on save (countryCode always \"+234\", any leading 0 stripped from phoneNumber) and returns it in that shape on every subsequent read.",
                     "body": {
                       "mode": "raw",
                       "raw": "{\n  \"firstName\": \"Ada\",\n  \"lastName\": \"Lovelace\",\n  \"phone\": \"08012345678\",\n  \"email\": \"ada.lovelace@declut.com\"\n}",
@@ -5946,6 +6012,108 @@
                                 }
                               }
                             }
+                          },
+                          "response": []
+                        }
+                      ]
+                    },
+                    {
+                      "name": "suspend",
+                      "description": "",
+                      "item": [
+                        {
+                          "name": "Suspend admin",
+                          "request": {
+                            "method": "PATCH",
+                            "header": [
+                              {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminAccessToken}}",
+                                "type": "text"
+                              }
+                            ],
+                            "url": {
+                              "raw": "{{baseUrl}}/admin/auth/sub-admins/{{subAdminId}}/suspend",
+                              "host": [
+                                "{{baseUrl}}"
+                              ],
+                              "path": [
+                                "admin",
+                                "auth",
+                                "sub-admins",
+                                "{{subAdminId}}",
+                                "suspend"
+                              ]
+                            },
+                            "description": "Flat status flip to suspended. Admin's own AdminAccountStatus (active/suspended/deactivated) is a narrower, distinct enum from User's AccountStatus — no 'pending' (an admin is never mid-email-verification) and no 'banned' (ban is user-only). Same flat trust model as sub-admin creation/role reassignment — any authenticated admin, no extra RBAC check."
+                          },
+                          "response": []
+                        }
+                      ]
+                    },
+                    {
+                      "name": "deactivate",
+                      "description": "",
+                      "item": [
+                        {
+                          "name": "Deactivate admin",
+                          "request": {
+                            "method": "PATCH",
+                            "header": [
+                              {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminAccessToken}}",
+                                "type": "text"
+                              }
+                            ],
+                            "url": {
+                              "raw": "{{baseUrl}}/admin/auth/sub-admins/{{subAdminId}}/deactivate",
+                              "host": [
+                                "{{baseUrl}}"
+                              ],
+                              "path": [
+                                "admin",
+                                "auth",
+                                "sub-admins",
+                                "{{subAdminId}}",
+                                "deactivate"
+                              ]
+                            },
+                            "description": "Flat status flip to deactivated."
+                          },
+                          "response": []
+                        }
+                      ]
+                    },
+                    {
+                      "name": "reactivate",
+                      "description": "",
+                      "item": [
+                        {
+                          "name": "Reactivate admin",
+                          "request": {
+                            "method": "PATCH",
+                            "header": [
+                              {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminAccessToken}}",
+                                "type": "text"
+                              }
+                            ],
+                            "url": {
+                              "raw": "{{baseUrl}}/admin/auth/sub-admins/{{subAdminId}}/reactivate",
+                              "host": [
+                                "{{baseUrl}}"
+                              ],
+                              "path": [
+                                "admin",
+                                "auth",
+                                "sub-admins",
+                                "{{subAdminId}}",
+                                "reactivate"
+                              ]
+                            },
+                            "description": "Flat status flip back to active — undoes either suspend or deactivate."
                           },
                           "response": []
                         }
@@ -6515,7 +6683,7 @@
         },
         {
           "name": "waitlist",
-          "description": "",
+          "description": "Gated by PermissionsGuard now too (waitlist/view, /write, /delete), not just AdminJwtAuthGuard — reversing an earlier explicit instruction not to gate waitlist on permissions at all. Every pre-existing Role was backfilled with full waitlist access at the time of this change, so no existing admin lost access they already had.",
           "item": [
             {
               "name": "List waitlist",

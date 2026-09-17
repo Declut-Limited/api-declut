@@ -127,4 +127,24 @@ export class AdminAuthController {
   updateRole(@Param('id') id: string, @Body() dto: UpdateAdminRoleDto) {
     return this.adminAuthService.updateRole(id, dto);
   }
+
+  // Same flat trust model as sub-admin creation/role reassignment above —
+  // any authenticated admin, no extra RBAC check. 2026-09-17.
+  @UseGuards(AdminJwtAuthGuard)
+  @Patch('sub-admins/:id/suspend')
+  suspendAdmin(@Param('id') id: string) {
+    return this.adminAuthService.suspendAdmin(id);
+  }
+
+  @UseGuards(AdminJwtAuthGuard)
+  @Patch('sub-admins/:id/deactivate')
+  deactivateAdmin(@Param('id') id: string) {
+    return this.adminAuthService.deactivateAdmin(id);
+  }
+
+  @UseGuards(AdminJwtAuthGuard)
+  @Patch('sub-admins/:id/reactivate')
+  reactivateAdmin(@Param('id') id: string) {
+    return this.adminAuthService.reactivateAdmin(id);
+  }
 }

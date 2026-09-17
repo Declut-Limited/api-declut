@@ -3,6 +3,18 @@ import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 
 export type AdminDocument = HydratedDocument<Admin>;
 
+// A narrower set than User's own AccountStatus — no 'pending' (an admin is
+// never mid-email-verification) and no 'banned' (ban is user-only, explicit
+// instruction, 2026-09-17). Default 'active', unlike User's default
+// 'pending' — an admin is only ever created directly by another admin
+// (createSubAdmin()) or the seed script, never through a self-serve signup
+// flow with a verification gap to sit "pending" through.
+export enum AdminAccountStatus {
+  ACTIVE = 'active',
+  SUSPENDED = 'suspended',
+  DEACTIVATED = 'deactivated',
+}
+
 @Schema({ _id: false })
 class RefreshTokenInfo {
   @Prop({ required: true })
@@ -10,6 +22,19 @@ class RefreshTokenInfo {
 
   @Prop({ required: true })
   expiresAt: Date;
+}
+
+// Admin-only, not a shared/standalone schema (explicit instruction,
+// 2026-09-17) — countryCode is always '+234' for now (see
+// normalizeNigerianPhone()), phoneNumber is the bare local number with any
+// leading 0 stripped.
+@Schema({ _id: false })
+export class Phone {
+  @Prop({ required: true })
+  phoneNumber: string;
+
+  @Prop({ required: true, default: '+234' })
+  countryCode: string;
 }
 
 // Endpoint 2 of the 3 admin-profile update endpoints (PATCH
@@ -62,8 +87,17 @@ export class Admin {
   @Prop({ trim: true })
   lastName?: string;
 
-  @Prop({ trim: true })
-  phone?: string;
+  // Reworked 2026-09-17, explicit instruction — was a plain trimmed string
+  // before this.
+  @Prop({ type: Phone })
+  phone?: Phone;
+
+  @Prop({
+    type: String,
+    enum: AdminAccountStatus,
+    default: AdminAccountStatus.ACTIVE,
+  })
+  accountStatus: AdminAccountStatus;
 
   @Prop({ type: DashboardPreferences, default: () => ({}) })
   dashboardPreferences: DashboardPreferences;

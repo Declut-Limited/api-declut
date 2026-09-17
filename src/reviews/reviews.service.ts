@@ -97,11 +97,7 @@ export class ReviewsService {
   // one, since a buyer can complete multiple separate purchases (and so
   // leave multiple reviews) with the same seller. Scoped to the requester,
   // not a public "everyone's reviews of this seller" feed.
-  async listForUser(
-    userId: string,
-    requesterId: string,
-    dto: ListReviewsDto,
-  ) {
+  async listForUser(userId: string, requesterId: string, dto: ListReviewsDto) {
     if (!isValidObjectId(userId)) {
       throw new NotFoundException('User not found');
     }
@@ -144,6 +140,36 @@ export class ReviewsService {
       throw new NotFoundException('Review not found');
     }
     return this.shapeReview(review);
+  }
+
+  // Admin-only lookup, no reviewer scoping (unlike getForListing() above) —
+  // a listing is only ever bought/reviewed once, so this is just "does a
+  // review exist for this listing at all." Backs the buyerReview shown on
+  // the admin listing detail view for a SOLD listing. Returns null rather
+  // than throwing — a sold listing may simply not have been reviewed yet.
+  // 2026-09-17, explicit instruction.
+  async getForListingAdmin(listingId: string): Promise<{
+    _id: string;
+    rating: number;
+    comment?: string;
+    status: ReviewStatus;
+  } | null> {
+    if (!isValidObjectId(listingId)) {
+      return null;
+    }
+    const review = await this.reviewModel
+      .findOne({ listing: listingId })
+      .select('rating comment status')
+      .exec();
+    if (!review) {
+      return null;
+    }
+    return {
+      _id: review._id.toString(),
+      rating: review.rating,
+      comment: review.comment,
+      status: review.status,
+    };
   }
 
   async adminRemove(reviewId: string, adminId: string): Promise<void> {
