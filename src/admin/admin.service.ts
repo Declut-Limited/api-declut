@@ -30,7 +30,6 @@ import { EmailSellerDto } from './dto/email-seller.dto';
 import { CreateTransactionNoteDto } from './dto/create-transaction-note.dto';
 import { UpdateTransactionNoteDto } from './dto/update-transaction-note.dto';
 import { SendInspectionReminderDto } from './dto/send-inspection-reminder.dto';
-import { ResolveDisputeDto } from './dto/resolve-dispute.dto';
 import type { DashboardInsightsFilter } from './dto/dashboard.dto';
 import { toCsv } from '../common/utils/csv.util';
 import { countTrend } from '../common/utils/trend.util';
@@ -423,18 +422,23 @@ export class AdminService {
     refunded: [TransactionStatus.REFUNDED, TransactionStatus.CANCELLED],
   };
 
-  // Shared by listTransactions()/exportTransactionsCsv() — status takes
-  // precedence over tab, same rule both callers need identically.
+  // Shared by listTransactions()/exportTransactionsCsv(). `status` (one
+  // param now, see AdminListTransactionsDto) can be `all` (no filter), a
+  // grouped/friendly value (checked first, so e.g. 'refunded' keeps its
+  // grouped cancelled+refunded meaning rather than falling through to the
+  // narrower raw-enum reading), or an exact raw TransactionStatus.
   private static resolveTransactionStatuses(
     dto: AdminListTransactionsDto,
   ): TransactionStatus[] | undefined {
-    if (dto.status) {
-      return [dto.status];
+    if (!dto.status || dto.status === 'all') {
+      return undefined;
     }
-    if (dto.tab && dto.tab !== 'all') {
-      return AdminService.TAB_STATUS_MAP[dto.tab];
+    if (dto.status in AdminService.TAB_STATUS_MAP) {
+      return AdminService.TAB_STATUS_MAP[
+        dto.status as Exclude<TransactionTab, 'all'>
+      ];
     }
-    return undefined;
+    return [dto.status as TransactionStatus];
   }
 
   listTransactions(dto: AdminListTransactionsDto) {
@@ -454,36 +458,6 @@ export class AdminService {
 
   getTransactionDetail(idOrReference: string) {
     return this.transactionsService.adminFindByIdOrReference(idOrReference);
-  }
-
-  // Three ways to resolve a disputed transaction — see TransactionsService
-  // for the actual behavior of each. Added 2026-09-17.
-  resolveDisputeRelease(transactionId: string, adminId: string) {
-    return this.transactionsService.adminRelease(transactionId, adminId);
-  }
-
-  resolveDisputeRefund(
-    transactionId: string,
-    adminId: string,
-    dto: ResolveDisputeDto,
-  ) {
-    return this.transactionsService.adminRefund(
-      transactionId,
-      adminId,
-      dto.reason,
-    );
-  }
-
-  resolveDisputeDelistAndRefund(
-    transactionId: string,
-    adminId: string,
-    dto: ResolveDisputeDto,
-  ) {
-    return this.transactionsService.adminDelistAndRefund(
-      transactionId,
-      adminId,
-      dto.reason,
-    );
   }
 
   sendInspectionReminder(

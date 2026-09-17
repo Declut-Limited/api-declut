@@ -64,8 +64,8 @@ export enum DisputeStatus {
 // auto-refund). Casing matches the exact values given, 2026-09-15.
 export enum InspectionOutcome {
   PENDING = 'pending',
-  ACCEPTED = 'Accepted',
-  DISPUTED = 'Disputed',
+  ACCEPTED = 'accepted',
+  DISPUTED = 'disputed',
 }
 
 @Schema({ timestamps: true })

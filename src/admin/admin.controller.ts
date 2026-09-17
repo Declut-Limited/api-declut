@@ -25,7 +25,6 @@ import { EmailSellerDto } from './dto/email-seller.dto';
 import { CreateTransactionNoteDto } from './dto/create-transaction-note.dto';
 import { UpdateTransactionNoteDto } from './dto/update-transaction-note.dto';
 import { SendInspectionReminderDto } from './dto/send-inspection-reminder.dto';
-import { ResolveDisputeDto } from './dto/resolve-dispute.dto';
 import { UpdateListingDto } from '../listings/dto/update-listing.dto';
 import { DashboardInsightsDto, RevenueTrendsDto } from './dto/dashboard.dto';
 import { UpdateGeneralSettingsDto } from '../settings/dto/update-general-settings.dto';
@@ -237,37 +236,6 @@ export class AdminController {
   @RequirePermission('transactions', 'view')
   getTransactionDetail(@Param('idOrRef') idOrRef: string) {
     return this.adminService.getTransactionDetail(idOrRef);
-  }
-
-  // Three ways to resolve a disputed transaction — see TransactionsService
-  // for what each actually does. Added 2026-09-17.
-  @Post('transactions/:id/resolve/release')
-  @RequirePermission('transactions', 'write')
-  resolveDisputeRelease(
-    @Param('id') id: string,
-    @CurrentAdmin() admin: AdminAccessTokenPayload,
-  ) {
-    return this.adminService.resolveDisputeRelease(id, admin.sub);
-  }
-
-  @Post('transactions/:id/resolve/refund')
-  @RequirePermission('transactions', 'write')
-  resolveDisputeRefund(
-    @Param('id') id: string,
-    @Body() dto: ResolveDisputeDto,
-    @CurrentAdmin() admin: AdminAccessTokenPayload,
-  ) {
-    return this.adminService.resolveDisputeRefund(id, admin.sub, dto);
-  }
-
-  @Post('transactions/:id/resolve/delist-and-refund')
-  @RequirePermission('transactions', 'write')
-  resolveDisputeDelistAndRefund(
-    @Param('id') id: string,
-    @Body() dto: ResolveDisputeDto,
-    @CurrentAdmin() admin: AdminAccessTokenPayload,
-  ) {
-    return this.adminService.resolveDisputeDelistAndRefund(id, admin.sub, dto);
   }
 
   @Post('transactions/:id/send-inspection-reminder')

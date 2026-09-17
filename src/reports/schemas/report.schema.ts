@@ -28,6 +28,18 @@ export class Report {
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Listing' })
   listing?: Types.ObjectId;
 
+  // The specific purchase this report is about, when there is one — passed
+  // directly by the client at creation time (CreateReportDto.transactionId),
+  // not inferred server-side. Absent for a report with no purchase involved
+  // (e.g. reporting a listing's photos, or a user directly). This is what
+  // lets the admin resolve-report actions (see ReportsService.resolveRelease()/
+  // resolveRefund()/resolveDelistAndRefund()) know which transaction to act
+  // on — this is fundamentally a report-resolution feature, not a
+  // transaction one, so the report itself carries the reference rather than
+  // going through the Dispute. Added 2026-09-17, explicit instruction.
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Transaction' })
+  transaction?: Types.ObjectId;
+
   // The user being reported (typically the listing's seller, though a report
   // can also target a user directly with no listing/purchase involved at
   // all). Renamed from `user` 2026-09-17, explicit instruction, for clarity

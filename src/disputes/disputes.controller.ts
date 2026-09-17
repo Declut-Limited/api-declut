@@ -13,8 +13,8 @@ import type { AccessTokenPayload } from '../auth/interfaces/jwt-payload.interfac
 export class DisputesController {
   constructor(private readonly disputesService: DisputesService) {}
 
-  @Post()
-  create(
+  @Post('raise-dispute')
+  raiseDispute(
     @CurrentUser() user: AccessTokenPayload,
     @Body() dto: CreateDisputeDto,
   ) {

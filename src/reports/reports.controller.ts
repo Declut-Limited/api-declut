@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   Patch,
+  Post,
   Query,
   Res,
   UseGuards,
@@ -12,6 +13,7 @@ import type { Response } from 'express';
 import { ReportsService } from './reports.service';
 import { ListReportsDto } from './dto/list-reports.dto';
 import { UpdateReportStatusDto } from './dto/update-report-status.dto';
+import { ResolveReportDto } from './dto/resolve-report.dto';
 import { AdminJwtAuthGuard } from '../admin-auth/guards/admin-jwt-auth.guard';
 import { PermissionsGuard } from '../admin-auth/guards/permissions.guard';
 import { RequirePermission } from '../admin-auth/decorators/require-permission.decorator';
@@ -53,5 +55,43 @@ export class ReportsController {
     @Body() dto: UpdateReportStatusDto,
   ) {
     return this.reportsService.updateStatus(id, admin.sub, dto.status);
+  }
+
+  // Three ways to resolve a report whose transaction reached DISPUTED — see
+  // ReportsService for what each actually does. Moved here from
+  // /admin/transactions (explicit instruction, 2026-09-17) — this resolves
+  // the report, using its own stored `transaction` reference, not the other
+  // way around.
+  @Post(':id/resolve/release')
+  @RequirePermission('reports', 'write')
+  resolveRelease(
+    @Param('id') id: string,
+    @CurrentAdmin() admin: AdminAccessTokenPayload,
+  ) {
+    return this.reportsService.resolveRelease(id, admin.sub);
+  }
+
+  @Post(':id/resolve/refund')
+  @RequirePermission('reports', 'write')
+  resolveRefund(
+    @Param('id') id: string,
+    @Body() dto: ResolveReportDto,
+    @CurrentAdmin() admin: AdminAccessTokenPayload,
+  ) {
+    return this.reportsService.resolveRefund(id, admin.sub, dto.reason);
+  }
+
+  @Post(':id/resolve/delist-and-refund')
+  @RequirePermission('reports', 'write')
+  resolveDelistAndRefund(
+    @Param('id') id: string,
+    @Body() dto: ResolveReportDto,
+    @CurrentAdmin() admin: AdminAccessTokenPayload,
+  ) {
+    return this.reportsService.resolveDelistAndRefund(
+      id,
+      admin.sub,
+      dto.reason,
+    );
   }
 }

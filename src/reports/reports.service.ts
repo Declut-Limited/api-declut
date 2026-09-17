@@ -64,21 +64,33 @@ export class ReportsService {
       throw new ForbiddenException('You can only file a report as yourself');
     }
 
+    // accusedUserId derived from the listing's own seller when a listing is
+    // given — explicit instruction, 2026-09-17 — a client-supplied value is
+    // only used for the no-listing, report-a-user-directly case.
+    let accusedUserId = dto.accusedUserId;
+
     // Flag the listing before creating the report — a bad listingId fails
     // loudly with nothing dangling, rather than a Report row referencing a
     // listing that was never actually reported.
     if (dto.listingId) {
-      await this.listingsService.report(dto.listingId, callerId);
-      // If the reporter has an active purchase in progress on this listing,
-      // the report also freezes that specific transaction/escrow, giving
-      // the seller a chance to respond — see
-      // TransactionsService.reportActivePurchase(). A no-op (returns null)
-      // when there's no matching active transaction, e.g. a spam listing or
-      // one the reporter never bought — the listing still gets reported
-      // normally either way. 2026-09-16.
-      await this.transactionsService.reportActivePurchase(
+      const listing = await this.listingsService.report(
         dto.listingId,
         callerId,
+      );
+      accusedUserId = listing.seller.toString();
+    }
+
+    // Freezes the named transaction/escrow directly, giving the seller a
+    // chance to respond — see TransactionsService.reportPurchase(). Throws
+    // (403/400) if the transaction isn't the reporter's own, or isn't in a
+    // reportable state — explicit instruction, 2026-09-17: the client now
+    // names the exact transaction, so an ineligible one is a real error,
+    // not a silent no-op.
+    if (dto.transactionId) {
+      await this.transactionsService.reportPurchase(
+        dto.transactionId,
+        callerId,
+        dto.listingId,
       );
     }
 
@@ -87,7 +99,8 @@ export class ReportsService {
       slug,
       reason: dto.reason,
       listing: dto.listingId,
-      accusedUser: dto.accusedUserId,
+      transaction: dto.transactionId,
+      accusedUser: accusedUserId,
       reporter: dto.reporterId,
     });
 
@@ -253,6 +266,54 @@ export class ReportsService {
       { _id: reportId },
       { sellerDispute: disputeId, status: ReportStatus.DISPUTED },
     );
+  }
+
+  // Three ways to resolve a report whose transaction reached DISPUTED —
+  // moved here from the Transactions/Admin surface (explicit instruction,
+  // 2026-09-17 — "this is a report feature not just a transaction feature,
+  // it is a way to resolve reports"). Each resolves via the report's own
+  // `transaction` field (set at creation time from CreateReportDto.transactionId)
+  // rather than requiring the caller to know the transaction id — the
+  // actual business logic (money movement, listing/trust-score effects,
+  // status transitions) is unchanged, still owned by TransactionsService.
+  async resolveRelease(reportId: string, adminId: string) {
+    const report = await this.getReportForResolve(reportId);
+    return this.transactionsService.adminRelease(
+      report.transaction!.toString(),
+      adminId,
+    );
+  }
+
+  async resolveRefund(reportId: string, adminId: string, reason?: string) {
+    const report = await this.getReportForResolve(reportId);
+    return this.transactionsService.adminRefund(
+      report.transaction!.toString(),
+      adminId,
+      reason,
+    );
+  }
+
+  async resolveDelistAndRefund(
+    reportId: string,
+    adminId: string,
+    reason?: string,
+  ) {
+    const report = await this.getReportForResolve(reportId);
+    return this.transactionsService.adminDelistAndRefund(
+      report.transaction!.toString(),
+      adminId,
+      reason,
+    );
+  }
+
+  private async getReportForResolve(reportId: string): Promise<ReportDocument> {
+    const report = await this.getRawById(reportId);
+    if (!report.transaction) {
+      throw new BadRequestException(
+        'This report has no associated transaction to resolve',
+      );
+    }
+    return report;
   }
 
   // Requires listing/accusedUser/reporter already populated on the query that fetched `report`.

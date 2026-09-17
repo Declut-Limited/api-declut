@@ -57,19 +57,17 @@ const TRANSACTION_TABS = [
 export type TransactionTab = (typeof TRANSACTION_TABS)[number];
 
 export class AdminListTransactionsDto extends PageDto {
-  // Exact single-status filter — takes precedence over `tab` when both are
-  // given.
+  // One param, not two (was `status` + `tab` separately — renamed
+  // 2026-09-17, explicit instruction: "anywhere you're using tab to filter
+  // status, should be status"). Accepts either a grouped/friendly value
+  // (`all`/`active`/`completed`/`disputed`/`refunded` — "active" spans
+  // pending_payment/escrow_active/awaiting_inspection, "refunded" folds in
+  // cancelled too, see AdminService.TAB_STATUS_MAP) or an exact raw
+  // TransactionStatus value (e.g. `escrow_active`, `cancelled` on its own).
+  // `all` always returns everything, unfiltered, same as omitting the param.
   @IsOptional()
-  @IsEnum(TransactionStatus)
-  status?: TransactionStatus;
-
-  // Groups related statuses for an admin UI's tab strip (e.g. "active"
-  // spans pending_payment/escrow_active/awaiting_inspection) — see
-  // AdminService.listTransactions() for the exact grouping, a judgment call
-  // since CLAUDE.md's spec named the tabs without defining their groupings.
-  @IsOptional()
-  @IsIn(TRANSACTION_TABS)
-  tab?: TransactionTab;
+  @IsIn([...TRANSACTION_TABS, ...Object.values(TransactionStatus)])
+  status?: TransactionTab | TransactionStatus;
 }
 
 export class AdminListReviewsDto extends PageDto {

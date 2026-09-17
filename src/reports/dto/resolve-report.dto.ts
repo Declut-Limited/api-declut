@@ -1,6 +1,6 @@
 import { IsOptional, IsString, MaxLength } from 'class-validator';
 
-export class ResolveDisputeDto {
+export class ResolveReportDto {
   @IsOptional()
   @IsString()
   @MaxLength(500)

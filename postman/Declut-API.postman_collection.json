@@ -1764,6 +1764,32 @@
           "response": []
         },
         {
+          "name": "Get transaction by reference",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transactions/by-reference/{{transactionReference}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions",
+                "by-reference",
+                "{{transactionReference}}"
+              ]
+            },
+            "description": "Looks up by the human TXN-YYYY-##### reference instead of the internal id — used by the app's payment-callback deep-link route (cold-launch/backgrounded-app case), since Paystack's redirect carries its own reference, not the transaction's id. Same ownership check and response shape as GET /transactions/:id. Must be registered before :id in the controller — otherwise Nest would match \"by-reference\" as the id."
+          },
+          "response": []
+        },
+        {
           "name": "{transactionId}",
           "description": "",
           "item": [
@@ -2441,10 +2467,10 @@
                 "reports"
               ]
             },
-            "description": "User-facing — a user files their own report directly (reporterId must equal the caller's own id, or 403). At least one of listingId/accusedUserId is required. If listingId is given, that listing is immediately reported (status becomes 'reported', shown via GET /listings/mine?status=reported). New reports start at status 'investigating' (not 'new' — that value no longer exists).",
+            "description": "User-facing — a user files their own report directly (reporterId must equal the caller's own id, or 403). At least one of listingId/accusedUserId is required. If listingId is given, that listing is immediately reported (status becomes 'reported') and the accused user is derived from the listing's own seller — accusedUserId is only used when reporting a user directly with no listing. transactionId is optional — when given, it must be the reporter's own transaction (403/400 otherwise) and freezes that purchase's escrow, letting the seller respond via POST /transactions/:id/seller-refund or POST /disputes/raise-dispute. This same transactionId is also what the new admin resolve-report actions (see admin/reports/{{reportId}}/resolve/*) act on.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"reason\": \"Buyer called in claiming this listing's photos were lifted from a competitor's page.\",\n  \"listingId\": \"{{listingId}}\",\n  \"reporterId\": \"{{reporterId}}\"\n}",
+              "raw": "{\n  \"reason\": \"Buyer called in claiming this listing's photos were lifted from a competitor's page.\",\n  \"listingId\": \"{{listingId}}\",\n  \"transactionId\": \"{{transactionId}}\",\n  \"reporterId\": \"{{reporterId}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2477,7 +2503,7 @@
       "name": "disputes",
       "item": [
         {
-          "name": "Create dispute",
+          "name": "Raise dispute",
           "request": {
             "method": "POST",
             "header": [
@@ -2493,12 +2519,13 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/disputes",
+              "raw": "{{baseUrl}}/disputes/raise-dispute",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "disputes"
+                "disputes",
+                "raise-dispute"
               ]
             },
             "description": "Seller-only — the other response to a buyer's report on a purchase in progress (transaction status REPORTED), alongside POST /transactions/:id/seller-refund. Requires exactly 2 evidenceImages and exactly 1 evidenceVideo, same MediaAsset shape as a listing's images/video (upload to Cloudinary first via GET /media/upload-signature). reportId is cross-checked against the transaction server-side (must be the same listing + the same buyer as the reporter) — not trusted outright. On success, the transaction moves to DISPUTED (escrow stays frozen) and resolves from there via the existing admin release/refund endpoints, same as any other disputed transaction.",
@@ -3901,118 +3928,6 @@
               "response": []
             },
             {
-              "name": "Resolve dispute — release to seller",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{adminAccessToken}}",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/admin/transactions/{{transactionId}}/resolve/release",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "admin",
-                    "transactions",
-                    "{{transactionId}}",
-                    "resolve",
-                    "release"
-                  ]
-                },
-                "description": "Side with the seller — releases the held money to them (minus the admin-configured commission), same as a normal completed sale. Only valid on a DISPUTED transaction. Records a Payout row (see GET transaction detail's payoutInfo) and closes the report behind the dispute, if any."
-              },
-              "response": []
-            },
-            {
-              "name": "Resolve dispute — refund buyer",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{adminAccessToken}}",
-                    "type": "text"
-                  },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/admin/transactions/{{transactionId}}/resolve/refund",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "admin",
-                    "transactions",
-                    "{{transactionId}}",
-                    "resolve",
-                    "refund"
-                  ]
-                },
-                "description": "Refund the buyer in full — the listing stays up (reverts to active). Only valid on a DISPUTED transaction. Unlike every other refund path in this app, the transaction's own status stays DISPUTED — only disputeStatus moves to 'refunded' (a permanent marker of the outcome). Closes the report behind the dispute, if any. Optional `reason` in the body.",
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"reason\": \"Reviewed the evidence submitted by both parties.\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "response": []
-            },
-            {
-              "name": "Resolve dispute — delist listing & refund buyer",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{adminAccessToken}}",
-                    "type": "text"
-                  },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/admin/transactions/{{transactionId}}/resolve/delist-and-refund",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "admin",
-                    "transactions",
-                    "{{transactionId}}",
-                    "resolve",
-                    "delist-and-refund"
-                  ]
-                },
-                "description": "Upholds the buyer's report — full refund to the buyer, delists the seller's listing, and applies a policy strike against the seller's trust score (a flat deduction, separate from the normal recalculated score). Only valid on a DISPUTED transaction. Same 'stays DISPUTED, disputeStatus -> refunded' shape as the refund-only action above. Closes the report behind the dispute, if any. Optional `reason` in the body.",
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"reason\": \"Reviewed the evidence submitted by both parties.\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "response": []
-            },
-            {
               "name": "Send inspection reminder",
               "request": {
                 "method": "POST",
@@ -5026,10 +4941,128 @@
                             "status"
                           ]
                         },
-                        "description": "status: new|investigating|resolved|dismissed.",
+                        "description": "status: investigating|disputed|resolved|dismissed. A report starts at investigating and only ever reaches disputed the instant a seller escalates it via POST /disputes/raise-dispute.",
                         "body": {
                           "mode": "raw",
                           "raw": "{\n  \"status\": \"investigating\"\n}",
+                          "options": {
+                            "raw": {
+                              "language": "json"
+                            }
+                          }
+                        }
+                      },
+                      "response": []
+                    }
+                  ]
+                },
+                {
+                  "name": "resolve",
+                  "description": "",
+                  "item": [
+                    {
+                      "name": "Resolve — release to seller",
+                      "request": {
+                        "method": "POST",
+                        "header": [
+                          {
+                            "key": "Authorization",
+                            "value": "Bearer {{adminAccessToken}}",
+                            "type": "text"
+                          }
+                        ],
+                        "url": {
+                          "raw": "{{baseUrl}}/admin/reports/{{reportId}}/resolve/release",
+                          "host": [
+                            "{{baseUrl}}"
+                          ],
+                          "path": [
+                            "admin",
+                            "reports",
+                            "{{reportId}}",
+                            "resolve",
+                            "release"
+                          ]
+                        },
+                        "description": "Side with the seller — releases the held money to them (minus the admin-configured commission), same as a normal completed sale. Resolves via this report's own `transaction` field (set at creation, see Create report's transactionId), not a transaction id in the URL — moved here from /admin/transactions, 2026-09-17: this is a report-resolution feature. 400s if this report has no associated transaction. Records a Payout row and closes the report to resolved."
+                      },
+                      "response": []
+                    },
+                    {
+                      "name": "Resolve — refund buyer",
+                      "request": {
+                        "method": "POST",
+                        "header": [
+                          {
+                            "key": "Authorization",
+                            "value": "Bearer {{adminAccessToken}}",
+                            "type": "text"
+                          },
+                          {
+                            "key": "Content-Type",
+                            "value": "application/json",
+                            "type": "text"
+                          }
+                        ],
+                        "url": {
+                          "raw": "{{baseUrl}}/admin/reports/{{reportId}}/resolve/refund",
+                          "host": [
+                            "{{baseUrl}}"
+                          ],
+                          "path": [
+                            "admin",
+                            "reports",
+                            "{{reportId}}",
+                            "resolve",
+                            "refund"
+                          ]
+                        },
+                        "description": "Refund the buyer in full — the listing stays up (reverts to active). The transaction's own status stays DISPUTED (unlike every other refund path in this app) — only disputeStatus moves to 'refunded'. Closes the report to resolved. Optional `reason` in the body.",
+                        "body": {
+                          "mode": "raw",
+                          "raw": "{\n  \"reason\": \"Reviewed the evidence submitted by both parties.\"\n}",
+                          "options": {
+                            "raw": {
+                              "language": "json"
+                            }
+                          }
+                        }
+                      },
+                      "response": []
+                    },
+                    {
+                      "name": "Resolve — delist listing & refund buyer",
+                      "request": {
+                        "method": "POST",
+                        "header": [
+                          {
+                            "key": "Authorization",
+                            "value": "Bearer {{adminAccessToken}}",
+                            "type": "text"
+                          },
+                          {
+                            "key": "Content-Type",
+                            "value": "application/json",
+                            "type": "text"
+                          }
+                        ],
+                        "url": {
+                          "raw": "{{baseUrl}}/admin/reports/{{reportId}}/resolve/delist-and-refund",
+                          "host": [
+                            "{{baseUrl}}"
+                          ],
+                          "path": [
+                            "admin",
+                            "reports",
+                            "{{reportId}}",
+                            "resolve",
+                            "delist-and-refund"
+                          ]
+                        },
+                        "description": "Upholds the report — full refund to the buyer, delists the seller's listing, and applies a policy strike against the seller's trust score. Same 'stays DISPUTED' shape as the refund-only action above. Closes the report to resolved. Optional `reason` in the body.",
+                        "body": {
+                          "mode": "raw",
+                          "raw": "{\n  \"reason\": \"Reviewed the evidence submitted by both parties.\"\n}",
                           "options": {
                             "raw": {
                               "language": "json"
@@ -6974,6 +7007,11 @@
     },
     {
       "key": "transactionNoteId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "transactionReference",
       "value": "",
       "type": "string"
     }

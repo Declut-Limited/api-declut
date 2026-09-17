@@ -814,35 +814,54 @@ export class TransactionsService {
     return this.toResponseShape(transaction, buyerId);
   }
 
-  // Called from ReportsService.create() whenever a buyer reports a listing —
-  // if the reporter has an active (escrow_active/awaiting_inspection)
-  // transaction as buyer on that listing, the report also freezes that
-  // specific purchase: the transaction moves to REPORTED and its escrow
-  // freezes, giving the seller a chance to respond (refund or dispute)
-  // before an admin ever needs to step in. Returns null (a no-op) when no
-  // matching active transaction exists — e.g. a spam listing, or a listing
-  // the reporter never bought — in which case the listing still gets
-  // reported normally by the caller, nothing here changes. 2026-09-16.
-  async reportActivePurchase(
-    listingId: string,
+  // Called from ReportsService.create() whenever a buyer's report names a
+  // transactionId — freezes that specific purchase: the transaction moves
+  // to REPORTED and its escrow freezes, giving the seller a chance to
+  // respond (refund or dispute) before an admin ever needs to step in.
+  // Reworked 2026-09-17, explicit instruction: the client now names the
+  // exact transaction directly (CreateReportDto.transactionId) instead of
+  // this inferring an "active" one from listingId + the caller's own id —
+  // so an ineligible transaction is now a real error (403/400), not a
+  // silent no-op.
+  async reportPurchase(
+    transactionId: string,
     buyerId: string,
-  ): Promise<{ transactionId: string } | null> {
-    const transaction = await this.transactionModel.findOne({
-      listing: listingId,
-      buyer: buyerId,
-      status: {
-        $in: [
-          TransactionStatus.ESCROW_ACTIVE,
-          TransactionStatus.AWAITING_INSPECTION,
-        ],
-      },
-    });
-    if (!transaction) {
-      return null;
+    listingId?: string,
+  ): Promise<void> {
+    const transaction = await this.findRaw(transactionId);
+    if (transaction.buyer.toString() !== buyerId) {
+      throw new ForbiddenException('Only the buyer can report this purchase');
+    }
+    if (listingId && transaction.listing.toString() !== listingId) {
+      throw new BadRequestException(
+        'This transaction is not for the given listing',
+      );
+    }
+    if (
+      ![
+        TransactionStatus.ESCROW_ACTIVE,
+        TransactionStatus.AWAITING_INSPECTION,
+      ].includes(transaction.status)
+    ) {
+      throw new BadRequestException(
+        `Transaction is ${transaction.status} — this purchase can't be reported`,
+      );
     }
 
     const oldStatus = transaction.status;
     transaction.status = TransactionStatus.REPORTED;
+    // A report ends the inspection window outright — it can't still be
+    // "awaiting" once the buyer has flagged a problem. Explicit
+    // instruction, 2026-09-17: inspectionStatus -> COMPLETED (not FAILED —
+    // a deliberate departure from every other terminal inspectionStatus
+    // write in this file, which always pairs COMPLETED with ACCEPTED and
+    // FAILED with DISPUTED; here the window's process is "done" while the
+    // outcome itself is DISPUTED), inspectionPeriodEnded -> true (so
+    // sweepEndedInspectionPeriods() never also tries to auto-refund this
+    // one), inspectionOutcome -> DISPUTED.
+    transaction.inspectionStatus = InspectionStatus.COMPLETED;
+    transaction.inspectionPeriodEnded = true;
+    transaction.inspectionOutcome = InspectionOutcome.DISPUTED;
     await transaction.save();
     await this.escrowService.updateStatusForTransaction(
       transaction._id.toString(),
@@ -875,8 +894,6 @@ export class TransactionsService {
         data: { transactionId: transaction._id.toString() },
       }),
     ]);
-
-    return { transactionId: transaction._id.toString() };
   }
 
   // Seller-initiated, in response to a buyer's report — full refund, no
@@ -1273,7 +1290,7 @@ export class TransactionsService {
     };
   }
 
-  // `statuses` (plural) so AdminService's tab-vs-status filtering can pass either a single status or a grouped set (e.g. the "active" tab) through the same query path.
+  // `statuses` (plural) so AdminService's single `status` param (grouped/friendly or exact — see AdminListTransactionsDto) can pass either one status or a grouped set (e.g. "active") through the same query path.
   async adminList(
     page: number,
     limit: number,
@@ -1308,7 +1325,7 @@ export class TransactionsService {
   // Bulk CSV export — GET /admin/transactions/export, added 2026-09-15,
   // explicit instruction ("see how we did it for the listing"), same
   // convention as ListingsService.exportCsv(): unpaginated, same
-  // status/tab/date-range filter as the list, one flattened row per
+  // status/date-range filter as the list, one flattened row per
   // transaction. Deliberately skips the per-row `refundInfo` lookup the
   // single-transaction export/detail view do — that's a query per refunded
   // row, fine for one detail view, an N+1 risk across a potentially large
