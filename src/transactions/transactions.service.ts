@@ -1053,12 +1053,18 @@ export class TransactionsService {
   // transaction's listing — used only by sellerRefundReportedPurchase(),
   // where the seller refunded directly and no Dispute (and therefore no
   // Dispute.report link) was ever created. A no-op if none matches.
+  // ReportStatus.NEW removed 2026-09-17 — INVESTIGATING is now the report's
+  // actual starting state, so it's the correct "never escalated" filter here.
   private async closeActiveReportForListing(
     listingId: Types.ObjectId,
     buyerId: Types.ObjectId,
   ): Promise<void> {
     await this.reportModel.updateOne(
-      { listing: listingId, reporter: buyerId, status: ReportStatus.NEW },
+      {
+        listing: listingId,
+        reporter: buyerId,
+        status: ReportStatus.INVESTIGATING,
+      },
       { status: ReportStatus.RESOLVED },
     );
   }

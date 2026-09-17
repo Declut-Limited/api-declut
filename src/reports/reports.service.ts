@@ -19,13 +19,23 @@ import { DateRangeDto } from '../common/dto/date-range.dto';
 import { ListingsService } from '../listings/listings.service';
 import { TransactionsService } from '../transactions/transactions.service';
 
-// Proposed field sets, not explicitly pinned down beyond "populated" —
-// flag back if these need adjusting once a real UI consumes them.
+// accusedUser and reporter share one shape — explicit instruction, 2026-09-17
+// ("populate the user just like we did for the reporter, now include their
+// both emails and phone numbers"). No "role" here — User has no role field
+// (only Admin does); status/rating map to accountStatus/avgRating, reshaped
+// in shapeReport() for both. No "company" either — that field exists on the
+// User schema but no onboarding flow ever sets it (see the schema's own
+// comment), so it's always undefined in practice; dropped the same day,
+// explicit instruction ("we don't have that").
+const PARTY_FIELDS = 'name slug email phone accountStatus createdAt avgRating';
 const POPULATE_FIELDS = {
   listing: 'title slug mainImageUrl',
-  user: 'name slug email',
-  // No "role" here — User has no role field (only Admin does); status/rating map to accountStatus/avgRating, reshaped in shapeReport().
-  reporter: 'name slug accountStatus createdAt avgRating company',
+  accusedUser: PARTY_FIELDS,
+  reporter: PARTY_FIELDS,
+  // Detail-view-only shape (list/findBySlug) — just the dispute's own
+  // narrative content, not seller/transaction/report (already known from
+  // the Report itself). Explicit instruction, 2026-09-17.
+  sellerDispute: 'disputeClaim evidenceImages evidenceVideo',
 };
 
 @Injectable()
@@ -45,7 +55,7 @@ export class ReportsService {
     callerId: string,
     dto: CreateReportDto,
   ): Promise<ReportDocument> {
-    if (!dto.listingId && !dto.userId) {
+    if (!dto.listingId && !dto.accusedUserId) {
       throw new BadRequestException(
         'A report must reference a listing, a user, or both',
       );
@@ -77,7 +87,7 @@ export class ReportsService {
       slug,
       reason: dto.reason,
       listing: dto.listingId,
-      user: dto.userId,
+      accusedUser: dto.accusedUserId,
       reporter: dto.reporterId,
     });
 
@@ -109,8 +119,9 @@ export class ReportsService {
       this.reportModel
         .find(filter)
         .populate('listing', POPULATE_FIELDS.listing)
-        .populate('user', POPULATE_FIELDS.user)
+        .populate('accusedUser', POPULATE_FIELDS.accusedUser)
         .populate('reporter', POPULATE_FIELDS.reporter)
+        .populate('sellerDispute', POPULATE_FIELDS.sellerDispute)
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
@@ -138,20 +149,20 @@ export class ReportsService {
     const found = await this.reportModel
       .find(filter)
       .populate('listing', POPULATE_FIELDS.listing)
-      .populate('user', POPULATE_FIELDS.user)
+      .populate('accusedUser', POPULATE_FIELDS.accusedUser)
       .sort({ createdAt: -1 })
       .exec();
 
     const rows = found.map((r) => {
       const listing = r.listing as unknown as { title?: string } | undefined;
-      const user = r.user as unknown as
+      const accusedUser = r.accusedUser as unknown as
         { name?: string; email?: string } | undefined;
       return {
         slug: r.slug,
         reason: r.reason,
         listingTitle: listing?.title ?? '',
-        userName: user?.name ?? '',
-        userEmail: user?.email ?? '',
+        accusedUserName: accusedUser?.name ?? '',
+        accusedUserEmail: accusedUser?.email ?? '',
         status: r.status,
         createdAt: r.createdAt,
       };
@@ -161,8 +172,8 @@ export class ReportsService {
       'slug',
       'reason',
       'listingTitle',
-      'userName',
-      'userEmail',
+      'accusedUserName',
+      'accusedUserEmail',
       'status',
       'createdAt',
     ]);
@@ -172,8 +183,9 @@ export class ReportsService {
     const report = await this.reportModel
       .findOne({ slug })
       .populate('listing', POPULATE_FIELDS.listing)
-      .populate('user', POPULATE_FIELDS.user)
+      .populate('accusedUser', POPULATE_FIELDS.accusedUser)
       .populate('reporter', POPULATE_FIELDS.reporter)
+      .populate('sellerDispute', POPULATE_FIELDS.sellerDispute)
       .exec();
     if (!report) {
       throw new NotFoundException('Report not found');
@@ -232,16 +244,18 @@ export class ReportsService {
   }
 
   // Called by DisputesService right after a Dispute document is created —
-  // links the two records and moves the report out of NEW so it shows as
-  // actively being handled, not just sitting new/unread. 2026-09-16.
+  // links the two records and moves the report to DISPUTED, the only status
+  // a report can ever have a sellerDispute under. 2026-09-16, status target
+  // corrected 2026-09-17 (was INVESTIGATING, back when that was the
+  // "still open" catch-all rather than the true starting state).
   async attachDispute(reportId: string, disputeId: string): Promise<void> {
     await this.reportModel.updateOne(
       { _id: reportId },
-      { sellerDispute: disputeId, status: ReportStatus.INVESTIGATING },
+      { sellerDispute: disputeId, status: ReportStatus.DISPUTED },
     );
   }
 
-  // Requires listing/user/reporter already populated on the query that fetched `report`.
+  // Requires listing/accusedUser/reporter already populated on the query that fetched `report`.
   private shapeReport(report: ReportDocument): Record<string, unknown> {
     const obj = report.toObject() as unknown as Record<string, unknown>;
     if (obj.listing && typeof obj.listing === 'object') {
@@ -249,13 +263,17 @@ export class ReportsService {
       const { mainImageUrl, ...rest } = listing;
       obj.listing = { ...rest, mainImage: mainImageUrl };
     }
-    if (obj.reporter && typeof obj.reporter === 'object') {
-      const reporter = obj.reporter as {
-        accountStatus?: string;
-        avgRating?: number;
-      };
-      const { accountStatus, avgRating, ...rest } = reporter;
-      obj.reporter = { ...rest, status: accountStatus, rating: avgRating };
+    // accusedUser and reporter share the same raw populated shape (see
+    // PARTY_FIELDS) so both get the identical accountStatus/avgRating reshape.
+    for (const key of ['accusedUser', 'reporter'] as const) {
+      const party = obj[key];
+      if (party && typeof party === 'object') {
+        const { accountStatus, avgRating, ...rest } = party as {
+          accountStatus?: string;
+          avgRating?: number;
+        };
+        obj[key] = { ...rest, status: accountStatus, rating: avgRating };
+      }
     }
     return obj;
   }

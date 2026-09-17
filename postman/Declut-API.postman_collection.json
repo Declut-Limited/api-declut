@@ -2441,7 +2441,7 @@
                 "reports"
               ]
             },
-            "description": "User-facing — a user files their own report directly (reporterId must equal the caller's own id, or 403). At least one of listingId/userId is required. If listingId is given, that listing is immediately reported (status becomes 'reported', shown via GET /listings/mine?status=reported).",
+            "description": "User-facing — a user files their own report directly (reporterId must equal the caller's own id, or 403). At least one of listingId/accusedUserId is required. If listingId is given, that listing is immediately reported (status becomes 'reported', shown via GET /listings/mine?status=reported). New reports start at status 'investigating' (not 'new' — that value no longer exists).",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"reason\": \"Buyer called in claiming this listing's photos were lifted from a competitor's page.\",\n  \"listingId\": \"{{listingId}}\",\n  \"reporterId\": \"{{reporterId}}\"\n}",
@@ -4862,7 +4862,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/admin/reports?page=1&limit=20&status=new&startDate=2026-08-01&endDate=2026-08-29",
+                  "raw": "{{baseUrl}}/admin/reports?page=1&limit=20&status=investigating&startDate=2026-08-01&endDate=2026-08-29",
                   "host": [
                     "{{baseUrl}}"
                   ],
@@ -4885,9 +4885,9 @@
                     },
                     {
                       "key": "status",
-                      "value": "new",
+                      "value": "investigating",
                       "disabled": true,
-                      "description": "new, investigating, or resolved."
+                      "description": "investigating, disputed, resolved, or dismissed."
                     },
                     {
                       "key": "startDate",
@@ -4903,7 +4903,7 @@
                     }
                   ]
                 },
-                "description": "startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
+                "description": "startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate). New reports start at 'investigating' — there's no 'new' status anymore."
               },
               "response": []
             },
