@@ -143,6 +143,39 @@ export const NOTIFICATION_TYPES = {
       [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
     },
   },
+  // The three added 2026-09-16 for the reported-purchase -> refund/dispute
+  // flow — see TransactionsService.reportActivePurchase()/
+  // sellerRefundReportedPurchase()/markDisputedFromSellerDispute().
+  purchase_reported: {
+    label: 'Purchase reported',
+    channels: {
+      [NotificationRecipientType.USER]: [
+        'push',
+        'email',
+      ] as NotificationChannel[],
+      [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
+    },
+  },
+  seller_refunded_report: {
+    label: 'Seller refunded a report',
+    channels: {
+      [NotificationRecipientType.USER]: [
+        'push',
+        'email',
+      ] as NotificationChannel[],
+      [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
+    },
+  },
+  dispute_raised: {
+    label: 'Dispute raised',
+    channels: {
+      [NotificationRecipientType.USER]: [
+        'push',
+        'email',
+      ] as NotificationChannel[],
+      [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
+    },
+  },
 } as const;
 
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;
@@ -181,4 +214,7 @@ export const NOTIFICATION_SETTING_CATEGORY: Partial<
   purchase_cancelled_refunded: 'paymentAndEscrowUpdates',
   inspection_extended: 'inspectionReminders',
   inspection_reminder: 'inspectionReminders',
+  purchase_reported: 'disputeUpdates',
+  seller_refunded_report: 'disputeUpdates',
+  dispute_raised: 'disputeUpdates',
 };

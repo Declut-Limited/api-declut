@@ -9,6 +9,7 @@ import { CounterModule } from '../common/counter/counter.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ListingsModule } from '../listings/listings.module';
+import { TransactionsModule } from '../transactions/transactions.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { ListingsModule } from '../listings/listings.module';
     AuditLogModule,
     NotificationsModule,
     ListingsModule,
+    TransactionsModule,
   ],
   controllers: [ReportsController, UserReportsController],
   providers: [ReportsService],

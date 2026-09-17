@@ -6,6 +6,7 @@ import {
   TransactionNoteSchema,
 } from './schemas/transaction-note.schema';
 import { Refund, RefundSchema } from './schemas/refund.schema';
+import { Payout, PayoutSchema } from './schemas/payout.schema';
 import { TransactionsService } from './transactions.service';
 import { TransactionsController } from './transactions.controller';
 import { ListingsModule } from '../listings/listings.module';
@@ -26,6 +27,7 @@ import { BankAccountsModule } from '../bank-accounts/bank-accounts.module';
       { name: Transaction.name, schema: TransactionSchema },
       { name: TransactionNote.name, schema: TransactionNoteSchema },
       { name: Refund.name, schema: RefundSchema },
+      { name: Payout.name, schema: PayoutSchema },
     ]),
     ListingsModule,
     PaymentsModule,

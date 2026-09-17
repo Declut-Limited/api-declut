@@ -18,6 +18,20 @@ export interface VerifyTransactionResult {
   channel: string;
 }
 
+// Paystack's own status for the transfer/refund request as returned by the
+// call that started it — almost always 'pending', occasionally an instant
+// 'success'/'processed'. Never assume the request finishing means the money
+// moved; that's what TransactionsService's reconciliation sweep is for.
+export interface TransferResult {
+  status: string;
+  transferCode: string;
+}
+
+export interface RefundResult {
+  status: string;
+  refundId: string;
+}
+
 export interface PaystackBank {
   name: string;
   code: string;
@@ -127,7 +141,7 @@ export class PaystackService {
     accountName: string;
     amountKobo: number;
     reference: string;
-  }): Promise<void> {
+  }): Promise<TransferResult> {
     const recipient = await this.request<{ recipient_code: string }>(
       '/transferrecipient',
       'POST',
@@ -140,13 +154,32 @@ export class PaystackService {
       },
     );
 
-    await this.request('/transfer', 'POST', {
+    const transfer = await this.request<{
+      status: string;
+      transfer_code: string;
+    }>('/transfer', 'POST', {
       source: 'balance',
       amount: params.amountKobo,
       recipient: recipient.data.recipient_code,
       reference: params.reference,
       reason: 'Declut escrow release',
     });
+
+    return {
+      status: transfer.data.status,
+      transferCode: transfer.data.transfer_code,
+    };
+  }
+
+  // GET /transfer/:id_or_code — used by the reconciliation sweep to find out
+  // what actually happened to a transfer that was 'pending' when we asked
+  // Paystack to start it.
+  async getTransferStatus(idOrCode: string): Promise<{ status: string }> {
+    const response = await this.request<{ status: string }>(
+      `/transfer/${encodeURIComponent(idOrCode)}`,
+      'GET',
+    );
+    return { status: response.data.status };
   }
 
   // Nigerian banks only (this app is NGN-only, see CLAUDE.md). perPage:100
@@ -184,11 +217,28 @@ export class PaystackService {
   // → a partial refund; whatever isn't refunded simply stays in Declut's
   // balance (how the buyer-cancellation flow keeps its cancellation fee —
   // no separate "split" step needed).
-  async refund(reference: string, amountKobo?: number): Promise<void> {
-    await this.request('/refund', 'POST', {
-      transaction: reference,
-      ...(amountKobo !== undefined && { amount: amountKobo }),
-    });
+  async refund(reference: string, amountKobo?: number): Promise<RefundResult> {
+    const response = await this.request<{ status: string; id: number }>(
+      '/refund',
+      'POST',
+      {
+        transaction: reference,
+        ...(amountKobo !== undefined && { amount: amountKobo }),
+      },
+    );
+    return { status: response.data.status, refundId: String(response.data.id) };
+  }
+
+  // GET /refund/:id — used by the reconciliation sweep to find out what
+  // actually happened to a refund that was 'pending' when Paystack accepted
+  // the request. idOrReference accepts either the numeric refund id or our
+  // own transaction reference.
+  async getRefundStatus(idOrReference: string): Promise<{ status: string }> {
+    const response = await this.request<{ status: string }>(
+      `/refund/${encodeURIComponent(idOrReference)}`,
+      'GET',
+    );
+    return { status: response.data.status };
   }
 
   verifyWebhookSignature(

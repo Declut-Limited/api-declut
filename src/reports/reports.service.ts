@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, isValidObjectId } from 'mongoose';
 import { Report, ReportDocument, ReportStatus } from './schemas/report.schema';
 import { CreateReportDto } from './dto/create-report.dto';
 import { ListReportsDto } from './dto/list-reports.dto';
@@ -17,6 +17,7 @@ import { NotificationRecipientType } from '../notifications/schemas/notification
 import { buildDateRangeFilter } from '../common/utils/date-range.util';
 import { DateRangeDto } from '../common/dto/date-range.dto';
 import { ListingsService } from '../listings/listings.service';
+import { TransactionsService } from '../transactions/transactions.service';
 
 // Proposed field sets, not explicitly pinned down beyond "populated" —
 // flag back if these need adjusting once a real UI consumes them.
@@ -35,6 +36,7 @@ export class ReportsService {
     private readonly auditLogService: AuditLogService,
     private readonly notificationsService: NotificationsService,
     private readonly listingsService: ListingsService,
+    private readonly transactionsService: TransactionsService,
   ) {}
 
   // User-facing — a user files their own report directly (no admin
@@ -57,6 +59,17 @@ export class ReportsService {
     // listing that was never actually reported.
     if (dto.listingId) {
       await this.listingsService.report(dto.listingId, callerId);
+      // If the reporter has an active purchase in progress on this listing,
+      // the report also freezes that specific transaction/escrow, giving
+      // the seller a chance to respond — see
+      // TransactionsService.reportActivePurchase(). A no-op (returns null)
+      // when there's no matching active transaction, e.g. a spam listing or
+      // one the reporter never bought — the listing still gets reported
+      // normally either way. 2026-09-16.
+      await this.transactionsService.reportActivePurchase(
+        dto.listingId,
+        callerId,
+      );
     }
 
     const slug = await this.counterService.nextSlug('report', 'RPT', 4);
@@ -204,6 +217,31 @@ export class ReportsService {
     }
 
     return report;
+  }
+
+  // Raw fetch by id, no populate/shaping — used by DisputesService.create(),
+  // which takes reportId directly from the client and cross-checks it
+  // against the transaction itself. A malformed id 404s here rather than
+  // throwing a raw Mongoose CastError. 2026-09-16.
+  async getRawById(id: string): Promise<ReportDocument> {
+    if (!isValidObjectId(id)) {
+      throw new NotFoundException('Report not found');
+    }
+    const report = await this.reportModel.findById(id).exec();
+    if (!report) {
+      throw new NotFoundException('Report not found');
+    }
+    return report;
+  }
+
+  // Called by DisputesService right after a Dispute document is created —
+  // links the two records and moves the report out of NEW so it shows as
+  // actively being handled, not just sitting new/unread. 2026-09-16.
+  async attachDispute(reportId: string, disputeId: string): Promise<void> {
+    await this.reportModel.updateOne(
+      { _id: reportId },
+      { sellerDispute: disputeId, status: ReportStatus.INVESTIGATING },
+    );
   }
 
   // Requires listing/user/reporter already populated on the query that fetched `report`.

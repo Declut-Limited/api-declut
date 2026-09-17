@@ -1919,6 +1919,38 @@
                   "response": []
                 }
               ]
+            },
+            {
+              "name": "seller-refund",
+              "description": "",
+              "item": [
+                {
+                  "name": "Refund reported purchase (seller)",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{accessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/transactions/{{transactionId}}/seller-refund",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "transactions",
+                        "{{transactionId}}",
+                        "seller-refund"
+                      ]
+                    },
+                    "description": "Seller-only — the seller's response to a buyer's report on this purchase (transaction status REPORTED). Full refund to the buyer, no cancellation fee (unlike the buyer's own cancel-purchase). Only valid while status is REPORTED — once escalated to a dispute (POST /disputes), use the admin resolution path instead."
+                  },
+                  "response": []
+                }
+              ]
             }
           ]
         },
@@ -2438,6 +2470,49 @@
               }
             }
           ]
+        }
+      ]
+    },
+    {
+      "name": "disputes",
+      "item": [
+        {
+          "name": "Create dispute",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/disputes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "disputes"
+              ]
+            },
+            "description": "Seller-only — the other response to a buyer's report on a purchase in progress (transaction status REPORTED), alongside POST /transactions/:id/seller-refund. Requires exactly 2 evidenceImages and exactly 1 evidenceVideo, same MediaAsset shape as a listing's images/video (upload to Cloudinary first via GET /media/upload-signature). reportId is cross-checked against the transaction server-side (must be the same listing + the same buyer as the reporter) — not trusted outright. On success, the transaction moves to DISPUTED (escrow stays frozen) and resolves from there via the existing admin release/refund endpoints, same as any other disputed transaction.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transactionId\": \"{{transactionId}}\",\n  \"reportId\": \"{{reportId}}\",\n  \"disputeClaim\": \"The item described in this report was never actually damaged — photos attached show it exactly as listed at handover.\",\n  \"evidenceImages\": [\n    {\n      \"publicId\": \"disputes/file_ev001\",\n      \"url\": \"http://res.cloudinary.com/example/image/upload/v1/disputes/file_ev001.jpg\",\n      \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/disputes/file_ev001.jpg\",\n      \"sortOrder\": 0,\n      \"isPrimary\": true\n    },\n    {\n      \"publicId\": \"disputes/file_ev002\",\n      \"url\": \"http://res.cloudinary.com/example/image/upload/v1/disputes/file_ev002.jpg\",\n      \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/disputes/file_ev002.jpg\",\n      \"sortOrder\": 1,\n      \"isPrimary\": false\n    }\n  ],\n  \"evidenceVideo\": {\n    \"publicId\": \"disputes/file_evvid001\",\n    \"url\": \"http://res.cloudinary.com/example/video/upload/v1/disputes/file_evvid001.mp4\",\n    \"secureUrl\": \"https://res.cloudinary.com/example/video/upload/v1/disputes/file_evvid001.mp4\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
         }
       ]
     },

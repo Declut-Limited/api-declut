@@ -36,6 +36,15 @@ export class Report {
   @Prop({ type: String, enum: ReportStatus, default: ReportStatus.NEW })
   status: ReportStatus;
 
+  // Set once a seller escalates this report into a formal Dispute (see
+  // DisputesService.create()/ReportsService.attachDispute()) — a report
+  // doesn't store its own transaction reference (the Dispute carries that,
+  // linking transaction/listing/report together), so this is the only place
+  // the two get tied together. Absent for a report never disputed (resolved
+  // by a direct seller refund, or not purchase-related at all). 2026-09-16.
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Dispute' })
+  sellerDispute?: Types.ObjectId;
+
   createdAt: Date;
   updatedAt: Date;
 }

@@ -27,6 +27,7 @@ import { AdminModule } from './admin/admin.module';
 import { SettingsModule } from './settings/settings.module';
 import { CategoriesModule } from './categories/categories.module';
 import { ReportsModule } from './reports/reports.module';
+import { DisputesModule } from './disputes/disputes.module';
 import { ContentModule } from './content/content.module';
 import { RolesModule } from './roles/roles.module';
 import { WaitlistModule } from './waitlist/waitlist.module';
@@ -101,6 +102,7 @@ import { AuditContextMiddleware } from './common/middleware/audit-context.middle
     SettingsModule,
     CategoriesModule,
     ReportsModule,
+    DisputesModule,
     ContentModule,
     RolesModule,
     WaitlistModule,

@@ -157,4 +157,16 @@ export class TransactionsController {
   ) {
     return this.transactionsService.cancelPurchaseWithRefund(id, user.sub);
   }
+
+  // Seller-only — the seller's response to a buyer's report (transaction
+  // status REPORTED): refund the buyer outright. The other response,
+  // raising a dispute, is POST /disputes.
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/seller-refund')
+  sellerRefundReportedPurchase(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param('id') id: string,
+  ) {
+    return this.transactionsService.sellerRefundReportedPurchase(id, user.sub);
+  }
 }

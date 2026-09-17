@@ -24,7 +24,13 @@ import {
   TransactionNote,
   TransactionNoteDocument,
 } from './schemas/transaction-note.schema';
-import { Refund, RefundDocument, RefundStatus } from './schemas/refund.schema';
+import {
+  Refund,
+  RefundDocument,
+  RefundStatus,
+  RefundTriggeredByType,
+} from './schemas/refund.schema';
+import { Payout, PayoutDocument, PayoutStatus } from './schemas/payout.schema';
 import { InspectionReminderType } from './dto/inspection-reminder-type.enum';
 import { EscrowStatus } from '../escrow/schemas/escrow.schema';
 import { EscrowService } from '../escrow/escrow.service';
@@ -117,6 +123,8 @@ export class TransactionsService {
     private transactionNoteModel: Model<TransactionNoteDocument>,
     @InjectModel(Refund.name)
     private refundModel: Model<RefundDocument>,
+    @InjectModel(Payout.name)
+    private payoutModel: Model<PayoutDocument>,
     private readonly escrowService: EscrowService,
     private readonly listingsService: ListingsService,
     private readonly usersService: UsersService,
@@ -508,12 +516,13 @@ export class TransactionsService {
       Math.round((transaction.amount - commissionAmount) * 100) / 100;
 
     // Paystack call before the local write — same money-movement ordering rule as everywhere else in this module.
-    await this.paystackService.releaseToSeller({
+    const payoutReference = `declut_payout_${transaction._id.toString()}`;
+    const transferResult = await this.paystackService.releaseToSeller({
       bankCode: bankAccount.bankCode,
       accountNumber: bankAccount.accountNumber,
       accountName: bankAccount.accountHolderName,
       amountKobo: Math.round(sellerPayoutAmount * 100),
-      reference: `declut_payout_${transaction._id.toString()}`,
+      reference: payoutReference,
     });
 
     const oldStatus = transaction.status;
@@ -529,6 +538,29 @@ export class TransactionsService {
       EscrowStatus.RELEASED,
     );
     await this.listingsService.markSold(transaction.listing.toString());
+
+    // Payout row only created here — the buyer-triggered release — per
+    // explicit instruction, not from adminRelease(). Transaction.status is
+    // still marked COMPLETED optimistically the moment Paystack accepts the
+    // transfer (unchanged behavior); this row is the separate, accurate
+    // record of whether the money actually landed, corrected by the
+    // reconciliation sweep below if Paystack later reports otherwise.
+    await this.payoutModel.create({
+      transaction: transaction._id,
+      user: transaction.seller,
+      amount: sellerPayoutAmount,
+      status:
+        transferResult.status === 'success'
+          ? PayoutStatus.SUCCESS
+          : PayoutStatus.PENDING,
+      triggeredBy: buyerId,
+      payoutAccountNumber: bankAccount.accountNumber,
+      payoutBankCode: bankAccount.bankCode,
+      reference: payoutReference,
+      transferCode: transferResult.transferCode,
+      completedAt: transferResult.status === 'success' ? new Date() : undefined,
+      slug: await this.counterService.nextSlug('payout', 'PYO', 4),
+    });
 
     await this.audit(
       transactionId,
@@ -711,6 +743,8 @@ export class TransactionsService {
       amountKobo: Math.round(refundAmount * 100),
       amount: refundAmount,
       reason: 'Cancelled by buyer before completing the purchase',
+      triggeredByType: 'user',
+      triggeredBy: buyerId,
     });
 
     const oldStatus = transaction.status;
@@ -765,6 +799,216 @@ export class TransactionsService {
       { path: 'listing', select: LISTING_POPULATE_FIELDS },
     ]);
     return this.toResponseShape(transaction, buyerId);
+  }
+
+  // Called from ReportsService.create() whenever a buyer reports a listing —
+  // if the reporter has an active (escrow_active/awaiting_inspection)
+  // transaction as buyer on that listing, the report also freezes that
+  // specific purchase: the transaction moves to REPORTED and its escrow
+  // freezes, giving the seller a chance to respond (refund or dispute)
+  // before an admin ever needs to step in. Returns null (a no-op) when no
+  // matching active transaction exists — e.g. a spam listing, or a listing
+  // the reporter never bought — in which case the listing still gets
+  // reported normally by the caller, nothing here changes. 2026-09-16.
+  async reportActivePurchase(
+    listingId: string,
+    buyerId: string,
+  ): Promise<{ transactionId: string } | null> {
+    const transaction = await this.transactionModel.findOne({
+      listing: listingId,
+      buyer: buyerId,
+      status: {
+        $in: [
+          TransactionStatus.ESCROW_ACTIVE,
+          TransactionStatus.AWAITING_INSPECTION,
+        ],
+      },
+    });
+    if (!transaction) {
+      return null;
+    }
+
+    const oldStatus = transaction.status;
+    transaction.status = TransactionStatus.REPORTED;
+    await transaction.save();
+    await this.escrowService.updateStatusForTransaction(
+      transaction._id.toString(),
+      EscrowStatus.FROZEN,
+    );
+
+    await this.audit(
+      transaction._id.toString(),
+      'purchase_reported',
+      buyerId,
+      oldStatus,
+      TransactionStatus.REPORTED,
+    );
+
+    await Promise.all([
+      this.notificationsService.notify({
+        recipientType: NotificationRecipientType.USER,
+        recipientId: transaction.seller.toString(),
+        type: 'purchase_reported',
+        title: 'A buyer reported this purchase',
+        body: 'Respond by refunding the buyer or raising a dispute with your evidence.',
+        data: { transactionId: transaction._id.toString() },
+      }),
+      this.notificationsService.notify({
+        recipientType: NotificationRecipientType.USER,
+        recipientId: transaction.buyer.toString(),
+        type: 'purchase_reported',
+        title: 'Report submitted',
+        body: "We've frozen this purchase's escrow while the seller responds.",
+        data: { transactionId: transaction._id.toString() },
+      }),
+    ]);
+
+    return { transactionId: transaction._id.toString() };
+  }
+
+  // Seller-initiated, in response to a buyer's report — full refund, no
+  // cancellation fee (unlike cancelPurchaseWithRefund, the buyer isn't
+  // backing out here; the seller is accepting the complaint — judgment call,
+  // flagged). Only valid while the transaction is REPORTED; once it's been
+  // escalated to a dispute (see DisputesService), this path is no longer
+  // available and resolution moves to the admin-only adminRefund()/
+  // adminRelease() path, same as any other disputed transaction. 2026-09-16.
+  async sellerRefundReportedPurchase(transactionId: string, sellerId: string) {
+    const transaction = await this.findRaw(transactionId);
+    if (transaction.seller.toString() !== sellerId) {
+      throw new ForbiddenException(
+        'Only the seller can respond to a report on this transaction',
+      );
+    }
+    if (transaction.status !== TransactionStatus.REPORTED) {
+      throw new BadRequestException(
+        `Transaction is ${transaction.status} — a refund response is only available while the report is pending`,
+      );
+    }
+
+    await this.refundAndRecord({
+      transactionId,
+      buyerId: transaction.buyer.toString(),
+      reference: transaction.reference,
+      amount: transaction.amount,
+      amountKobo: Math.round(transaction.amount * 100),
+      reason: 'Seller refunded the buyer in response to a report',
+      triggeredByType: 'user',
+      triggeredBy: sellerId,
+    });
+
+    const oldStatus = transaction.status;
+    transaction.status = TransactionStatus.REFUNDED;
+    transaction.inspectionStatus = InspectionStatus.FAILED;
+    transaction.inspectionOutcome = InspectionOutcome.DISPUTED;
+    await transaction.save();
+    await this.escrowService.updateStatusForTransaction(
+      transaction._id.toString(),
+      EscrowStatus.REFUNDED,
+    );
+    await this.listingsService.revertToActive(transaction.listing.toString());
+
+    await this.audit(
+      transactionId,
+      'seller_refunded_reported_purchase',
+      sellerId,
+      oldStatus,
+      TransactionStatus.REFUNDED,
+      { refundAmount: transaction.amount },
+    );
+
+    await Promise.all([
+      this.trustScoreService.recalculate(transaction.buyer.toString()),
+      this.trustScoreService.recalculate(transaction.seller.toString()),
+    ]);
+
+    await Promise.all([
+      this.notificationsService.notify({
+        recipientType: NotificationRecipientType.USER,
+        recipientId: transaction.buyer.toString(),
+        type: 'seller_refunded_report',
+        title: 'Refund issued',
+        body: `The seller refunded your report — ₦${transaction.amount.toLocaleString()} has been sent back to you.`,
+        data: { transactionId },
+      }),
+      this.notificationsService.notify({
+        recipientType: NotificationRecipientType.USER,
+        recipientId: transaction.seller.toString(),
+        type: 'seller_refunded_report',
+        title: 'Refund sent',
+        body: 'You refunded the buyer in response to their report — the listing is active again.',
+        data: { transactionId },
+      }),
+    ]);
+
+    await transaction.populate([
+      { path: 'buyer', select: PARTY_POPULATE_FIELDS },
+      { path: 'seller', select: PARTY_POPULATE_FIELDS },
+      { path: 'listing', select: LISTING_POPULATE_FIELDS },
+    ]);
+    return this.toResponseShape(transaction, sellerId);
+  }
+
+  // Ownership + status guard shared by the dispute-submission flow
+  // (DisputesService.create()) — a seller can only raise a dispute on their
+  // own transaction, and only while it's REPORTED. Returns the raw
+  // transaction so the caller can read .listing/.buyer to look up the
+  // originating report. 2026-09-16.
+  async getForSellerDispute(
+    transactionId: string,
+    sellerId: string,
+  ): Promise<TransactionDocument> {
+    const transaction = await this.findRaw(transactionId);
+    if (transaction.seller.toString() !== sellerId) {
+      throw new ForbiddenException(
+        'Only the seller can raise a dispute on this transaction',
+      );
+    }
+    if (transaction.status !== TransactionStatus.REPORTED) {
+      throw new BadRequestException(
+        `Transaction is ${transaction.status} — a dispute can only be raised on a reported transaction`,
+      );
+    }
+    return transaction;
+  }
+
+  // Called by DisputesService right after the Dispute document is created.
+  // Escrow was already frozen at the report stage (reportActivePurchase())
+  // and stays frozen (explicit instruction) — only the transaction's own
+  // status moves on, reusing the same DISPUTED status/disputeStatus field
+  // the pre-existing payment-race auto-dispute already uses, so the
+  // existing adminRelease()/adminRefund() resolution path applies here too
+  // with no changes needed. 2026-09-16.
+  async markDisputedFromSellerDispute(
+    transactionId: string,
+    sellerId: string,
+  ): Promise<void> {
+    const transaction = await this.findRaw(transactionId);
+    const oldStatus = transaction.status;
+    transaction.status = TransactionStatus.DISPUTED;
+    transaction.disputeStatus = DisputeStatus.UNDER_INVESTIGATION;
+    await transaction.save();
+    await this.escrowService.updateStatusForTransaction(
+      transaction._id.toString(),
+      EscrowStatus.FROZEN,
+    );
+
+    await this.audit(
+      transactionId,
+      'seller_raised_dispute',
+      sellerId,
+      oldStatus,
+      TransactionStatus.DISPUTED,
+    );
+
+    await this.notificationsService.notify({
+      recipientType: NotificationRecipientType.USER,
+      recipientId: transaction.buyer.toString(),
+      type: 'dispute_raised',
+      title: 'Seller raised a dispute',
+      body: 'The seller disputed your report — an admin will review it.',
+      data: { transactionId },
+    });
   }
 
   async cancel(transactionId: string, buyerId: string) {
@@ -1142,6 +1386,9 @@ export class TransactionsService {
     if (transaction.status === TransactionStatus.REFUNDED) {
       shaped.refundInfo = await this.getRefundInfo(transactionId);
     }
+    if (transaction.status === TransactionStatus.COMPLETED) {
+      shaped.payoutInfo = await this.getPayoutInfo(transactionId);
+    }
 
     return shaped;
   }
@@ -1258,6 +1505,8 @@ export class TransactionsService {
         return 'Under Dispute';
       case TransactionStatus.CANCELLED:
         return "Buyer's decision";
+      case TransactionStatus.REPORTED:
+        return 'Reported';
       default:
         return 'Inspection';
     }
@@ -1496,6 +1745,10 @@ export class TransactionsService {
   // admin's adminRefund()); the system-triggered inspection-expiry
   // auto-refund deliberately doesn't create a Refund record, since it never
   // results in TransactionStatus.REFUNDED (see autoRefundExpiredInspection()).
+  // Paystack's own response status (almost always 'pending') drives the
+  // Refund row's own status, not an assumption of success — see
+  // reconcilePendingRefunds() below for how a pending row is later
+  // corrected. A thrown call is recorded as FAILED outright, same as before.
   private async refundAndRecord(params: {
     transactionId: string;
     buyerId: string;
@@ -1503,91 +1756,228 @@ export class TransactionsService {
     amount: number;
     amountKobo?: number;
     reason?: string;
-    approvedBy?: string;
+    triggeredByType: RefundTriggeredByType;
+    triggeredBy?: string;
   }): Promise<void> {
+    let result: { status: string; refundId: string } | undefined;
     try {
-      await this.paystackService.refund(params.reference, params.amountKobo);
+      result = await this.paystackService.refund(
+        params.reference,
+        params.amountKobo,
+      );
     } catch (err) {
-      await this.createRefundRecord({ ...params, succeeded: false });
+      await this.createRefundRecord({ ...params, paystackStatus: undefined });
       throw err;
     }
-    await this.createRefundRecord({ ...params, succeeded: true });
+    await this.createRefundRecord({
+      ...params,
+      paystackStatus: result.status,
+      refundCode: result.refundId,
+    });
   }
 
   // payoutAccountNumber/payoutBankCode are best-effort context from the
   // buyer's own BankAccount, if one exists — Paystack's refund reverses to
   // the original payment source, not a chosen bank account, so these
   // describe the buyer's account on file, not necessarily where the refund
-  // actually landed.
+  // actually landed. paystackStatus undefined means the call itself threw —
+  // a hard failure, not a pending one.
   private async createRefundRecord(params: {
     transactionId: string;
     buyerId: string;
     amount: number;
     reason?: string;
-    approvedBy?: string;
+    triggeredByType: RefundTriggeredByType;
+    triggeredBy?: string;
     reference: string;
-    succeeded: boolean;
+    paystackStatus?: string;
+    refundCode?: string;
   }): Promise<void> {
     const [bankAccount, slug] = await Promise.all([
       this.bankAccountsService.findRawByUser(params.buyerId),
       this.counterService.nextSlug('refund', 'RFD', 4),
     ]);
+    const status = !params.paystackStatus
+      ? RefundStatus.FAILED
+      : params.paystackStatus === 'processed'
+        ? RefundStatus.PROCESSED
+        : RefundStatus.PENDING;
     await this.refundModel.create({
       transaction: params.transactionId,
       user: params.buyerId,
       amount: params.amount,
       reason: params.reason,
-      status: params.succeeded ? RefundStatus.PROCESSED : RefundStatus.FAILED,
-      approvedBy: params.approvedBy,
+      status,
+      triggeredByType: params.triggeredByType,
+      triggeredBy: params.triggeredBy,
       payoutAccountNumber: bankAccount?.accountNumber,
       payoutBankCode: bankAccount?.bankCode,
-      refundedAt: params.succeeded ? new Date() : undefined,
+      refundedAt: status === RefundStatus.PROCESSED ? new Date() : undefined,
       slug,
       reference: params.reference,
+      refundCode: params.refundCode,
     });
   }
 
   // Backs the admin transaction detail's `refundInfo` — only ever called
   // when transaction.status === REFUNDED (see adminFindByIdOrReference()).
-  // Picks the most recent processed refund row, in case more than one was
-  // ever attempted (e.g. a retried failed refund).
+  // Picks the most recent refund row regardless of status (not just
+  // 'processed') — showing a still-pending refund is the whole point of
+  // tracking this now, rather than only ever showing a finished one.
   private async getRefundInfo(transactionId: string) {
     const refund = await this.refundModel
-      .findOne({ transaction: transactionId, status: RefundStatus.PROCESSED })
+      .findOne({ transaction: transactionId })
       .sort({ createdAt: -1 })
-      .populate({
-        path: 'approvedBy',
-        select: 'name role',
-        populate: { path: 'role', select: 'name' },
-      })
       .exec();
     if (!refund) {
       return null;
     }
-    const approvedBy = refund.approvedBy as unknown as {
-      _id: Types.ObjectId;
-      name: string;
-      role?: { name: string } | null;
-    } | null;
     return {
       id: refund._id.toString(),
       slug: refund.slug,
       amount: refund.amount,
       reason: refund.reason,
       status: refund.status,
+      triggeredByType: refund.triggeredByType,
+      triggeredBy: refund.triggeredBy?.toString() ?? null,
       payoutAccountNumber: refund.payoutAccountNumber,
       payoutBankCode: refund.payoutBankCode,
       refundedAt: refund.refundedAt,
       reference: refund.reference,
+      refundCode: refund.refundCode,
       createdAt: refund.createdAt,
-      approvedBy: approvedBy
-        ? {
-            id: approvedBy._id.toString(),
-            name: approvedBy.name,
-            role: approvedBy.role?.name,
-          }
-        : null,
     };
+  }
+
+  // Sibling of getRefundInfo(), for the release-to-seller side — only ever
+  // called when transaction.status === COMPLETED. Same "most recent row,
+  // whatever status it's currently at" shape.
+  private async getPayoutInfo(transactionId: string) {
+    const payout = await this.payoutModel
+      .findOne({ transaction: transactionId })
+      .sort({ createdAt: -1 })
+      .exec();
+    if (!payout) {
+      return null;
+    }
+    return {
+      id: payout._id.toString(),
+      slug: payout.slug,
+      amount: payout.amount,
+      status: payout.status,
+      triggeredBy: payout.triggeredBy?.toString() ?? null,
+      payoutAccountNumber: payout.payoutAccountNumber,
+      payoutBankCode: payout.payoutBankCode,
+      reference: payout.reference,
+      transferCode: payout.transferCode,
+      completedAt: payout.completedAt,
+      createdAt: payout.createdAt,
+    };
+  }
+
+  // Safety-net reconciliation — runs independently of any webhook (none is
+  // wired for transfer.*/refund.* events yet, see the chat discussion this
+  // was built from). Checks every still-pending Payout/Refund row directly
+  // against Paystack and corrects its status once Paystack has a final
+  // answer. A row that's still pending on Paystack's side is left alone and
+  // picked up again on the next run.
+  @Cron('*/15 * * * *')
+  async reconcilePendingPayoutsAndRefunds(): Promise<void> {
+    await Promise.all([
+      this.reconcilePendingPayouts(),
+      this.reconcilePendingRefunds(),
+    ]);
+  }
+
+  private async reconcilePendingPayouts(): Promise<void> {
+    const pending = await this.payoutModel.find({
+      status: PayoutStatus.PENDING,
+    });
+    for (const payout of pending) {
+      try {
+        const result = await this.paystackService.getTransferStatus(
+          payout.transferCode || payout.reference,
+        );
+        if (result.status === 'success') {
+          payout.status = PayoutStatus.SUCCESS;
+          payout.completedAt = new Date();
+          await payout.save();
+          await this.audit(
+            payout.transaction.toString(),
+            'payout_reconciled_success',
+            'system',
+            PayoutStatus.PENDING,
+            PayoutStatus.SUCCESS,
+          );
+        } else if (result.status === 'failed' || result.status === 'reversed') {
+          payout.status = PayoutStatus.FAILED;
+          await payout.save();
+          this.logger.error(
+            `[reconcile] payout=${payout._id.toString()} transaction=${payout.transaction.toString()} FAILED on Paystack's side — needs admin attention`,
+          );
+          await this.audit(
+            payout.transaction.toString(),
+            'payout_reconciled_failed',
+            'system',
+            PayoutStatus.PENDING,
+            PayoutStatus.FAILED,
+          );
+        }
+        // Anything else (still 'pending'/'otp' on Paystack's side) — leave as-is, retry next sweep.
+      } catch (err) {
+        this.logger.error(
+          `[reconcile] failed to check payout=${payout._id.toString()} — will retry next sweep`,
+          err as Error,
+        );
+      }
+    }
+  }
+
+  private async reconcilePendingRefunds(): Promise<void> {
+    const pending = await this.refundModel.find({
+      status: RefundStatus.PENDING,
+    });
+    for (const refund of pending) {
+      try {
+        const result = await this.paystackService.getRefundStatus(
+          refund.refundCode || refund.reference,
+        );
+        if (result.status === 'processed') {
+          refund.status = RefundStatus.PROCESSED;
+          refund.refundedAt = new Date();
+          await refund.save();
+          await this.audit(
+            refund.transaction.toString(),
+            'refund_reconciled_processed',
+            'system',
+            RefundStatus.PENDING,
+            RefundStatus.PROCESSED,
+          );
+        } else if (
+          result.status === 'failed' ||
+          result.status === 'declined' ||
+          result.status === 'reversed'
+        ) {
+          refund.status = RefundStatus.FAILED;
+          await refund.save();
+          this.logger.error(
+            `[reconcile] refund=${refund._id.toString()} transaction=${refund.transaction.toString()} FAILED on Paystack's side — needs admin attention`,
+          );
+          await this.audit(
+            refund.transaction.toString(),
+            'refund_reconciled_failed',
+            'system',
+            RefundStatus.PENDING,
+            RefundStatus.FAILED,
+          );
+        }
+      } catch (err) {
+        this.logger.error(
+          `[reconcile] failed to check refund=${refund._id.toString()} — will retry next sweep`,
+          err as Error,
+        );
+      }
+    }
   }
 
   // Used by the admin Users detail view's "Insights" panel.
@@ -1797,7 +2187,8 @@ export class TransactionsService {
       reference: transaction.reference,
       amount: transaction.amount,
       reason,
-      approvedBy: adminId,
+      triggeredByType: 'admin',
+      triggeredBy: adminId,
     });
 
     const oldStatus = transaction.status;
@@ -1913,10 +2304,21 @@ export class TransactionsService {
     const refundAmount =
       Math.round((transaction.amount - commissionAmount) * 100) / 100;
 
-    await this.paystackService.refund(
-      transaction.reference,
-      Math.round(refundAmount * 100),
-    );
+    // Routed through refundAndRecord() (2026-09-16) so this auto-refund gets
+    // its own Refund row too, triggeredByType 'system' — it didn't before,
+    // explicit instruction to add it. refundAndRecord() rethrows on failure,
+    // same as the direct paystackService.refund() call this replaces, so the
+    // caller's try/catch (sweepEndedInspectionPeriods()) still retries on
+    // the next hourly run.
+    await this.refundAndRecord({
+      transactionId,
+      buyerId: transaction.buyer.toString(),
+      reference: transaction.reference,
+      amount: refundAmount,
+      amountKobo: Math.round(refundAmount * 100),
+      reason: 'Inspection window expired without buyer confirmation',
+      triggeredByType: 'system',
+    });
 
     const oldStatus = transaction.status;
     transaction.status = TransactionStatus.CANCELLED;

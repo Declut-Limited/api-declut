@@ -13,6 +13,12 @@ export enum TransactionStatus {
   ESCROW_ACTIVE = 'escrow_active',
   AWAITING_INSPECTION = 'awaiting_inspection',
   COMPLETED = 'completed',
+  // A quick, short-lived holding state — a buyer reported this purchase
+  // in-progress (TransactionsService.reportActivePurchase()), freezing the
+  // escrow while the seller responds: refund it (-> REFUNDED) or escalate
+  // it into a formal Dispute (-> DISPUTED, same status the pre-existing
+  // payment-race auto-dispute already uses). Added 2026-09-16.
+  REPORTED = 'reported',
   DISPUTED = 'disputed',
   REFUNDED = 'refunded',
   CANCELLED = 'cancelled',
