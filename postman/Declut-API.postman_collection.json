@@ -3154,7 +3154,7 @@
                     }
                   ]
                 },
-                "description": "Federated view — merges Users and Admins into one list, sorted by joinedAt. status filter narrows to Users only. type explicitly picks all/user/admin (default all) — type=admin/type=user skip the other collection's query entirely. User rows carry slug (USR-####); Admin rows carry roleId (the assigned Role's id, see the roles folder) instead. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate). Admin rows now carry their own real accountStatus (active/suspended/deactivated) in the status field too, instead of a hardcoded 'active'."
+                "description": "Federated view — merges Users and Admins into one list, sorted by joinedAt. status filter narrows to Users only. type explicitly picks all/user/admin (default all) — type=admin/type=user skip the other collection's query entirely. User rows carry slug (USR-####); Admin rows carry roleId (the assigned Role's id, see the roles folder) instead. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate). Admin rows now carry their own real accountStatus (active/suspended/deactivated) in the status field too, instead of a hardcoded 'active'. Admin rows no longer carry listingsCount at all (was previously hardcoded to 0) — an admin can never own a listing."
               },
               "response": []
             },
@@ -3494,7 +3494,7 @@
                     }
                   ]
                 },
-                "description": "status accepts 'all' alongside the real statuses (active/sold/reported/delisted) — paused excluded entirely as of 2026-09-13 (a paused listing is invisible to admin too, see ListingStatus.PAUSED). Lean row shape — no location, views, saves, priceHistory, or condition (detail-view-only fields); category is trimmed to {_id, title} (no slug), seller to {_id, name, company}. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
+                "description": "status accepts 'all' alongside the real statuses (active/sold/reported/delisted) — paused excluded entirely as of 2026-09-13 (a paused listing is invisible to admin too, see ListingStatus.PAUSED). Lean row shape — no location, views, saves, priceHistory, condition, video, description, images, address, defectDescription, or hasDefect (detail-view-only fields, unchanged on the detail view); category is trimmed to {_id, title} (no slug), seller to {_id, name, company}. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
               },
               "response": []
             },
@@ -3550,75 +3550,6 @@
                       ]
                     },
                     "description": "startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
-                  },
-                  "response": []
-                }
-              ]
-            },
-            {
-              "name": "id",
-              "item": [
-                {
-                  "name": "{listingId}",
-                  "item": [
-                    {
-                      "name": "Get listing by ID",
-                      "request": {
-                        "method": "GET",
-                        "header": [
-                          {
-                            "key": "Authorization",
-                            "value": "Bearer {{adminAccessToken}}",
-                            "type": "text"
-                          }
-                        ],
-                        "url": {
-                          "raw": "{{baseUrl}}/admin/listings/id/{{listingId}}",
-                          "host": [
-                            "{{baseUrl}}"
-                          ],
-                          "path": [
-                            "admin",
-                            "listings",
-                            "id",
-                            "{{listingId}}"
-                          ]
-                        },
-                        "description": "Same rich detail shape as Get listing by slug — seller info, specs + condition, price history, last-3 activity log entries, location (GeoJSON Point) and locationLabel. 404s if the listing is paused (2026-09-13) — invisible to admin, same as a nonexistent listing. A SOLD listing also carries buyerReview — {_id, rating, comment, status} for the completed purchase's review, or null if none exists yet. Always null for any other status."
-                      },
-                      "response": []
-                    }
-                  ]
-                }
-              ]
-            },
-            {
-              "name": "{listingSlug}",
-              "description": "",
-              "item": [
-                {
-                  "name": "Get listing by slug (detail)",
-                  "request": {
-                    "method": "GET",
-                    "header": [
-                      {
-                        "key": "Authorization",
-                        "value": "Bearer {{adminAccessToken}}",
-                        "type": "text"
-                      }
-                    ],
-                    "url": {
-                      "raw": "{{baseUrl}}/admin/listings/{{listingSlug}}",
-                      "host": [
-                        "{{baseUrl}}"
-                      ],
-                      "path": [
-                        "admin",
-                        "listings",
-                        "{{listingSlug}}"
-                      ]
-                    },
-                    "description": "Rich detail: seller info, specs + condition, price history, last-3 activity log entries, location (GeoJSON Point) and locationLabel. 404s if the listing is paused (2026-09-13) — invisible to admin, same as a nonexistent listing. A SOLD listing also carries buyerReview — {_id, rating, comment, status} for the completed purchase's review, or null if none exists yet. Always null for any other status."
                   },
                   "response": []
                 }
@@ -3693,6 +3624,32 @@
               "name": "{listingId}",
               "description": "",
               "item": [
+                {
+                  "name": "Get listing by ID or slug (detail)",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/listings/{{listingId}}",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "listings",
+                        "{{listingId}}"
+                      ]
+                    },
+                    "description": "Resolves by raw id or by slug — merged from two separate routes (2026-09-18, explicit instruction). Rich detail: seller info, specs + condition, price history, last-3 activity log entries, location (GeoJSON Point) and locationLabel. 404s if the listing is paused (2026-09-13) — invisible to admin, same as a nonexistent listing. A SOLD listing also carries buyerReview — {_id, rating, comment, status, user} for the completed purchase's review (user is the reviewer/buyer: {_id, name, averageRating, slug, email}), or null if none exists yet — always null for any other status. Also carries salesDetails — {buyer: {name, _id}, amountPaid, paymentMethod, paidAt, transactionStatus} from the listing's most recent transaction regardless of status, or null if the listing has never had one."
+                  },
+                  "response": []
+                },
                 {
                   "name": "Update listing",
                   "request": {

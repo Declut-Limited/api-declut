@@ -1168,6 +1168,49 @@ export class TransactionsService {
     return transaction ? { sellerId: transaction.seller.toString() } : null;
   }
 
+  // Backs the admin listing detail's `salesDetails` — the most recent
+  // transaction against this listing, whatever status it's currently at
+  // (not restricted to COMPLETED, unlike findCompletedPurchase() above — a
+  // listing mid-escrow still has real sales details worth showing). buyer
+  // populated the same way every other transaction read in this service
+  // does (PARTY_POPULATE_FIELDS), even though only `name` is needed here,
+  // for consistency. `paidAt` has no dedicated field on Transaction itself —
+  // sourced from the linked Escrow's own createdAt (the exact moment
+  // EscrowService.createForTransaction() creates it, itself the moment
+  // payment was verified), null for a transaction that never got that far.
+  // 2026-09-17, explicit instruction.
+  async getSalesDetailsForListing(listingId: string): Promise<{
+    buyer: { name: string; _id: string } | null;
+    amountPaid: number;
+    paymentMethod: PaymentMethod;
+    paidAt: Date | null;
+    transactionStatus: TransactionStatus;
+  } | null> {
+    const transaction = await this.transactionModel
+      .findOne({ listing: listingId })
+      .sort({ createdAt: -1 })
+      .populate('buyer', PARTY_POPULATE_FIELDS)
+      .populate('escrow', 'createdAt')
+      .exec();
+    if (!transaction) {
+      return null;
+    }
+    const buyer = transaction.buyer as unknown as {
+      _id: Types.ObjectId;
+      name: string;
+    } | null;
+    const escrow = transaction.escrow as unknown as {
+      createdAt: Date;
+    } | null;
+    return {
+      buyer: buyer ? { name: buyer.name, _id: buyer._id.toString() } : null,
+      amountPaid: transaction.amount,
+      paymentMethod: transaction.paymentMethod,
+      paidAt: escrow?.createdAt ?? null,
+      transactionStatus: transaction.status,
+    };
+  }
+
   // findForUser() (called above) already enforces the buyer-or-seller
   // ownership check — see its ForbiddenException. `progress` is the
   // transaction's own full audit-log timeline (oldest-first, readable

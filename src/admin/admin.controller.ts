@@ -144,7 +144,7 @@ export class AdminController {
     return this.adminService.listListings(dto);
   }
 
-  // Must come before 'listings/:slug' — otherwise Nest matches "export"/"by-user"/"id" as the slug (same hazard as 'users/export' above).
+  // Must come before 'listings/:idOrSlug' — otherwise Nest matches "export" as the param (same hazard as 'users/export' above).
   @Get('listings/export')
   @RequirePermission('listings', 'view')
   async exportListings(
@@ -176,16 +176,13 @@ export class AdminController {
     );
   }
 
-  @Get('listings/id/:id')
+  // Merged from separate 'listings/id/:id' and 'listings/:slug' routes
+  // (2026-09-18, explicit instruction) — one handler, id-or-slug dispatch
+  // lives in ListingsService.adminFindByIdOrSlug().
+  @Get('listings/:idOrSlug')
   @RequirePermission('listings', 'view')
-  getListingById(@Param('id') id: string) {
-    return this.adminService.getListingById(id);
-  }
-
-  @Get('listings/:slug')
-  @RequirePermission('listings', 'view')
-  getListing(@Param('slug') slug: string) {
-    return this.adminService.getListingBySlug(slug);
+  getListing(@Param('idOrSlug') idOrSlug: string) {
+    return this.adminService.getListingByIdOrSlug(idOrSlug);
   }
 
   @Post('listings/:id/email-seller')

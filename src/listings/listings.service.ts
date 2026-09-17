@@ -906,7 +906,9 @@ export class ListingsService {
 
   // Lean row shape for the admin listings table — drops fields that only
   // matter on the detail view (location, views, saves, priceHistory,
-  // condition) and trims category/seller down to what a table row needs.
+  // condition, video, description, images, address, defectDescription,
+  // hasDefect — the last six removed 2026-09-17, explicit instruction) and
+  // trims category/seller down to what a table row needs.
   private shapeAdminListingRow(
     listing: ListingDocument,
   ): Record<string, unknown> {
@@ -916,6 +918,12 @@ export class ListingsService {
     delete obj.saves;
     delete obj.priceHistory;
     delete obj.condition;
+    delete obj.video;
+    delete obj.description;
+    delete obj.images;
+    delete obj.address;
+    delete obj.defectDescription;
+    delete obj.hasDefect;
 
     const category = obj.category as
       { _id: Types.ObjectId; title?: string } | undefined;
@@ -1119,21 +1127,17 @@ export class ListingsService {
     return listing;
   }
 
-  async adminFindBySlug(slug: string): Promise<{
+  // Merged from separate adminFindBySlug()/adminFindByIdDetail() methods
+  // (2026-09-18, explicit instruction) — same id-or-slug dispatch
+  // findByIdForDisplay() already uses for the owner-facing detail route.
+  async adminFindByIdOrSlug(idOrSlug: string): Promise<{
     listing: ListingDocument;
     recentActivity: Awaited<ReturnType<AuditLogService['findForEntity']>>;
   }> {
-    return this.adminFindDetail({ slug });
-  }
-
-  async adminFindByIdDetail(id: string): Promise<{
-    listing: ListingDocument;
-    recentActivity: Awaited<ReturnType<AuditLogService['findForEntity']>>;
-  }> {
-    if (!isValidObjectId(id)) {
-      throw new NotFoundException('Listing not found');
-    }
-    return this.adminFindDetail({ _id: id });
+    const filter = isValidObjectId(idOrSlug)
+      ? { _id: idOrSlug }
+      : { slug: idOrSlug };
+    return this.adminFindDetail(filter);
   }
 
   private async adminFindDetail(filter: Record<string, unknown>): Promise<{

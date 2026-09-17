@@ -147,28 +147,54 @@ export class ReviewsService {
   // review exist for this listing at all." Backs the buyerReview shown on
   // the admin listing detail view for a SOLD listing. Returns null rather
   // than throwing — a sold listing may simply not have been reviewed yet.
-  // 2026-09-17, explicit instruction.
+  // 2026-09-17, explicit instruction. `user` (the reviewer/buyer) added the
+  // same day, second pass — `averageRating` is deliberately its own name,
+  // distinct from the review's own `rating` field right next to it.
   async getForListingAdmin(listingId: string): Promise<{
     _id: string;
     rating: number;
     comment?: string;
     status: ReviewStatus;
+    user: {
+      _id: string;
+      name: string;
+      averageRating: number;
+      slug?: string;
+      email: string;
+    } | null;
   } | null> {
     if (!isValidObjectId(listingId)) {
       return null;
     }
     const review = await this.reviewModel
       .findOne({ listing: listingId })
-      .select('rating comment status')
+      .select('rating comment status reviewer')
+      .populate('reviewer', 'name email slug avgRating')
       .exec();
     if (!review) {
       return null;
     }
+    const reviewer = review.reviewer as unknown as {
+      _id: Types.ObjectId;
+      name: string;
+      email: string;
+      slug?: string;
+      avgRating: number;
+    } | null;
     return {
       _id: review._id.toString(),
       rating: review.rating,
       comment: review.comment,
       status: review.status,
+      user: reviewer
+        ? {
+            _id: reviewer._id.toString(),
+            name: reviewer.name,
+            averageRating: reviewer.avgRating,
+            slug: reviewer.slug,
+            email: reviewer.email,
+          }
+        : null,
     };
   }
 

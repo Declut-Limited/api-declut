@@ -102,7 +102,7 @@ export class AdminService {
       role: string;
       roleId?: string;
       roleName?: string;
-      listingsCount: number;
+      listingsCount?: number;
       status: string;
       joinedAt: Date;
       // User rows only — Admin has no concept of a policy strike.
@@ -136,7 +136,6 @@ export class AdminService {
         role: 'Admin',
         roleId: populatedRole?._id?.toString(),
         roleName: populatedRole?.name,
-        listingsCount: 0,
         status: a.accountStatus,
         joinedAt: (a as unknown as { createdAt: Date }).createdAt,
       };
@@ -307,34 +306,40 @@ export class AdminService {
     );
   }
 
-  async getListingBySlug(slug: string) {
+  // Merged from separate getListingBySlug()/getListingById() (2026-09-18,
+  // explicit instruction — "remove the /id/:id for listings and merge it
+  // with the slug").
+  async getListingByIdOrSlug(idOrSlug: string) {
     const { listing, recentActivity } =
-      await this.listingsService.adminFindBySlug(slug);
-    return this.shapeListingDetail(listing, recentActivity);
-  }
-
-  async getListingById(id: string) {
-    const { listing, recentActivity } =
-      await this.listingsService.adminFindByIdDetail(id);
+      await this.listingsService.adminFindByIdOrSlug(idOrSlug);
     return this.shapeListingDetail(listing, recentActivity);
   }
 
   private async shapeListingDetail(
-    listing: Awaited<ReturnType<ListingsService['adminFindBySlug']>>['listing'],
+    listing: Awaited<
+      ReturnType<ListingsService['adminFindByIdOrSlug']>
+    >['listing'],
     recentActivity: Awaited<
-      ReturnType<ListingsService['adminFindBySlug']>
+      ReturnType<ListingsService['adminFindByIdOrSlug']>
     >['recentActivity'],
   ) {
     const sellerId = listing.seller.toString();
-    const [seller, listingCounts, buyerReview] = await Promise.all([
-      this.usersService.findById(sellerId),
-      this.listingsService.countsBySeller([sellerId]),
-      // Only a SOLD listing can have a completed-purchase review behind it —
-      // 2026-09-17, explicit instruction.
-      listing.status === ListingStatus.SOLD
-        ? this.reviewsService.getForListingAdmin(listing._id.toString())
-        : Promise.resolve(null),
-    ]);
+    const [seller, listingCounts, buyerReview, salesDetails] =
+      await Promise.all([
+        this.usersService.findById(sellerId),
+        this.listingsService.countsBySeller([sellerId]),
+        // Only a SOLD listing can have a completed-purchase review behind it —
+        // 2026-09-17, explicit instruction.
+        listing.status === ListingStatus.SOLD
+          ? this.reviewsService.getForListingAdmin(listing._id.toString())
+          : Promise.resolve(null),
+        // Not status-restricted, unlike buyerReview above — a listing mid-sale
+        // (pending_sale/escrow_active) still has real sales details worth
+        // showing, not just a fully SOLD one. 2026-09-17, explicit instruction.
+        this.transactionsService.getSalesDetailsForListing(
+          listing._id.toString(),
+        ),
+      ]);
 
     return {
       id: listing._id.toString(),
@@ -360,6 +365,7 @@ export class AdminService {
       priceHistory: listing.priceHistory,
       recentActivity,
       buyerReview,
+      salesDetails,
       seller: seller
         ? {
             id: seller._id.toString(),
