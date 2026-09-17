@@ -321,16 +321,6 @@ export class AdminController {
     return this.adminService.resolveReview(id, admin.sub);
   }
 
-  @Delete('reviews/:id')
-  @RequirePermission('reviews', 'delete')
-  async removeReview(
-    @CurrentAdmin() admin: AdminAccessTokenPayload,
-    @Param('id') id: string,
-  ) {
-    await this.adminService.removeReview(id, admin.sub);
-    return { removed: true };
-  }
-
   @Get('settings')
   @RequirePermission('settings', 'view')
   getSettings() {

@@ -172,26 +172,6 @@ export class ReviewsService {
     };
   }
 
-  async adminRemove(reviewId: string, adminId: string): Promise<void> {
-    if (!isValidObjectId(reviewId)) {
-      throw new NotFoundException('Review not found');
-    }
-    const review = await this.reviewModel.findById(reviewId);
-    if (!review) {
-      throw new NotFoundException('Review not found');
-    }
-    const revieweeId = review.reviewee.toString();
-    await review.deleteOne();
-    await this.recalculate(revieweeId);
-    await this.auditLogService.record({
-      entityType: 'review',
-      entityId: reviewId,
-      event: 'review.removed',
-      actor: adminId,
-      oldState: review.status,
-    });
-  }
-
   // Unpaginated (full matching set) and flattened rather than reusing shapeReview() — a nested-object CSV cell is unreadable.
   async exportCsv(
     status?: ReviewStatus,
@@ -296,8 +276,8 @@ export class ReviewsService {
     return review;
   }
 
-  // Lighter-weight than adminRemove() — keeps the review, just marks the
-  // flag as handled rather than deleting it outright.
+  // Keeps the review, just marks the flag as handled — admin review removal
+  // no longer exists at all (2026-09-17, explicit instruction).
   async adminResolve(
     reviewId: string,
     adminId: string,

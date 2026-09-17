@@ -3864,7 +3864,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/admin/transactions?page=1&limit=20&status=disputed&tab=active&startDate=2026-08-01&endDate=2026-08-29",
+                  "raw": "{{baseUrl}}/admin/transactions?page=1&limit=20&status=disputed&startDate=2026-08-01&endDate=2026-08-29",
                   "host": [
                     "{{baseUrl}}"
                   ],
@@ -3889,13 +3889,7 @@
                       "key": "status",
                       "value": "disputed",
                       "disabled": true,
-                      "description": "Exact status — pending_payment, escrow_active, awaiting_inspection, completed, disputed, refunded, or cancelled. Overrides tab when both are given."
-                    },
-                    {
-                      "key": "tab",
-                      "value": "active",
-                      "disabled": true,
-                      "description": "Grouped tab filter — all, active, completed, disputed, or refunded (refunded also folds in cancelled). Ignored if status is given."
+                      "description": "One param, either shape — a grouped/friendly value (all/active/completed/disputed/refunded — 'active' spans pending_payment/escrow_active/awaiting_inspection, 'refunded' folds in cancelled too) or an exact raw TransactionStatus (e.g. escrow_active, cancelled on its own). 'all' always returns everything, same as omitting the param. tab no longer exists as a separate param."
                     },
                     {
                       "key": "startDate",
@@ -3911,128 +3905,140 @@
                     }
                   ]
                 },
-                "description": "tab groups related statuses (active/completed/disputed/refunded). status is an exact single-status override, taking precedence over tab. escrow is populated ({_id, status}) on each row, and EscrowStatus includes FROZEN (held/refunded/released/frozen). listing is populated with title/mainImageUrl/slug. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate). See 'Get transaction detail' for the single-record view."
+                "description": "status accepts either a grouped/friendly value (all/active/completed/disputed/refunded) or an exact raw TransactionStatus — tab no longer exists as a separate param (merged into status, 2026-09-17). escrow is populated ({_id, status}) on each row, and EscrowStatus includes FROZEN (held/refunded/released/frozen). listing is populated with title/mainImageUrl/slug. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate). See 'Get transaction detail' for the single-record view."
               },
               "response": []
             },
             {
-              "name": "Export transactions (CSV)",
-              "request": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{adminAccessToken}}",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/admin/transactions/export?status=disputed&tab=active&startDate=2026-08-01&endDate=2026-08-29",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "admin",
-                    "transactions",
-                    "export"
-                  ],
-                  "query": [
-                    {
-                      "key": "status",
-                      "value": "disputed",
-                      "disabled": true,
-                      "description": "Exact status — pending_payment, escrow_active, awaiting_inspection, completed, disputed, refunded, or cancelled. Overrides tab when both are given."
+              "name": "export",
+              "description": "",
+              "item": [
+                {
+                  "name": "Export transactions (CSV)",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/transactions/export?status=disputed&startDate=2026-08-01&endDate=2026-08-29",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "transactions",
+                        "export"
+                      ],
+                      "query": [
+                        {
+                          "key": "status",
+                          "value": "disputed",
+                          "disabled": true,
+                          "description": "One param, either shape — a grouped/friendly value (all/active/completed/disputed/refunded — 'active' spans pending_payment/escrow_active/awaiting_inspection, 'refunded' folds in cancelled too) or an exact raw TransactionStatus (e.g. escrow_active, cancelled on its own). 'all' always returns everything, same as omitting the param. tab no longer exists as a separate param."
+                        },
+                        {
+                          "key": "startDate",
+                          "value": "2026-08-01",
+                          "disabled": true,
+                          "description": "Filter to records created on/after this date (YYYY-MM-DD). Optional, combinable with endDate."
+                        },
+                        {
+                          "key": "endDate",
+                          "value": "2026-08-29",
+                          "disabled": true,
+                          "description": "Filter to records created on/through this date (YYYY-MM-DD), inclusive of the full day. Must not be earlier than startDate; same-day is valid."
+                        }
+                      ]
                     },
-                    {
-                      "key": "tab",
-                      "value": "active",
-                      "disabled": true,
-                      "description": "Grouped tab filter — all, active, completed, disputed, or refunded (refunded also folds in cancelled). Ignored if status is given."
-                    },
-                    {
-                      "key": "startDate",
-                      "value": "2026-08-01",
-                      "disabled": true,
-                      "description": "Filter to records created on/after this date (YYYY-MM-DD). Optional, combinable with endDate."
-                    },
-                    {
-                      "key": "endDate",
-                      "value": "2026-08-29",
-                      "disabled": true,
-                      "description": "Filter to records created on/through this date (YYYY-MM-DD), inclusive of the full day. Must not be earlier than startDate; same-day is valid."
-                    }
-                  ]
-                },
-                "description": "Bulk export — every transaction matching the same status/tab/date-range filters as 'List transactions (all)', unpaginated, one flattened CSV row each (status, disputeStatus, inspectionStatus, inspectionOutcome, money fields, buyer/seller/listing/escrow summaries). Doesn't include per-row refund details (payoutAccountNumber/reason/etc.) — see 'Get transaction detail' or the single-transaction 'Export transaction (CSV)' for those."
-              },
-              "response": []
-            },
-            {
-              "name": "Get transaction detail (by id or reference)",
-              "request": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{adminAccessToken}}",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/admin/transactions/{{transactionId}}",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "admin",
-                    "transactions",
-                    "{{transactionId}}"
-                  ]
-                },
-                "description": "Resolves by raw id or by the human reference (TXN-YYYY-#####) — Transactions have no separate slug field, the reference already fills that role. Adds, beyond the list shape: listing further populated (images, video, category {_id,title}, brand, condition, price, description, slug, status, createdAt, hasDefect, defectDescription, location, locationLabel, address); escrow further populated (slug, createdAt, amount); gateway/paymentMethod/gatewayProcessingFee (renamed from paystackFee); disputeStatus (under_investigation/refunded/resolved — present only once the transaction has been disputed; see DisputeStatus); inspectionOutcome (pending/Accepted/Disputed, mirrors inspectionStatus's own transitions); activityLog (the transaction's AuditLog timeline, oldest-first — trimmed to {id, slug, event, label, metadata, actor}, where actor now also carries rolePlayed: buyer/seller/admin/system/webhook); communicationLog (every real push/email actually sent for this transaction, one row per recipient per channel — never collapsed into a single 'both' row, since buyer/seller wording usually differs; no SMS, this app has no SMS gateway); transactionNotes (admin-only internal notes, newest first); inspectionReminderCount (null if the buyer's inspectionReminders setting is off, a real count otherwise); insights ({transactionAmount, escrowAmount, transactionDuration (human string), currentStage}); currentStage (top-level replica of insights.currentStage) — now one of Awaiting payment / Inspection / Reported / Resolved (completed) / Refund Processed (refunded) / Under Dispute (disputed) / Buyer's decision (cancelled, not one of the named outcomes); refundInfo (present when status is refunded, OR status is disputed with disputeStatus refunded — {id, slug, amount, reason, status (pending/processed/failed — Paystack refunds aren't instant, a reconciliation sweep corrects a pending row later), triggeredBy ({id, name, slug, role, rolePlayed} — rolePlayed is buyer/seller/admin/system), payoutAccountNumber, payoutBankCode, refundedAt, reference, refundCode, createdAt}); payoutInfo (present when status is completed — same shape as refundInfo minus reason/refundedAt, plus transferCode/completedAt). disputeInfo (present when status is disputed and the transaction has a real seller-raised Dispute behind it — absent for the older payment-race-loss auto-dispute path, which has none — {createdAt, status (the underlying Report's own moderation status: new/investigating/resolved/dismissed), slug (the Report's slug), buyerStatement (the Report's reason), sellerStatement (the Dispute's disputeClaim), evidenceImages, evidenceVideo})."
-              },
-              "response": []
-            },
-            {
-              "name": "Send inspection reminder",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{adminAccessToken}}",
-                    "type": "text"
+                    "description": "Bulk export — every transaction matching the same status/date-range filters as 'List transactions (all)', unpaginated, one flattened CSV row each (status, disputeStatus, inspectionStatus, inspectionOutcome, money fields, buyer/seller/listing/escrow summaries). Doesn't include per-row refund details (payoutAccountNumber/reason/etc.) — see 'Get transaction detail' for those."
                   },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"reminderType\": \"inspection_reminder\",\n  \"channel\": \"push\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
+                  "response": []
+                }
+              ]
+            },
+            {
+              "name": "{transactionId}",
+              "description": "",
+              "item": [
+                {
+                  "name": "Get transaction detail (by id or reference)",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/transactions/{{transactionId}}",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "transactions",
+                        "{{transactionId}}"
+                      ]
+                    },
+                    "description": "Resolves by raw id or by the human reference (TXN-YYYY-#####) — Transactions have no separate slug field, the reference already fills that role. Adds, beyond the list shape: listing further populated (images, video, category {_id,title}, brand, condition, price, description, slug, status, createdAt, hasDefect, defectDescription, location, locationLabel, address); escrow further populated (slug, createdAt, amount); gateway/paymentMethod/gatewayProcessingFee (renamed from paystackFee); disputeStatus (under_investigation/refunded/resolved — present only once the transaction has been disputed; see DisputeStatus); inspectionOutcome (pending/Accepted/Disputed, mirrors inspectionStatus's own transitions); activityLog (the transaction's AuditLog timeline, oldest-first — trimmed to {id, slug, event, label, metadata, actor}, where actor now also carries rolePlayed: buyer/seller/admin/system/webhook); communicationLog (every real push/email actually sent for this transaction, one row per recipient per channel — never collapsed into a single 'both' row, since buyer/seller wording usually differs; no SMS, this app has no SMS gateway); transactionNotes (admin-only internal notes, newest first); inspectionReminderCount (null if the buyer's inspectionReminders setting is off, a real count otherwise); insights ({transactionAmount, escrowAmount, transactionDuration (human string), currentStage}); currentStage (top-level replica of insights.currentStage) — now one of Awaiting payment / Inspection / Reported / Resolved (completed) / Refund Processed (refunded) / Under Dispute (disputed) / Buyer's decision (cancelled, not one of the named outcomes); refundInfo (present when status is refunded, OR status is disputed with disputeStatus refunded — {id, slug, amount, reason, status (pending/processed/failed — Paystack refunds aren't instant, a reconciliation sweep corrects a pending row later), triggeredBy ({id, name, slug, role, rolePlayed} — rolePlayed is buyer/seller/admin/system), payoutAccountNumber, payoutBankCode, refundedAt, reference, refundCode, createdAt}); payoutInfo (present when status is completed — same shape as refundInfo minus reason/refundedAt, plus transferCode/completedAt). disputeInfo (present when status is disputed and the transaction has a real seller-raised Dispute behind it — absent for the older payment-race-loss auto-dispute path, which has none — {createdAt, status (the underlying Report's own moderation status: new/investigating/resolved/dismissed), slug (the Report's slug), buyerStatement (the Report's reason), sellerStatement (the Dispute's disputeClaim), evidenceImages, evidenceVideo})."
+                  },
+                  "response": []
+                },
+                {
+                  "name": "send-inspection-reminder",
+                  "description": "",
+                  "item": [
+                    {
+                      "name": "Send inspection reminder",
+                      "request": {
+                        "method": "POST",
+                        "header": [
+                          {
+                            "key": "Authorization",
+                            "value": "Bearer {{adminAccessToken}}",
+                            "type": "text"
+                          },
+                          {
+                            "key": "Content-Type",
+                            "value": "application/json",
+                            "type": "text"
+                          }
+                        ],
+                        "body": {
+                          "mode": "raw",
+                          "raw": "{\n  \"reminderType\": \"inspection_reminder\",\n  \"channel\": \"push\"\n}",
+                          "options": {
+                            "raw": {
+                              "language": "json"
+                            }
+                          }
+                        },
+                        "url": {
+                          "raw": "{{baseUrl}}/admin/transactions/{{transactionId}}/send-inspection-reminder",
+                          "host": [
+                            "{{baseUrl}}"
+                          ],
+                          "path": [
+                            "admin",
+                            "transactions",
+                            "{{transactionId}}",
+                            "send-inspection-reminder"
+                          ]
+                        },
+                        "description": "Only while escrow_active, inspectionStatus is awaiting, and inspectionPeriodEnded is still false (a proactive nudge while the window is open — a lapsed window auto-refunds before an admin could act on it). reminderType is one of inspection_reminder/deadline_warning/custom_message (each maps to a predefined message); custom_message requires a message field (1-500 chars), sent verbatim. channel is exactly one of push or email — no 'both'. Increments inspectionReminderCount and notifies the buyer via the inspection_reminder type on the chosen channel only (still gated by their own inspectionReminders setting, same as any other notify() call)."
+                      },
+                      "response": []
                     }
-                  }
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/admin/transactions/{{transactionId}}/send-inspection-reminder",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "admin",
-                    "transactions",
-                    "{{transactionId}}",
-                    "send-inspection-reminder"
                   ]
-                },
-                "description": "Only while escrow_active, inspectionStatus is awaiting, and inspectionPeriodEnded is still false (a proactive nudge while the window is open — a lapsed window auto-refunds before an admin could act on it). reminderType is one of inspection_reminder/deadline_warning/custom_message (each maps to a predefined message); custom_message requires a message field (1-500 chars), sent verbatim. channel is exactly one of push or email — no 'both'. Increments inspectionReminderCount and notifies the buyer via the inspection_reminder type on the chosen channel only (still gated by their own inspectionReminders setting, same as any other notify() call)."
-              },
-              "response": []
+                }
+              ]
             }
           ]
         },
@@ -4319,32 +4325,6 @@
               "name": "{reviewId}",
               "description": "",
               "item": [
-                {
-                  "name": "Remove review (moderation)",
-                  "request": {
-                    "method": "DELETE",
-                    "header": [
-                      {
-                        "key": "Authorization",
-                        "value": "Bearer {{adminAccessToken}}",
-                        "type": "text"
-                      }
-                    ],
-                    "url": {
-                      "raw": "{{baseUrl}}/admin/reviews/{{reviewId}}",
-                      "host": [
-                        "{{baseUrl}}"
-                      ],
-                      "path": [
-                        "admin",
-                        "reviews",
-                        "{{reviewId}}"
-                      ]
-                    },
-                    "description": ""
-                  },
-                  "response": []
-                },
                 {
                   "name": "flag",
                   "description": "",

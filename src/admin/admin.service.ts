@@ -539,10 +539,6 @@ export class AdminService {
     return this.reviewsService.adminResolve(reviewId, adminId);
   }
 
-  removeReview(reviewId: string, adminId: string) {
-    return this.reviewsService.adminRemove(reviewId, adminId);
-  }
-
   getSettings() {
     return this.settingsService.get();
   }
