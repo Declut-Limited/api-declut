@@ -1685,10 +1685,15 @@ export class TransactionsService {
 
     const financialBreakdown = {
       itemPrice: listing?.price ?? amount,
+      // Both amount and percentage now shown side by side — explicit
+      // instruction, 2026-09-18 ("we also want to platformFee and
+      // processingFee in amount and not just percentage").
+      platformFee: platformCommission,
       platformFeePercentage: commissionPercentage,
       // No dedicated stored percentage for the gateway charge — only the
       // Naira amount (gatewayProcessingFee) is stored anywhere. Derived
       // here instead of a stored config value. Judgment call, flagged.
+      processingFee: gatewayProcessingFee,
       processingFeePercentage:
         amount > 0
           ? Math.round((gatewayProcessingFee / amount) * 10000) / 100
@@ -1704,10 +1709,21 @@ export class TransactionsService {
       paymentReference: shaped.reference,
       paymentGateway: shaped.gateway,
       paymentMethod: shaped.paymentMethod,
-      // The real transaction status, not a fabricated "Captured"-style
-      // label — this app doesn't track a payment-gateway status distinct
-      // from the transaction's own. Judgment call, flagged.
-      paymentStatus: shaped.status,
+      // Fixed 'Captured' — explicit instruction, 2026-09-18: an Escrow only
+      // ever exists once payment was verified in the first place (see
+      // EscrowService.createForTransaction()'s own trigger point), so
+      // reaching this code at all already means the initial payment was
+      // captured, regardless of whatever the transaction has since moved on
+      // to (refunded, disputed, etc.) — this field describes that one
+      // initial-payment moment, not the transaction's current state.
+      paymentStatus: 'Captured',
+      // Neither of these is stored anywhere — this app doesn't persist
+      // Paystack's raw response text or a separate gateway-side reference
+      // distinct from our own. Both are fixed/derived values per explicit
+      // instruction, 2026-09-18, not fabricated data being presented as if
+      // real-and-stored.
+      gatewayResponse: 'Transaction Successful',
+      gatewayReference: shaped.reference,
       currency: settings.defaultCurrency,
       paymentDate: escrowCreatedAt.toISOString().slice(0, 10),
       paymentTime: escrowCreatedAt.toISOString().slice(11, 19),
@@ -1730,13 +1746,37 @@ export class TransactionsService {
       buyer: shaped.buyer,
       activityLog: shaped.activityLog,
       transactionNotes: shaped.transactionNotes,
-      disputeInfo: shaped.disputeInfo ?? null,
+      disputeInfo: this.shapeEscrowDisputeInfo(shaped.disputeInfo),
       refundInfo: shaped.refundInfo ?? null,
       insights,
       platformEarning,
       financialBreakdown,
       paymentDetails,
       settlementDetails,
+    };
+  }
+
+  // Trimmed disputeInfo for the escrow detail — deliberately a narrower
+  // shape than the transaction detail's own getDisputeInfo() output
+  // (explicit instruction, 2026-09-18): drops sellerStatement and both
+  // evidence fields entirely, and buyerStatement is renamed to reason.
+  private shapeEscrowDisputeInfo(
+    disputeInfo: unknown,
+  ): Record<string, unknown> | null {
+    if (!disputeInfo) {
+      return null;
+    }
+    const info = disputeInfo as {
+      createdAt: Date;
+      status: string | null;
+      slug: string | null;
+      buyerStatement: string | null;
+    };
+    return {
+      createdAt: info.createdAt,
+      status: info.status,
+      slug: info.slug,
+      reason: info.buyerStatement,
     };
   }
 

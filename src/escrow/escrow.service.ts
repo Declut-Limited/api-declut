@@ -126,6 +126,7 @@ export class EscrowService {
     } | null;
 
     return {
+      _id: escrow._id.toString(),
       transaction: transaction
         ? { _id: transaction._id.toString(), reference: transaction.reference }
         : null,
