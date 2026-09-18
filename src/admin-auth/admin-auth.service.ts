@@ -11,7 +11,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { JwtService } from '@nestjs/jwt';
-import { Model } from 'mongoose';
+import { Model, isValidObjectId } from 'mongoose';
 import { randomBytes, randomUUID, createHash } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import type { StringValue } from 'ms';
@@ -23,6 +23,7 @@ import {
   Phone,
 } from './schemas/admin.schema';
 import { normalizeNigerianPhone } from '../common/utils/phone.util';
+import { generateSecurePassword } from './generate-secure-password.util';
 import { Role, RoleDocument } from '../roles/schemas/role.schema';
 import { AdminLoginDto } from './dto/admin-login.dto';
 import { CreateSubAdminDto } from './dto/create-sub-admin.dto';
@@ -64,6 +65,8 @@ export interface AdminProfile {
   dashboardPreferences?: DashboardPreferences;
   passwordChangedAt?: Date | null;
   lastLoginAt?: Date | null;
+  initialLoginAt?: Date | null;
+  lastSeenAt?: Date | null;
   lastProfileUpdateAt?: Date | null;
   title?: string;
   company?: string;
@@ -108,9 +111,18 @@ export class AdminAuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    await this.adminModel
-      .updateOne({ _id: admin._id }, { lastLoginAt: new Date() })
-      .exec();
+    // First login: stamps initialLoginAt and flips a still-PENDING admin to
+    // ACTIVE (see AdminAccountStatus). Never runs again afterward —
+    // initialLoginAt being already set is what "not the first login" means.
+    // 2026-09-18, explicit instruction.
+    const update: Record<string, unknown> = { lastLoginAt: new Date() };
+    if (!admin.initialLoginAt) {
+      update.initialLoginAt = new Date();
+      if (admin.accountStatus === AdminAccountStatus.PENDING) {
+        update.accountStatus = AdminAccountStatus.ACTIVE;
+      }
+    }
+    await this.adminModel.updateOne({ _id: admin._id }, update).exec();
 
     return this.issueTokens(admin);
   }
@@ -130,15 +142,17 @@ export class AdminAuthService {
       throw new NotFoundException('Role not found');
     }
 
-    const password = await bcrypt.hash(dto.password, this.saltRounds());
+    // Generated, never client-supplied (explicit instruction, 2026-09-18) —
+    // the plaintext only ever exists in memory here and in the invite email
+    // below, same as before; only its origin changed.
+    const plaintextPassword = generateSecurePassword();
+    const password = await bcrypt.hash(plaintextPassword, this.saltRounds());
     const slug = await this.counterService.nextSlug('admin', 'ADM', 4);
     const admin = await this.adminModel.create({
       email: dto.email.toLowerCase(),
       name: dto.name,
       slug,
       password,
-      title: dto.title,
-      company: dto.company,
       role: dto.roleId,
       createdBy: creatorAdminId,
     });
@@ -152,7 +166,7 @@ export class AdminAuthService {
       await this.emailService.sendSubAdminInviteEmail(
         admin.email,
         admin.name,
-        dto.password,
+        plaintextPassword,
         `${appUrl}/login`,
       );
     } catch (err) {
@@ -194,19 +208,17 @@ export class AdminAuthService {
     return this.toProfile(admin);
   }
 
-  // Three flat status flips, mirroring UsersService's own
-  // suspend/deactivate/reactivate/ban — no Suspension-style metadata
-  // sub-document, since none was asked for here. No 'ban' counterpart —
-  // ban is user-only (explicit instruction, 2026-09-17). Neither login()
-  // above nor AdminJwtAuthGuard/PermissionsGuard currently check
-  // accountStatus — same gap User's own accountStatus already has (nothing
-  // in AuthService.login() checks it either) — so these set the field for
+  // Two flat status flips, mirroring UsersService's own
+  // deactivate/reactivate — no Suspension-style metadata sub-document, since
+  // none was asked for here. No 'suspend' counterpart — removed entirely
+  // 2026-09-18, explicit instruction (AdminAccountStatus is now
+  // pending/active/deactivated only). No 'ban' either — ban is user-only
+  // (explicit instruction, 2026-09-17). Neither login() above nor
+  // AdminJwtAuthGuard/PermissionsGuard currently check accountStatus — same
+  // gap User's own accountStatus already has (nothing in
+  // AuthService.login() checks it either) — so these set the field for
   // visibility/filtering but don't yet block API access; flagged, not
   // fixed, since enforcing it wasn't asked for.
-  async suspendAdmin(adminId: string): Promise<AdminProfile> {
-    return this.setAccountStatus(adminId, AdminAccountStatus.SUSPENDED);
-  }
-
   async deactivateAdmin(adminId: string): Promise<AdminProfile> {
     return this.setAccountStatus(adminId, AdminAccountStatus.DEACTIVATED);
   }
@@ -319,10 +331,23 @@ export class AdminAuthService {
       .exec();
   }
 
-  // Used by the admin Users federated list — Admins have no equivalent of
-  // accountStatus, so status filters only ever narrow the User side.
-  // Populates role with just its name (not the full permissions object —
-  // this list view only needs it for display, unlike getProfile()/findById()).
+  // Used by the federated GET /admin/users/:idOrSlug detail view — same
+  // id-or-slug dispatch UsersService.findByIdOrSlug() already uses. Added
+  // 2026-09-18, explicit instruction (the User side of this detail view
+  // already resolved by slug; the Admin side was raw-id-only until now).
+  findByIdOrSlug(idOrSlug: string): Promise<AdminDocument | null> {
+    const query = isValidObjectId(idOrSlug)
+      ? this.adminModel.findById(idOrSlug)
+      : this.adminModel.findOne({ slug: idOrSlug });
+    return query.populate('role', ROLE_POPULATE_FIELDS).exec();
+  }
+
+  // Used by the admin Users federated list — the `status` filter only ever
+  // narrows the User side (Admin's own AdminAccountStatus is a distinct,
+  // narrower enum, not filterable through this same param — see
+  // admin.schema.ts). Populates role with just its name (not the full
+  // permissions object — this list view only needs it for display, unlike
+  // getProfile()/findById()).
   searchAdmins(
     search?: string,
     dateRange: DateRangeDto = {},
@@ -544,6 +569,9 @@ export class AdminAuthService {
     );
 
     const decoded = this.jwtService.decode<{ exp: number }>(refreshToken);
+    // Shared by login() and refresh() — stamping lastSeenAt here (rather
+    // than in each caller separately) covers both with one write, since
+    // this update already happens on every session-creating call regardless.
     await this.adminModel
       .updateOne(
         { _id: adminId },
@@ -552,6 +580,7 @@ export class AdminAuthService {
             hashedToken: hashRefreshToken(refreshToken),
             expiresAt: new Date(decoded.exp * 1000),
           },
+          lastSeenAt: new Date(),
         },
       )
       .exec();
@@ -580,6 +609,8 @@ export class AdminAuthService {
       dashboardPreferences: admin.dashboardPreferences,
       passwordChangedAt: admin.passwordChangedAt ?? null,
       lastLoginAt: admin.lastLoginAt ?? null,
+      initialLoginAt: admin.initialLoginAt ?? null,
+      lastSeenAt: admin.lastSeenAt ?? null,
       lastProfileUpdateAt: admin.lastProfileUpdateAt ?? null,
       title: admin.title,
       company: admin.company,

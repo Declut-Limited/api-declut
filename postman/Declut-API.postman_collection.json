@@ -3209,7 +3209,7 @@
               "description": "",
               "item": [
                 {
-                  "name": "Get user by ID",
+                  "name": "Get user by ID or slug",
                   "request": {
                     "method": "GET",
                     "header": [
@@ -3230,7 +3230,7 @@
                         "{{userId}}"
                       ]
                     },
-                    "description": "Works on a User id (insights + recent transactions + KYC) or an Admin id (role/company/permissions instead)."
+                    "description": "Works on a User id-or-slug (USR-####, insights + recent transactions + KYC) or an Admin id-or-slug (ADM-####, role/company/permissions instead) — both sides resolve by slug now (2026-09-18), not just id. Admin's status field is its real accountStatus (pending/active/deactivated), not hardcoded."
                   },
                   "response": []
                 },
@@ -4500,6 +4500,46 @@
                 }
               },
               "response": []
+            },
+            {
+              "name": "Update issue resolution SLA settings",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/settings/issue-resolution-sla",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "settings",
+                    "issue-resolution-sla"
+                  ]
+                },
+                "description": "enableSellerSLA is the master switch (default true) — when false, the other four fields are stored but meaningless. sellerResponseSlaTimeInHour (default 24) and reminderSlaTimeInHour (default 6) are hours. autoEscalateSlaOnExpiry/sendSlaReminderBeforeDeadline both default true. Nothing currently reads any of these five yet (settings endpoint built, business-logic wiring not asked for this pass).",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"enableSellerSLA\": true,\n  \"sellerResponseSlaTimeInHour\": 24,\n  \"autoEscalateSlaOnExpiry\": true,\n  \"sendSlaReminderBeforeDeadline\": true,\n  \"reminderSlaTimeInHour\": 6\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
             }
           ]
         },
@@ -5603,7 +5643,7 @@
                         "login"
                       ]
                     },
-                    "description": "Bootstrap the first admin with: npm run seed:admin -- <email> <password> [name]",
+                    "description": "Bootstrap the first admin with: npm run seed:admin -- <email> <password> [name] A freshly created sub-admin starts accountStatus: pending — their first successful login here flips it to active and stamps initialLoginAt (once, never again after).",
                     "body": {
                       "mode": "raw",
                       "raw": "{\n  \"email\": \"admin@declut.com.ng\",\n  \"password\": \"Password123@!\"\n}",
@@ -5659,7 +5699,7 @@
                         "me"
                       ]
                     },
-                    "description": "Returns the caller's own admin profile — includes slug (ADM-####), phone as {phoneNumber, countryCode} (countryCode is always \"+234\" for now), and accountStatus (active/suspended/deactivated). Not PermissionsGuard-gated — any authenticated admin can always read their own profile."
+                    "description": "Returns the caller's own admin profile — includes slug (ADM-####), phone as {phoneNumber, countryCode} (countryCode is always \"+234\" for now), and accountStatus (pending/active/deactivated — pending until first login). Not PermissionsGuard-gated — any authenticated admin can always read their own profile. Also returns initialLoginAt (set once, on the first successful login) and lastSeenAt (updated on every login/refresh) — both null until that's happened."
                   },
                   "response": []
                 },
@@ -5875,7 +5915,7 @@
                         "sub-admins"
                       ]
                     },
-                    "description": "Every admin must be assigned a Role at creation (roleId) — access comes entirely from that Role's permissions, not from anything on the admin itself. title is a free-text job label, not a role. Sends an invite email to the new sub-admin with their email, password, and a link to the admin portal login page — a failed/unconfigured send does not fail the creation itself.",
+                    "description": "Every admin must be assigned a Role at creation (roleId) — access comes entirely from that Role's permissions, not from anything on the admin itself. title is a free-text job label, not a role. Sends an invite email to the new sub-admin with their email, password, and a link to the admin portal login page — a failed/unconfigured send does not fail the creation itself. A new sub-admin starts accountStatus: pending until their first login (see Admin login).",
                     "body": {
                       "mode": "raw",
                       "raw": "{\n  \"email\": \"amaka.okafor@declut.com\",\n  \"name\": \"Amaka Okafor\",\n  \"password\": \"SubAdminPass2026!\",\n  \"title\": \"Support Lead\",\n  \"company\": \"Declut\",\n  \"roleId\": \"{{roleId}}\"\n}",
@@ -5949,40 +5989,6 @@
                                 }
                               }
                             }
-                          },
-                          "response": []
-                        }
-                      ]
-                    },
-                    {
-                      "name": "suspend",
-                      "description": "",
-                      "item": [
-                        {
-                          "name": "Suspend admin",
-                          "request": {
-                            "method": "PATCH",
-                            "header": [
-                              {
-                                "key": "Authorization",
-                                "value": "Bearer {{adminAccessToken}}",
-                                "type": "text"
-                              }
-                            ],
-                            "url": {
-                              "raw": "{{baseUrl}}/admin/auth/sub-admins/{{subAdminId}}/suspend",
-                              "host": [
-                                "{{baseUrl}}"
-                              ],
-                              "path": [
-                                "admin",
-                                "auth",
-                                "sub-admins",
-                                "{{subAdminId}}",
-                                "suspend"
-                              ]
-                            },
-                            "description": "Flat status flip to suspended. Admin's own AdminAccountStatus (active/suspended/deactivated) is a narrower, distinct enum from User's AccountStatus — no 'pending' (an admin is never mid-email-verification) and no 'banned' (ban is user-only). Same flat trust model as sub-admin creation/role reassignment — any authenticated admin, no extra RBAC check."
                           },
                           "response": []
                         }

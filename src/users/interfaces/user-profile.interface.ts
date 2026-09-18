@@ -26,6 +26,7 @@ export interface PrivateUserProfile {
   purchaseCount: number;
   totalAmountInEscrow: number;
   createdAt: Date;
+  lastSeenAt?: Date | null;
 }
 
 // What anyone else gets to see — no email, no bank details, no raw

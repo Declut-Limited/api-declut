@@ -14,6 +14,7 @@ import { SettingsService } from '../settings/settings.service';
 import { UpdateGeneralSettingsDto } from '../settings/dto/update-general-settings.dto';
 import { UpdatePaymentSettingsDto } from '../settings/dto/update-payment-settings.dto';
 import { UpdateFeesSettingsDto } from '../settings/dto/update-fees-settings.dto';
+import { UpdateIssueResolutionSlaDto } from '../settings/dto/update-issue-resolution-sla.dto';
 import { AdminAuthService } from '../admin-auth/admin-auth.service';
 import type { AdminDocument } from '../admin-auth/schemas/admin.schema';
 import { EmailService } from '../email/email.service';
@@ -170,11 +171,11 @@ export class AdminService {
     ]);
   }
 
-  async getUserOrAdminDetail(id: string) {
+  async getUserOrAdminDetail(idOrSlug: string) {
     // findByIdOrSlug (not findById) — 2026-09-17, so this genuinely
     // resolves by either a raw id or a USR-#### slug, matching how this
     // detail view is described elsewhere ("user by id or by slug").
-    const user = await this.usersService.findByIdOrSlug(id);
+    const user = await this.usersService.findByIdOrSlug(idOrSlug);
     if (user) {
       // The route param can now be a slug — every downstream lookup below
       // needs the user's real ObjectId, not whatever was passed in.
@@ -227,7 +228,10 @@ export class AdminService {
       };
     }
 
-    const admin = await this.adminAuthService.findById(id);
+    // findByIdOrSlug here too (2026-09-18) — was raw findById()-only, so an
+    // ADM-#### slug 404'd even though the User branch above already
+    // resolved by slug.
+    const admin = await this.adminAuthService.findByIdOrSlug(idOrSlug);
     if (admin) {
       // `role` here is the literal account type (matches 'User' above) —
       // NOT the same thing as `assignedRole`, which is the actual Role
@@ -246,7 +250,8 @@ export class AdminService {
           role: 'Admin',
           slug: admin.slug,
           title: admin.title,
-          status: 'active',
+          // Was hardcoded 'active' — real accountStatus since 2026-09-18.
+          status: admin.accountStatus,
           company: admin.company,
           createdAt: (admin as unknown as { createdAt: Date }).createdAt,
           email: admin.email,
@@ -559,6 +564,10 @@ export class AdminService {
 
   updateFeesSettings(dto: UpdateFeesSettingsDto) {
     return this.settingsService.updateFees(dto);
+  }
+
+  updateIssueResolutionSlaSettings(dto: UpdateIssueResolutionSlaDto) {
+    return this.settingsService.updateIssueResolutionSla(dto);
   }
 
   // Spans Users + Listings + Transactions — same "genuine exception, lives here rather than forced into one domain service" reasoning as the Users federation above.

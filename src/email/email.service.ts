@@ -129,7 +129,7 @@ export function buildSubAdminInviteEmailBody(
 ): { subject: string; html: string } {
   return {
     subject: "You've been added as a Declut admin",
-    html: `<p>Hi ${escapeHtml(name)},</p><p>An account has been created for you on the Declut admin portal. Here are your login details:</p><p>Email: ${escapeHtml(email)}<br />Password: ${escapeHtml(password)}</p><p><a href="${loginUrl}">${loginUrl}</a></p><p>For security, please log in and change your password as soon as possible.</p>`,
+    html: `<p>Hi ${escapeHtml(name)},</p><p>An account has been created for you on the Declut admin portal. Here are your login details:</p><p>Email: ${escapeHtml(email)}<br />Password: ${escapeHtml(password)}</p><p><a href="${loginUrl}">${loginUrl}</a></p><p>For security, please log in and feel free to change your password anytime.</p>`,
   };
 }
 

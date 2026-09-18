@@ -1,13 +1,17 @@
 import {
   IsEmail,
   IsMongoId,
-  IsOptional,
   IsString,
-  Matches,
   MaxLength,
   MinLength,
 } from 'class-validator';
 
+// password/title/company removed 2026-09-18, explicit instruction — a
+// secure password is now generated server-side (see
+// generateSecurePassword() in AdminAuthService), and title/company aren't
+// collected at creation at all anymore (still exist on the Admin schema,
+// just with no write path here — see the general-profile endpoint and the
+// seed script for the other ways they can get set).
 export class CreateSubAdminDto {
   @IsEmail()
   email: string;
@@ -16,26 +20,6 @@ export class CreateSubAdminDto {
   @MinLength(2)
   @MaxLength(100)
   name: string;
-
-  @IsString()
-  @MinLength(8)
-  @MaxLength(64)
-  @Matches(/^(?=.*[A-Za-z])(?=.*\d).+$/, {
-    message: 'password must contain at least one letter and one number',
-  })
-  password: string;
-
-  // Free-text job title for display only (e.g. "Operations Manager") — not
-  // a role. Access comes entirely from `roleId` below.
-  @IsOptional()
-  @IsString()
-  @MaxLength(100)
-  title?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(100)
-  company?: string;
 
   // Every admin must be assigned a Role at creation — this is what actually determines its access. See src/roles/.
   @IsMongoId()

@@ -8,6 +8,7 @@ import {
 import { UpdateGeneralSettingsDto } from './dto/update-general-settings.dto';
 import { UpdatePaymentSettingsDto } from './dto/update-payment-settings.dto';
 import { UpdateFeesSettingsDto } from './dto/update-fees-settings.dto';
+import { UpdateIssueResolutionSlaDto } from './dto/update-issue-resolution-sla.dto';
 
 // Fields retired from the AppSettings schema that may still be sitting on
 // an already-existing singleton document — Mongoose doesn't strip fields it
@@ -98,11 +99,18 @@ export class SettingsService {
     return this.applyUpdate(dto);
   }
 
+  async updateIssueResolutionSla(
+    dto: UpdateIssueResolutionSlaDto,
+  ): Promise<AppSettingsDocument> {
+    return this.applyUpdate(dto);
+  }
+
   private async applyUpdate(
     dto:
       | UpdateGeneralSettingsDto
       | UpdatePaymentSettingsDto
-      | UpdateFeesSettingsDto,
+      | UpdateFeesSettingsDto
+      | UpdateIssueResolutionSlaDto,
   ): Promise<AppSettingsDocument> {
     await this.appSettingsModel.collection.updateOne(
       {},

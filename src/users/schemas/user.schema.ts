@@ -108,6 +108,12 @@ export class User {
   @Prop({ type: RefreshTokenInfo, select: false })
   refreshToken?: RefreshTokenInfo;
 
+  // Updated on every login/refresh — see the identical field on Admin for
+  // why login/refresh rather than every authenticated request. Added
+  // 2026-09-18, explicit instruction.
+  @Prop()
+  lastSeenAt?: Date;
+
   @Prop({ type: String, enum: AccountStatus, default: AccountStatus.PENDING })
   accountStatus: AccountStatus;
 

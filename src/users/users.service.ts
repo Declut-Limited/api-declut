@@ -320,11 +320,16 @@ export class UsersService {
       .exec();
   }
 
+  // Called from every session-creating flow (login, Google auth, refresh) —
+  // the one shared choke point in AuthService.issueTokens(), so stamping
+  // lastSeenAt here covers all three without a separate call site each.
   async setRefreshToken(
     userId: string,
     refreshToken: { hashedToken: string; expiresAt: Date },
   ): Promise<void> {
-    await this.userModel.updateOne({ _id: userId }, { refreshToken }).exec();
+    await this.userModel
+      .updateOne({ _id: userId }, { refreshToken, lastSeenAt: new Date() })
+      .exec();
   }
 
   async clearRefreshToken(userId: string): Promise<void> {
@@ -430,6 +435,7 @@ export class UsersService {
       policyStrike: user.policyStrike,
       ...stats,
       createdAt: (user as unknown as { createdAt: Date }).createdAt,
+      lastSeenAt: user.lastSeenAt ?? null,
     };
   }
 

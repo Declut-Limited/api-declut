@@ -30,6 +30,7 @@ import { DashboardInsightsDto, RevenueTrendsDto } from './dto/dashboard.dto';
 import { UpdateGeneralSettingsDto } from '../settings/dto/update-general-settings.dto';
 import { UpdatePaymentSettingsDto } from '../settings/dto/update-payment-settings.dto';
 import { UpdateFeesSettingsDto } from '../settings/dto/update-fees-settings.dto';
+import { UpdateIssueResolutionSlaDto } from '../settings/dto/update-issue-resolution-sla.dto';
 import { DateRangeDto } from '../common/dto/date-range.dto';
 import { AdminJwtAuthGuard } from '../admin-auth/guards/admin-jwt-auth.guard';
 import { PermissionsGuard } from '../admin-auth/guards/permissions.guard';
@@ -88,7 +89,7 @@ export class AdminController {
     return this.adminService.listUsers(dto);
   }
 
-  // Must come before 'users/:id' — otherwise Nest matches "export" as :id.
+  // Must come before 'users/:idOrSlug' — otherwise Nest matches "export" as the param.
   @Get('users/export')
   @RequirePermission('users', 'view')
   async exportUsers(@Query() dto: DateRangeDto, @Res() res: Response) {
@@ -98,10 +99,12 @@ export class AdminController {
     res.send(csv);
   }
 
-  @Get('users/:id')
+  // Param renamed id -> idOrSlug (2026-09-18, explicit instruction) — the
+  // service already resolved a User by slug; the Admin branch now does too.
+  @Get('users/:idOrSlug')
   @RequirePermission('users', 'view')
-  getUser(@Param('id') id: string) {
-    return this.adminService.getUserOrAdminDetail(id);
+  getUser(@Param('idOrSlug') idOrSlug: string) {
+    return this.adminService.getUserOrAdminDetail(idOrSlug);
   }
 
   @Patch('users/:id/suspend')
@@ -340,5 +343,11 @@ export class AdminController {
   @RequirePermission('settings', 'write')
   updateFeesSettings(@Body() dto: UpdateFeesSettingsDto) {
     return this.adminService.updateFeesSettings(dto);
+  }
+
+  @Patch('settings/issue-resolution-sla')
+  @RequirePermission('settings', 'write')
+  updateIssueResolutionSlaSettings(@Body() dto: UpdateIssueResolutionSlaDto) {
+    return this.adminService.updateIssueResolutionSlaSettings(dto);
   }
 }

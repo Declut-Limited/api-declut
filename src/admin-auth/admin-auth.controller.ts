@@ -129,13 +129,9 @@ export class AdminAuthController {
   }
 
   // Same flat trust model as sub-admin creation/role reassignment above —
-  // any authenticated admin, no extra RBAC check. 2026-09-17.
-  @UseGuards(AdminJwtAuthGuard)
-  @Patch('sub-admins/:id/suspend')
-  suspendAdmin(@Param('id') id: string) {
-    return this.adminAuthService.suspendAdmin(id);
-  }
-
+  // any authenticated admin, no extra RBAC check. 2026-09-17. 'suspend'
+  // removed entirely 2026-09-18, explicit instruction — AdminAccountStatus
+  // no longer has a 'suspended' value.
   @UseGuards(AdminJwtAuthGuard)
   @Patch('sub-admins/:id/deactivate')
   deactivateAdmin(@Param('id') id: string) {

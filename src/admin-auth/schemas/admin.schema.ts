@@ -3,15 +3,15 @@ import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 
 export type AdminDocument = HydratedDocument<Admin>;
 
-// A narrower set than User's own AccountStatus — no 'pending' (an admin is
-// never mid-email-verification) and no 'banned' (ban is user-only, explicit
-// instruction, 2026-09-17). Default 'active', unlike User's default
-// 'pending' — an admin is only ever created directly by another admin
-// (createSubAdmin()) or the seed script, never through a self-serve signup
-// flow with a verification gap to sit "pending" through.
+// Reworked 2026-09-18, explicit instruction — 'suspended' removed entirely
+// (only 3 values now: pending/active/deactivated), and the meaning of
+// 'pending' flipped from "no such state" to the new default: a freshly
+// created admin sits PENDING until their first successful login, which
+// flips it to ACTIVE (see AdminAuthService.login()). Still no 'banned' —
+// ban stays user-only.
 export enum AdminAccountStatus {
+  PENDING = 'pending',
   ACTIVE = 'active',
-  SUSPENDED = 'suspended',
   DEACTIVATED = 'deactivated',
 }
 
@@ -92,12 +92,36 @@ export class Admin {
   @Prop({ type: Phone })
   phone?: Phone;
 
+  // Default flipped PENDING <- ACTIVE 2026-09-18, explicit instruction — see
+  // AdminAccountStatus's own comment. A one-time migration backfilled every
+  // pre-existing admin to ACTIVE (using lastLoginAt's presence as the
+  // signal — they'd obviously already had a first login), so this default
+  // only actually applies to an admin created after this change.
   @Prop({
     type: String,
     enum: AdminAccountStatus,
-    default: AdminAccountStatus.ACTIVE,
+    default: AdminAccountStatus.PENDING,
   })
   accountStatus: AdminAccountStatus;
+
+  // Set once, the very first time this admin successfully logs in — the
+  // same moment accountStatus flips PENDING -> ACTIVE (see
+  // AdminAuthService.login()). Never touched again afterward. Added
+  // 2026-09-18, explicit instruction.
+  @Prop()
+  initialLoginAt?: Date;
+
+  // Updated on every login/refresh (a session being actively used), for
+  // both User and Admin (see the User schema's own lastSeenAt). Judgment
+  // call, flagged: "last active" could instead mean "last authenticated
+  // request," but that would mean a DB write on every single guarded
+  // request — a real cost this app's guards don't pay anywhere else (both
+  // JwtAuthGuard and AdminJwtAuthGuard are pure stateless JWT verification,
+  // zero DB lookups). login/refresh already write to the DB regardless
+  // (rotating the refresh token), so piggybacking here is free by
+  // comparison. Added 2026-09-18, explicit instruction.
+  @Prop()
+  lastSeenAt?: Date;
 
   @Prop({ type: DashboardPreferences, default: () => ({}) })
   dashboardPreferences: DashboardPreferences;
