@@ -1627,7 +1627,9 @@ export class TransactionsService {
     };
 
     const listing = shaped.listing as { price?: number } | null;
-    const refundInfo = shaped.refundInfo as { amount?: number } | undefined;
+    const refundInfo = shaped.refundInfo as
+      | { amount?: number; refundedAt?: Date | null; reference?: string }
+      | undefined;
 
     let settlementDetails: Record<string, unknown> | null = null;
     // "Settlement" specifically means the payout-to-seller leg — a refund
@@ -1677,6 +1679,46 @@ export class TransactionsService {
             : null,
         };
       }
+    }
+
+    // Status-specific detail fields — explicit instruction, 2026-09-18 ("on
+    // escrow that the status is X, we need ..."). One small object per
+    // status rather than making the client know which of insights/refundInfo/
+    // settlementDetails (each sometimes null, each shaped for a different
+    // purpose) to read from for "the one thing that matters right now" —
+    // values are still sourced from the same computations above, not
+    // duplicated: held reuses holdingDuration and the transaction's own
+    // inspection deadline (accounting for a used extension); refunded/
+    // released reuse refundInfo/settlementDetails as-is. Frozen (disputed)
+    // isn't covered here — the literal ask named "held" only, and a frozen
+    // escrow's relevant detail is already the disputeInfo above.
+    let statusDetails: Record<string, unknown> | null = null;
+    if (escrow.status === EscrowStatus.HELD) {
+      const inspectionExtended = shaped.inspectionExtended as
+        boolean | undefined;
+      const inspectionDeadline = inspectionExtended
+        ? ((shaped.inspectionExtensionEndDate as Date | null) ?? null)
+        : ((shaped.inspectionDeadlineAt as Date | null) ?? null);
+      statusDetails = {
+        holdingTime: holdingDuration,
+        inspectionDeadline,
+      };
+    } else if (escrow.status === EscrowStatus.REFUNDED) {
+      statusDetails = refundInfo
+        ? {
+            refundDate: refundInfo.refundedAt ?? null,
+            refundAmount: refundInfo.amount ?? null,
+            reference: refundInfo.reference ?? null,
+          }
+        : null;
+    } else if (escrow.status === EscrowStatus.RELEASED) {
+      statusDetails = settlementDetails
+        ? {
+            releasedDate: settlementDetails.actualReleaseDate,
+            settlementTime: settlementDetails.settlementTime,
+            reference: settlementDetails.settlementReference,
+          }
+        : null;
     }
 
     const netSettlement = settlementDetails
@@ -1753,6 +1795,7 @@ export class TransactionsService {
       financialBreakdown,
       paymentDetails,
       settlementDetails,
+      statusDetails,
     };
   }
 
