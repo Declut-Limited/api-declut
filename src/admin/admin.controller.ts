@@ -250,6 +250,19 @@ export class AdminController {
     return this.adminService.getTransactionDetail(idOrRef);
   }
 
+  // Lives here, not on AdminEscrowController (src/escrow/) where the
+  // sibling GET /admin/escrows list route lives — TransactionsService is
+  // what actually builds this shape (reusing the transaction detail's own
+  // logic almost entirely), and EscrowModule can't inject TransactionsModule
+  // without a cycle (TransactionsModule already imports EscrowModule). Same
+  // transactions/view permission bucket the escrow list already uses (no
+  // dedicated escrow RBAC bucket exists). 2026-09-18, explicit instruction.
+  @Get('escrows/:idOrSlug')
+  @RequirePermission('transactions', 'view')
+  getEscrowDetail(@Param('idOrSlug') idOrSlug: string) {
+    return this.adminService.getEscrowDetail(idOrSlug);
+  }
+
   @Post('transactions/:id/send-inspection-reminder')
   @RequirePermission('transactions', 'write')
   sendInspectionReminder(

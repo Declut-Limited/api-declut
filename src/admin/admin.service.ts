@@ -494,6 +494,10 @@ export class AdminService {
     return this.transactionsService.adminFindByIdOrReference(idOrReference);
   }
 
+  getEscrowDetail(idOrSlug: string) {
+    return this.transactionsService.adminFindEscrowDetail(idOrSlug);
+  }
+
   sendInspectionReminder(
     transactionId: string,
     adminId: string,

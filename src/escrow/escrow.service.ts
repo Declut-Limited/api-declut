@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Model, Types, isValidObjectId } from 'mongoose';
 import { Escrow, EscrowDocument, EscrowStatus } from './schemas/escrow.schema';
 import { CounterService } from '../common/counter/counter.service';
 import { PopulatedParty, shapeParty } from '../common/utils/party.util';
@@ -50,6 +50,22 @@ export class EscrowService {
       { transaction: transactionId },
       { status },
     );
+  }
+
+  // Raw, unpopulated — backs the admin escrow detail view, built in
+  // TransactionsService (which already injects this service; the reverse
+  // isn't true, so the detail-building logic has to live over there rather
+  // than here — see the "escrow detail" section of CLAUDE.md for why).
+  // Same id-or-slug dispatch every other admin detail lookup in this app uses.
+  async findRawByIdOrSlug(idOrSlug: string): Promise<EscrowDocument> {
+    const filter = isValidObjectId(idOrSlug)
+      ? { _id: idOrSlug }
+      : { slug: idOrSlug };
+    const escrow = await this.escrowModel.findOne(filter).exec();
+    if (!escrow) {
+      throw new NotFoundException('Escrow not found');
+    }
+    return escrow;
   }
 
   async adminList(page: number, limit: number, dateRange: DateRangeDto = {}) {

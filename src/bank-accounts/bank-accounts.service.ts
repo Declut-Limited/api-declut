@@ -215,8 +215,20 @@ export class BankAccountsService {
     };
   }
 
-  private maskAccountNumber(accountNumber: string): string {
+  // No longer private (2026-09-18) — TransactionsService's admin escrow
+  // detail ("Settlement Details" → Masked Bank Account) reuses this same
+  // masking convention rather than duplicating the format elsewhere.
+  maskAccountNumber(accountNumber: string): string {
     return `•••• ${accountNumber.slice(-4)}`;
+  }
+
+  // Public passthrough onto NigerianBanksService (not itself exported from
+  // this module) — used by the same escrow detail's Settlement Details ->
+  // Bank Name, to resolve a stored payoutBankCode into a human-readable
+  // name, same cached dataset resolveAndValidate() above already uses.
+  // Added 2026-09-18, explicit instruction.
+  getBankNameByCode(code: string): Promise<string | undefined> {
+    return this.nigerianBanksService.getByCode(code).then((bank) => bank?.name);
   }
 
   private shape(bankAccount: BankAccountDocument): Record<string, unknown> {

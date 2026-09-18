@@ -1541,6 +1541,205 @@ export class TransactionsService {
     return shaped;
   }
 
+  // Admin escrow detail — GET /admin/escrows/:idOrSlug. Mirrors the
+  // transaction detail's shape almost entirely (listing/seller/buyer/
+  // activityLog/transactionNotes/disputeInfo/refundInfo all reused verbatim
+  // from adminFindByIdOrReference() above, since an Escrow is 1:1 with the
+  // Transaction it was created from — there's nothing about buyer/seller/
+  // listing/history that differs between the two views), then layers
+  // escrow-specific money/timing fields on top. Lives here (not on
+  // EscrowService) because EscrowService can't inject TransactionsService
+  // back without a module cycle (TransactionsModule already imports
+  // EscrowModule) — this direction already exists, so building the rich
+  // shape here and having EscrowService only do the raw id-or-slug lookup
+  // (findRawByIdOrSlug()) avoids needing forwardRef() at all. Exposed via
+  // AdminController/AdminService (src/admin/), the same home
+  // GET /admin/transactions/:idOrRef already lives in — not
+  // AdminEscrowController, for the same DI-direction reason. 2026-09-18,
+  // explicit instruction ("mirror pattern from transaction details").
+  async adminFindEscrowDetail(idOrSlug: string) {
+    const escrow = await this.escrowService.findRawByIdOrSlug(idOrSlug);
+    const escrowCreatedAt = (escrow as unknown as { createdAt: Date })
+      .createdAt;
+    const escrowUpdatedAt = (escrow as unknown as { updatedAt: Date })
+      .updatedAt;
+
+    const shaped = await this.adminFindByIdOrReference(
+      escrow.transaction.toString(),
+    );
+
+    const amount = shaped.amount as number;
+    const commissionPercentage = shaped.commissionPercentage as number;
+    const gatewayProcessingFee = (shaped.gatewayProcessingFee as number) ?? 0;
+    const storedCommissionAmount = shaped.commissionAmount as
+      number | undefined;
+    const storedSellerPayoutAmount = shaped.sellerPayoutAmount as
+      number | undefined;
+
+    // Same fallback shape EscrowService.shapeEscrowRow() already uses for
+    // the list view — a still-held escrow has no commissionAmount/
+    // sellerPayoutAmount snapshotted yet (both are only computed at actual
+    // release), so this projects what they'd be from the still-live
+    // commissionPercentage setting until the real values land.
+    const platformCommission =
+      storedCommissionAmount ??
+      Math.round(((amount * commissionPercentage) / 100) * 100) / 100;
+    const sellerReceivable =
+      storedSellerPayoutAmount ??
+      Math.round((amount - platformCommission) * 100) / 100;
+
+    const isEscrowOngoing =
+      escrow.status === EscrowStatus.HELD ||
+      escrow.status === EscrowStatus.FROZEN;
+    // holdingDuration — my proposed design, as asked. Start is unambiguous
+    // (escrow.createdAt, the moment money entered holding). End is "now"
+    // while still held/frozen, or escrow.updatedAt once it's left holding —
+    // updatedAt is reliable here specifically because status is the *only*
+    // thing that ever changes on an Escrow document after creation
+    // (updateStatusForTransaction() is its one write path), so the instant
+    // it flips to a terminal status is captured synchronously and exactly.
+    // Deliberately NOT the Payout/Refund's own completedAt/refundedAt —
+    // those are frequently still unset at this exact moment (Paystack's
+    // transfer/refund calls almost always come back "pending", only
+    // confirmed later by the 15-minute reconciliation sweep — see the
+    // Payout/Refund schemas), which would make holdingDuration
+    // intermittently uncomputable right after a release/refund. That more
+    // precise, sometimes-absent timestamp is still surfaced separately, in
+    // settlementDetails.actualReleaseDate below, for whoever wants it.
+    const holdingEndMoment = isEscrowOngoing ? new Date() : escrowUpdatedAt;
+    const holdingDuration = formatDuration(
+      holdingEndMoment.getTime() - escrowCreatedAt.getTime(),
+    );
+
+    const insights = {
+      amountHeld: isEscrowOngoing ? escrow.amount : 0,
+      platformCommission,
+      sellerReceivable,
+      holdingDuration,
+      currentStage: shaped.currentStage,
+    };
+
+    const platformEarning = {
+      platformFee: platformCommission,
+      processingFee: gatewayProcessingFee,
+      // Literally the same value as platformFee — explicit instruction.
+      totalEarned: platformCommission,
+    };
+
+    const listing = shaped.listing as { price?: number } | null;
+    const refundInfo = shaped.refundInfo as { amount?: number } | undefined;
+
+    let settlementDetails: Record<string, unknown> | null = null;
+    // "Settlement" specifically means the payout-to-seller leg — a refund
+    // (money back to the buyer) is already covered by refundInfo above,
+    // reused as-is from the transaction shape. Only RELEASED ever has a
+    // real Payout row to show; HELD/FROZEN never do (nothing's moved yet),
+    // matching the literal ask ("not held or frozen").
+    if (escrow.status === EscrowStatus.RELEASED) {
+      const payout = await this.payoutModel
+        .findOne({ transaction: escrow.transaction })
+        .sort({ createdAt: -1 })
+        .exec();
+      if (payout) {
+        const buyerId = (shaped.buyer as { id?: string } | null)?.id;
+        const triggeredByType: 'user' | 'admin' =
+          payout.triggeredBy.toString() === buyerId ? 'user' : 'admin';
+        const [bankName, initiatedBy] = await Promise.all([
+          payout.payoutBankCode
+            ? this.bankAccountsService.getBankNameByCode(payout.payoutBankCode)
+            : Promise.resolve(undefined),
+          this.resolveTriggeredBy(triggeredByType, payout.triggeredBy, buyerId),
+        ]);
+        settlementDetails = {
+          settlementStatus: payout.status,
+          actualReleaseDate: payout.completedAt ?? null,
+          settlementReference: payout.reference,
+          settlementBatch: payout.slug,
+          bankName: bankName ?? null,
+          maskedBankAccount: payout.payoutAccountNumber
+            ? this.bankAccountsService.maskAccountNumber(
+                payout.payoutAccountNumber,
+              )
+            : null,
+          settlementAmount: payout.amount,
+          settlementInitiatedBy: initiatedBy,
+          // No separate "who marked it complete" actor exists in this app
+          // beyond the automatic reconciliation sweep — a genuinely instant
+          // Paystack success (rare) is indistinguishable from the sweep
+          // confirming it later, so both read as system-completed.
+          // Judgment call, flagged.
+          settlementCompletedBy:
+            payout.status === PayoutStatus.SUCCESS
+              ? 'System (Automated)'
+              : null,
+          settlementTime: payout.completedAt
+            ? payout.completedAt.toISOString().slice(11, 19)
+            : null,
+        };
+      }
+    }
+
+    const netSettlement = settlementDetails
+      ? (settlementDetails.settlementAmount as number)
+      : sellerReceivable;
+
+    const financialBreakdown = {
+      itemPrice: listing?.price ?? amount,
+      platformFeePercentage: commissionPercentage,
+      // No dedicated stored percentage for the gateway charge — only the
+      // Naira amount (gatewayProcessingFee) is stored anywhere. Derived
+      // here instead of a stored config value. Judgment call, flagged.
+      processingFeePercentage:
+        amount > 0
+          ? Math.round((gatewayProcessingFee / amount) * 10000) / 100
+          : 0,
+      totalPaidByBuyer: Math.round((amount + gatewayProcessingFee) * 100) / 100,
+      sellerReceivable,
+      refundAmount: refundInfo?.amount ?? null,
+      netSettlement,
+    };
+
+    const settings = await this.settingsService.get();
+    const paymentDetails = {
+      paymentReference: shaped.reference,
+      paymentGateway: shaped.gateway,
+      paymentMethod: shaped.paymentMethod,
+      // The real transaction status, not a fabricated "Captured"-style
+      // label — this app doesn't track a payment-gateway status distinct
+      // from the transaction's own. Judgment call, flagged.
+      paymentStatus: shaped.status,
+      currency: settings.defaultCurrency,
+      paymentDate: escrowCreatedAt.toISOString().slice(0, 10),
+      paymentTime: escrowCreatedAt.toISOString().slice(11, 19),
+    };
+
+    return {
+      id: escrow._id.toString(),
+      slug: escrow.slug,
+      status: escrow.status,
+      amount: escrow.amount,
+      createdAt: escrowCreatedAt,
+      updatedAt: escrowUpdatedAt,
+      transaction: {
+        id: escrow.transaction.toString(),
+        reference: shaped.reference,
+        status: shaped.status,
+      },
+      listing: shaped.listing,
+      seller: shaped.seller,
+      buyer: shaped.buyer,
+      activityLog: shaped.activityLog,
+      transactionNotes: shaped.transactionNotes,
+      disputeInfo: shaped.disputeInfo ?? null,
+      refundInfo: shaped.refundInfo ?? null,
+      insights,
+      platformEarning,
+      financialBreakdown,
+      paymentDetails,
+      settlementDetails,
+    };
+  }
+
   // Listing.specs.brand flattened to a top-level `brand` on the response,
   // matching how CreateListingDto already treats brand as flat even though
   // the schema stores it nested — only this one detail endpoint's shape,

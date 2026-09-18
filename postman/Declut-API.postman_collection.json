@@ -4163,6 +4163,32 @@
                 "description": "Escrow is its own collection/module (src/escrow/) as of 2026-08-28 — one row per Transaction, created once payment is verified. Gated under the transactions permission bucket, no dedicated RBAC bucket of its own. transaction is now populated ({_id, reference}) on each row (was a flat transactionId string); the listing field was renamed from product; status gained FROZEN. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
               },
               "response": []
+            },
+            {
+              "name": "Get escrow by ID or slug",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/escrows/{{escrowId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "escrows",
+                    "{{escrowId}}"
+                  ]
+                },
+                "description": "Resolves by raw id or ESC-#### slug. Mirrors the admin transaction detail almost entirely — listing/seller/buyer/activityLog/transactionNotes/disputeInfo/refundInfo are all reused verbatim from GET /admin/transactions/:idOrRef, since an Escrow is 1:1 with the Transaction it was created from. Route lives here (not in a separate escrow-only module boundary) for a DI-direction reason: TransactionsService builds this shape and EscrowModule can't inject TransactionsModule back without a cycle. Adds: insights ({amountHeld, platformCommission, sellerReceivable, holdingDuration, currentStage}) — holdingDuration runs from escrow.createdAt to now (still held/frozen) or escrow.updatedAt (once released/refunded, the exact moment status flips) — deliberately not Payout/Refund's own completedAt/refundedAt, which are often still unset right after the action (Paystack transfer/refund calls usually come back pending, confirmed later by the 15-min reconciliation sweep); platformEarning ({platformFee, processingFee, totalEarned — literally equal to platformFee}); financialBreakdown ({itemPrice, platformFeePercentage, processingFeePercentage (derived — no dedicated stored percentage exists for the gateway charge), totalPaidByBuyer, sellerReceivable, refundAmount, netSettlement}); paymentDetails (reference/gateway/method/status/currency/date/time, from the transaction's own initial payment); settlementDetails (only when status is released, sourced from the matching Payout row — bankName/maskedBankAccount resolved via the same lookup/masking bank-account setup already uses; null for held/frozen, and for refunded, where refundInfo above already covers it). Live-tested against real data across all 4 statuses (held/released/refunded/frozen), including a temporarily-inserted synthetic Payout row to verify settlementDetails end-to-end (no real Payout rows exist yet in this environment — the feature postdates most existing completed transactions, no backfill run, same as disputeStatus/inspectionOutcome on old data)."
+              },
+              "response": []
             }
           ]
         },
@@ -7125,6 +7151,10 @@
       "key": "transactionReference",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "escrowId",
+      "value": ""
     }
   ]
 }
