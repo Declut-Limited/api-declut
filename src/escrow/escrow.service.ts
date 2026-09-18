@@ -80,6 +80,12 @@ export class EscrowService {
   }
 
   private shapeEscrowRow(escrow: EscrowDocument): Record<string, unknown> {
+    // A dangling reference — the linked Transaction document no longer
+    // exists (only ever possible via a direct DB operation, e.g. leftover
+    // test-data cleanup that removed a Transaction but not its Escrow) —
+    // used to crash this entire list. Degrade to null/0 for that one row
+    // instead, same "don't let one broken row take down the page" pattern
+    // already used for a dangling listing ref elsewhere in this app.
     const transaction = escrow.transaction as unknown as {
       _id: Types.ObjectId;
       reference?: string;
@@ -87,25 +93,26 @@ export class EscrowService {
       sellerPayoutAmount?: number;
       commissionPercentage: number;
       amount: number;
-    };
-    const commissionAmount =
-      transaction.commissionAmount ??
-      Math.round(
-        ((transaction.amount * transaction.commissionPercentage) / 100) * 100,
-      ) / 100;
-    const sellerPayoutAmount =
-      transaction.sellerPayoutAmount ??
-      Math.round((transaction.amount - commissionAmount) * 100) / 100;
+    } | null;
+    const commissionAmount = transaction
+      ? (transaction.commissionAmount ??
+        Math.round(
+          ((transaction.amount * transaction.commissionPercentage) / 100) * 100,
+        ) / 100)
+      : 0;
+    const sellerPayoutAmount = transaction
+      ? (transaction.sellerPayoutAmount ??
+        Math.round((transaction.amount - commissionAmount) * 100) / 100)
+      : 0;
     const listing = escrow.listing as unknown as {
       _id: Types.ObjectId;
       title: string;
     } | null;
 
     return {
-      transaction: {
-        _id: transaction._id.toString(),
-        reference: transaction.reference,
-      },
+      transaction: transaction
+        ? { _id: transaction._id.toString(), reference: transaction.reference }
+        : null,
       slug: escrow.slug,
       buyer: shapeParty(
         escrow.buyer as unknown as PopulatedParty | null,

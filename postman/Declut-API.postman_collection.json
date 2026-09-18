@@ -5915,10 +5915,10 @@
                         "sub-admins"
                       ]
                     },
-                    "description": "Every admin must be assigned a Role at creation (roleId) — access comes entirely from that Role's permissions, not from anything on the admin itself. title is a free-text job label, not a role. Sends an invite email to the new sub-admin with their email, password, and a link to the admin portal login page — a failed/unconfigured send does not fail the creation itself. A new sub-admin starts accountStatus: pending until their first login (see Admin login).",
+                    "description": "Every admin must be assigned a Role at creation (roleId) — access comes entirely from that Role's permissions, not from anything on the admin itself. password/title/company removed from this request entirely (2026-09-18, explicit instruction) — a secure password is generated server-side (never client-supplied), and title/company aren't collected at creation at all anymore (still exist on the Admin schema, settable elsewhere — e.g. the general-profile endpoint for a name-derived name, or a direct DB edit for title/company specifically). Sends an invite email to the new sub-admin with their email, the generated password, and a link to the admin portal login page — a failed/unconfigured send does not fail the creation itself. A new sub-admin starts accountStatus: pending until their first login (see Admin login).",
                     "body": {
                       "mode": "raw",
-                      "raw": "{\n  \"email\": \"amaka.okafor@declut.com\",\n  \"name\": \"Amaka Okafor\",\n  \"password\": \"SubAdminPass2026!\",\n  \"title\": \"Support Lead\",\n  \"company\": \"Declut\",\n  \"roleId\": \"{{roleId}}\"\n}",
+                      "raw": "{\n  \"email\": \"amaka.okafor@declut.com\",\n  \"name\": \"Amaka Okafor\",\n  \"roleId\": \"{{roleId}}\"\n}",
                       "options": {
                         "raw": {
                           "language": "json"
