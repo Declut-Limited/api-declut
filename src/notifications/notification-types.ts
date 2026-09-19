@@ -187,6 +187,19 @@ export const NOTIFICATION_TYPES = {
       [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
     },
   },
+  // Pre-deadline nudge to the accused user (the "seller") before their
+  // sellerResponseDeadlineAt lapses — see ReportsService.sweepSlaReminders().
+  // 2026-09-19.
+  seller_response_sla_reminder: {
+    label: 'Seller response reminder',
+    channels: {
+      [NotificationRecipientType.USER]: [
+        'push',
+        'email',
+      ] as NotificationChannel[],
+      [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
+    },
+  },
 } as const;
 
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;
@@ -228,4 +241,5 @@ export const NOTIFICATION_SETTING_CATEGORY: Partial<
   purchase_reported: 'disputeUpdates',
   seller_refunded_report: 'disputeUpdates',
   dispute_raised: 'disputeUpdates',
+  seller_response_sla_reminder: 'disputeUpdates',
 };

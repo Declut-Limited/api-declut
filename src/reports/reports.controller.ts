@@ -41,10 +41,10 @@ export class ReportsController {
     res.send(csv);
   }
 
-  @Get(':slug')
+  @Get(':idOrSlug')
   @RequirePermission('reports', 'view')
-  findBySlug(@Param('slug') slug: string) {
-    return this.reportsService.findBySlug(slug);
+  findByIdOrSlug(@Param('idOrSlug') idOrSlug: string) {
+    return this.reportsService.findByIdOrSlug(idOrSlug);
   }
 
   @Patch(':id/status')

@@ -1,11 +1,13 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, isValidObjectId } from 'mongoose';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { Model, Types, isValidObjectId } from 'mongoose';
 import { Report, ReportDocument, ReportStatus } from './schemas/report.schema';
 import { CreateReportDto } from './dto/create-report.dto';
 import { ListReportsDto } from './dto/list-reports.dto';
@@ -18,6 +20,7 @@ import { buildDateRangeFilter } from '../common/utils/date-range.util';
 import { DateRangeDto } from '../common/dto/date-range.dto';
 import { ListingsService } from '../listings/listings.service';
 import { TransactionsService } from '../transactions/transactions.service';
+import { SettingsService } from '../settings/settings.service';
 
 // accusedUser and reporter share one shape — explicit instruction, 2026-09-17
 // ("populate the user just like we did for the reporter, now include their
@@ -32,10 +35,11 @@ const POPULATE_FIELDS = {
   listing: 'title slug mainImageUrl',
   accusedUser: PARTY_FIELDS,
   reporter: PARTY_FIELDS,
-  // Detail-view-only shape (list/findBySlug) — just the dispute's own
+  // Detail-view-only shape (list/findByIdOrSlug) — just the dispute's own
   // narrative content, not seller/transaction/report (already known from
   // the Report itself). Explicit instruction, 2026-09-17.
   sellerDispute: 'disputeClaim evidenceImages evidenceVideo',
+  attendingAdmin: 'name slug',
 };
 
 @Injectable()
@@ -47,6 +51,7 @@ export class ReportsService {
     private readonly notificationsService: NotificationsService,
     private readonly listingsService: ListingsService,
     private readonly transactionsService: TransactionsService,
+    private readonly settingsService: SettingsService,
   ) {}
 
   // User-facing — a user files their own report directly (no admin
@@ -94,6 +99,22 @@ export class ReportsService {
       );
     }
 
+    // Seller-response SLA — starts counting the instant a buyer's report is
+    // created (explicit instruction, 2026-09-19: "SLA starts counting once
+    // buyer drops a report"), regardless of whether it's transaction-linked.
+    // sellerResponseSlaTimeInHour is snapshotted here so a later admin
+    // change to the setting never retroactively moves this report's
+    // already-running deadline.
+    const settings = await this.settingsService.get();
+    const slaFields = settings.enableSellerSLA
+      ? {
+          sellerResponseSlaTimeInHour: settings.sellerResponseSlaTimeInHour,
+          sellerResponseDeadlineAt: new Date(
+            Date.now() + settings.sellerResponseSlaTimeInHour * 60 * 60 * 1000,
+          ),
+        }
+      : {};
+
     const slug = await this.counterService.nextSlug('report', 'RPT', 4);
     const report = await this.reportModel.create({
       slug,
@@ -102,6 +123,7 @@ export class ReportsService {
       transaction: dto.transactionId,
       accusedUser: accusedUserId,
       reporter: dto.reporterId,
+      ...slaFields,
     });
 
     await this.auditLogService.record({
@@ -135,6 +157,7 @@ export class ReportsService {
         .populate('accusedUser', POPULATE_FIELDS.accusedUser)
         .populate('reporter', POPULATE_FIELDS.reporter)
         .populate('sellerDispute', POPULATE_FIELDS.sellerDispute)
+        .populate('attendingAdmin', POPULATE_FIELDS.attendingAdmin)
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
@@ -192,13 +215,20 @@ export class ReportsService {
     ]);
   }
 
-  async findBySlug(slug: string): Promise<Record<string, unknown>> {
+  // Merged from separate by-id/by-slug lookups — explicit instruction,
+  // 2026-09-19. Same isValidObjectId dispatch every other merged detail
+  // route in this app already uses.
+  async findByIdOrSlug(idOrSlug: string): Promise<Record<string, unknown>> {
+    const filter = isValidObjectId(idOrSlug)
+      ? { _id: idOrSlug }
+      : { slug: idOrSlug };
     const report = await this.reportModel
-      .findOne({ slug })
+      .findOne(filter)
       .populate('listing', POPULATE_FIELDS.listing)
       .populate('accusedUser', POPULATE_FIELDS.accusedUser)
       .populate('reporter', POPULATE_FIELDS.reporter)
       .populate('sellerDispute', POPULATE_FIELDS.sellerDispute)
+      .populate('attendingAdmin', POPULATE_FIELDS.attendingAdmin)
       .exec();
     if (!report) {
       throw new NotFoundException('Report not found');
@@ -211,6 +241,7 @@ export class ReportsService {
     adminId: string,
     status: ReportStatus,
   ): Promise<ReportDocument> {
+    await this.claimAttendingAdmin(id, adminId);
     const report = await this.reportModel.findById(id).exec();
     if (!report) {
       throw new NotFoundException('Report not found');
@@ -264,7 +295,12 @@ export class ReportsService {
   async attachDispute(reportId: string, disputeId: string): Promise<void> {
     await this.reportModel.updateOne(
       { _id: reportId },
-      { sellerDispute: disputeId, status: ReportStatus.DISPUTED },
+      {
+        sellerDispute: disputeId,
+        status: ReportStatus.DISPUTED,
+        // Seller responded (by disputing) — the response window is over.
+        slaPeriodEnded: true,
+      },
     );
   }
 
@@ -277,7 +313,7 @@ export class ReportsService {
   // actual business logic (money movement, listing/trust-score effects,
   // status transitions) is unchanged, still owned by TransactionsService.
   async resolveRelease(reportId: string, adminId: string) {
-    const report = await this.getReportForResolve(reportId);
+    const report = await this.getReportForResolve(reportId, adminId);
     return this.transactionsService.adminRelease(
       report.transaction!.toString(),
       adminId,
@@ -285,7 +321,7 @@ export class ReportsService {
   }
 
   async resolveRefund(reportId: string, adminId: string, reason?: string) {
-    const report = await this.getReportForResolve(reportId);
+    const report = await this.getReportForResolve(reportId, adminId);
     return this.transactionsService.adminRefund(
       report.transaction!.toString(),
       adminId,
@@ -298,7 +334,7 @@ export class ReportsService {
     adminId: string,
     reason?: string,
   ) {
-    const report = await this.getReportForResolve(reportId);
+    const report = await this.getReportForResolve(reportId, adminId);
     return this.transactionsService.adminDelistAndRefund(
       report.transaction!.toString(),
       adminId,
@@ -306,7 +342,11 @@ export class ReportsService {
     );
   }
 
-  private async getReportForResolve(reportId: string): Promise<ReportDocument> {
+  private async getReportForResolve(
+    reportId: string,
+    adminId: string,
+  ): Promise<ReportDocument> {
+    await this.claimAttendingAdmin(reportId, adminId);
     const report = await this.getRawById(reportId);
     if (!report.transaction) {
       throw new BadRequestException(
@@ -314,6 +354,87 @@ export class ReportsService {
       );
     }
     return report;
+  }
+
+  // First admin to take any mutating action on a report claims it — no
+  // separate "attend" endpoint, explicit instruction, 2026-09-19 ("any admin
+  // who first makes an action is the attendingAdmin on this case"). Atomic
+  // (only succeeds while attendingAdmin is still unset), so two admins
+  // racing on the same report can't both win it. Once claimed, a different
+  // admin is blocked outright from acting further; the same admin who
+  // already owns it can keep acting freely.
+  private async claimAttendingAdmin(
+    reportId: string,
+    adminId: string,
+  ): Promise<void> {
+    const claimed = await this.reportModel
+      .findOneAndUpdate(
+        { _id: reportId, attendingAdmin: { $exists: false } },
+        { attendingAdmin: adminId },
+      )
+      .exec();
+    if (claimed) {
+      return;
+    }
+
+    const report = await this.reportModel
+      .findById(reportId)
+      .populate('attendingAdmin', 'name')
+      .exec();
+    if (!report) {
+      throw new NotFoundException('Report not found');
+    }
+    const attending = report.attendingAdmin as unknown as
+      { _id: Types.ObjectId; name: string } | undefined;
+    if (attending && attending._id.toString() !== adminId) {
+      throw new ConflictException(
+        `${attending.name} is already attending to this report`,
+      );
+    }
+  }
+
+  // Seller-response SLA reminder — gated by both settings toggles
+  // (enableSellerSLA master switch, sendSlaReminderBeforeDeadline). No
+  // auto-escalation branch: that was explicitly dropped, so nothing happens
+  // automatically once the deadline itself passes — this only ever sends
+  // the one pre-deadline nudge, to the accused user (the "seller"), and
+  // marks reminderSentAt so it never resends. 2026-09-19.
+  @Cron(CronExpression.EVERY_HOUR)
+  async sweepSlaReminders(): Promise<void> {
+    const settings = await this.settingsService.get();
+    if (!settings.enableSellerSLA || !settings.sendSlaReminderBeforeDeadline) {
+      return;
+    }
+
+    const reminderWindowEnd = new Date(
+      Date.now() + settings.reminderSlaTimeInHour * 60 * 60 * 1000,
+    );
+    const reports = await this.reportModel
+      .find({
+        status: ReportStatus.INVESTIGATING,
+        slaPeriodEnded: false,
+        accusedUser: { $exists: true },
+        sellerResponseDeadlineAt: {
+          $exists: true,
+          $gt: new Date(),
+          $lte: reminderWindowEnd,
+        },
+        reminderSentAt: { $exists: false },
+      })
+      .exec();
+
+    for (const report of reports) {
+      await this.notificationsService.notify({
+        recipientType: NotificationRecipientType.USER,
+        recipientId: report.accusedUser!.toString(),
+        type: 'seller_response_sla_reminder',
+        title: 'Respond before your deadline',
+        body: `You have a pending report (${report.slug}) — please respond before your response window closes.`,
+        data: { reportId: report._id.toString() },
+      });
+      report.reminderSentAt = new Date();
+      await report.save();
+    }
   }
 
   // Requires listing/accusedUser/reporter already populated on the query that fetched `report`.

@@ -1082,7 +1082,11 @@ export class TransactionsService {
         reporter: buyerId,
         status: ReportStatus.INVESTIGATING,
       },
-      { status: ReportStatus.RESOLVED },
+      {
+        status: ReportStatus.RESOLVED,
+        // Seller responded (by refunding directly) — the response window is over.
+        slaPeriodEnded: true,
+      },
     );
   }
 
@@ -1719,6 +1723,36 @@ export class TransactionsService {
             reference: settlementDetails.settlementReference,
           }
         : null;
+    } else if (escrow.status === EscrowStatus.FROZEN) {
+      // The Report behind the freeze — found by transaction, same lookup
+      // closeActiveReportForListing()/closeReportIfDisputed() already use
+      // this raw reportModel for elsewhere in this file.
+      const report = await this.reportModel
+        .findOne({ transaction: escrow.transaction })
+        .populate('attendingAdmin', 'name slug')
+        .exec();
+      const attendingAdmin = report?.attendingAdmin as unknown as
+        { _id: Types.ObjectId; name: string; slug?: string } | undefined;
+      const slaStillRunning =
+        !!report?.sellerResponseDeadlineAt &&
+        !report.slaPeriodEnded &&
+        report.sellerResponseDeadlineAt.getTime() > Date.now();
+      statusDetails = {
+        freezeReason: report?.reason ?? null,
+        frozenSince: escrowUpdatedAt,
+        attendingAdmin: attendingAdmin
+          ? {
+              id: attendingAdmin._id.toString(),
+              name: attendingAdmin.name,
+              slug: attendingAdmin.slug ?? null,
+            }
+          : null,
+        slaRemaining: slaStillRunning
+          ? formatDuration(
+              report.sellerResponseDeadlineAt!.getTime() - Date.now(),
+            )
+          : null,
+      };
     }
 
     const netSettlement = settlementDetails

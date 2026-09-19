@@ -10,6 +10,7 @@ import { AuditLogModule } from '../audit-log/audit-log.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ListingsModule } from '../listings/listings.module';
 import { TransactionsModule } from '../transactions/transactions.module';
+import { SettingsModule } from '../settings/settings.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { TransactionsModule } from '../transactions/transactions.module';
     NotificationsModule,
     ListingsModule,
     TransactionsModule,
+    SettingsModule,
   ],
   controllers: [ReportsController, UserReportsController],
   providers: [ReportsService],

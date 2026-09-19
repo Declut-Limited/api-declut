@@ -68,6 +68,39 @@ export class Report {
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Dispute' })
   sellerDispute?: Types.ObjectId;
 
+  // Seller-response SLA — added 2026-09-19, explicit instruction. Both set
+  // once, at report creation, only when enableSellerSLA is on at that
+  // instant (see ReportsService.create()) — sellerResponseSlaTimeInHour is a
+  // snapshot of the live setting so a later admin change never retroactively
+  // moves an already-running deadline, same rule this app applies to
+  // commissionPercentage/inspectionExtendedBy/etc.
+  @Prop({ type: Date })
+  sellerResponseDeadlineAt?: Date;
+
+  @Prop({ type: Number })
+  sellerResponseSlaTimeInHour?: number;
+
+  // First admin to take any mutating action on this report (a status
+  // update, or any of the three resolve actions) claims it automatically —
+  // no separate "attend" endpoint, explicit instruction ("any admin who
+  // first makes an action is the attendingAdmin on this case"). A different
+  // admin attempting an action afterward is blocked, see
+  // ReportsService.claimAttendingAdmin().
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Admin' })
+  attendingAdmin?: Types.ObjectId;
+
+  // Stamped once the pre-deadline reminder has actually been sent, so the
+  // sweep doesn't resend it every run.
+  @Prop({ type: Date })
+  reminderSentAt?: Date;
+
+  // True once the seller's response window is over — the seller responded
+  // (refund or dispute). No auto-escalation on plain deadline expiry exists
+  // (explicit instruction — that feature was dropped, not built), so this
+  // never flips true on its own just because time ran out.
+  @Prop({ type: Boolean, default: false })
+  slaPeriodEnded: boolean;
+
   createdAt: Date;
   updatedAt: Date;
 }

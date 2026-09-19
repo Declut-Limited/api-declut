@@ -2467,7 +2467,7 @@
                 "reports"
               ]
             },
-            "description": "User-facing — a user files their own report directly (reporterId must equal the caller's own id, or 403). At least one of listingId/accusedUserId is required. If listingId is given, that listing is immediately reported (status becomes 'reported') and the accused user is derived from the listing's own seller — accusedUserId is only used when reporting a user directly with no listing. transactionId is optional — when given, it must be the reporter's own transaction (403/400 otherwise) and freezes that purchase's escrow, letting the seller respond via POST /transactions/:id/seller-refund or POST /disputes/raise-dispute. This same transactionId is also what the new admin resolve-report actions (see admin/reports/{{reportId}}/resolve/*) act on.",
+            "description": "User-facing — a user files their own report directly (reporterId must equal the caller's own id, or 403). At least one of listingId/accusedUserId is required. If listingId is given, that listing is immediately reported (status becomes 'reported') and the accused user is derived from the listing's own seller — accusedUserId is only used when reporting a user directly with no listing. transactionId is optional — when given, it must be the reporter's own transaction (403/400 otherwise) and freezes that purchase's escrow, letting the seller respond via POST /transactions/:id/seller-refund or POST /disputes/raise-dispute. This same transactionId is also what the new admin resolve-report actions (see admin/reports/{{reportId}}/resolve/*) act on. Response now also includes sellerResponseDeadlineAt/sellerResponseSlaTimeInHour when enableSellerSLA is on at creation time (see admin/settings/issue-resolution-sla) — the seller-response clock starts the instant the report is filed, regardless of whether transactionId was given.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"reason\": \"Buyer called in claiming this listing's photos were lifted from a competitor's page.\",\n  \"listingId\": \"{{listingId}}\",\n  \"transactionId\": \"{{transactionId}}\",\n  \"reporterId\": \"{{reporterId}}\"\n}",
@@ -4387,7 +4387,7 @@
                         "{{escrowId}}"
                       ]
                     },
-                    "description": "Resolves by raw id or ESC-#### slug. Mirrors the admin transaction detail almost entirely — listing/seller/buyer/activityLog/transactionNotes/disputeInfo/refundInfo are all reused verbatim from GET /admin/transactions/:idOrRef, since an Escrow is 1:1 with the Transaction it was created from. Route lives here (not in a separate escrow-only module boundary) for a DI-direction reason: TransactionsService builds this shape and EscrowModule can't inject TransactionsModule back without a cycle. Adds: insights ({amountHeld, platformCommission, sellerReceivable, holdingDuration, currentStage}) — holdingDuration runs from escrow.createdAt to now (still held/frozen) or escrow.updatedAt (once released/refunded, the exact moment status flips) — deliberately not Payout/Refund's own completedAt/refundedAt, which are often still unset right after the action (Paystack transfer/refund calls usually come back pending, confirmed later by the 15-min reconciliation sweep); platformEarning ({platformFee, processingFee, totalEarned — literally equal to platformFee}); financialBreakdown ({itemPrice, platformFeePercentage, processingFeePercentage (derived — no dedicated stored percentage exists for the gateway charge), totalPaidByBuyer, sellerReceivable, refundAmount, netSettlement}); paymentDetails (reference/gateway/method/status/currency/date/time, from the transaction's own initial payment); settlementDetails (only when status is released, sourced from the matching Payout row — bankName/maskedBankAccount resolved via the same lookup/masking bank-account setup already uses; null for held/frozen, and for refunded, where refundInfo above already covers it). Live-tested against real data across all 4 statuses (held/released/refunded/frozen), including a temporarily-inserted synthetic Payout row to verify settlementDetails end-to-end (no real Payout rows exist yet in this environment — the feature postdates most existing completed transactions, no backfill run, same as disputeStatus/inspectionOutcome on old data). Updated 2026-09-18: paymentDetails.paymentStatus is now the fixed string \"Captured\" (an Escrow only ever exists once the initial payment was verified, regardless of what the transaction has since moved on to) rather than the transaction's current status, and gained gatewayResponse (\"Transaction Successful\") and gatewayReference (same value as paymentReference) — neither is stored anywhere, both are fixed/derived per explicit instruction, not fabricated data presented as real. financialBreakdown gained platformFee and processingFee as Naira amounts alongside the existing *Percentage fields. disputeInfo is now a narrower shape than the transaction detail's own version — sellerStatement and both evidence fields are dropped, buyerStatement is renamed to reason: {createdAt, status, slug, reason}."
+                    "description": "Resolves by raw id or ESC-#### slug. Mirrors the admin transaction detail almost entirely — listing/seller/buyer/activityLog/transactionNotes/disputeInfo/refundInfo are all reused verbatim from GET /admin/transactions/:idOrRef, since an Escrow is 1:1 with the Transaction it was created from. Route lives here (not in a separate escrow-only module boundary) for a DI-direction reason: TransactionsService builds this shape and EscrowModule can't inject TransactionsModule back without a cycle. Adds: insights ({amountHeld, platformCommission, sellerReceivable, holdingDuration, currentStage}) — holdingDuration runs from escrow.createdAt to now (still held/frozen) or escrow.updatedAt (once released/refunded, the exact moment status flips) — deliberately not Payout/Refund's own completedAt/refundedAt, which are often still unset right after the action (Paystack transfer/refund calls usually come back pending, confirmed later by the 15-min reconciliation sweep); platformEarning ({platformFee, processingFee, totalEarned — literally equal to platformFee}); financialBreakdown ({itemPrice, platformFeePercentage, processingFeePercentage (derived — no dedicated stored percentage exists for the gateway charge), totalPaidByBuyer, sellerReceivable, refundAmount, netSettlement}); paymentDetails (reference/gateway/method/status/currency/date/time, from the transaction's own initial payment); settlementDetails (only when status is released, sourced from the matching Payout row — bankName/maskedBankAccount resolved via the same lookup/masking bank-account setup already uses; null for held/frozen, and for refunded, where refundInfo above already covers it). Live-tested against real data across all 4 statuses (held/released/refunded/frozen), including a temporarily-inserted synthetic Payout row to verify settlementDetails end-to-end (no real Payout rows exist yet in this environment — the feature postdates most existing completed transactions, no backfill run, same as disputeStatus/inspectionOutcome on old data). Updated 2026-09-18: paymentDetails.paymentStatus is now the fixed string \"Captured\" (an Escrow only ever exists once the initial payment was verified, regardless of what the transaction has since moved on to) rather than the transaction's current status, and gained gatewayResponse (\"Transaction Successful\") and gatewayReference (same value as paymentReference) — neither is stored anywhere, both are fixed/derived per explicit instruction, not fabricated data presented as real. financialBreakdown gained platformFee and processingFee as Naira amounts alongside the existing *Percentage fields. disputeInfo is now a narrower shape than the transaction detail's own version — sellerStatement and both evidence fields are dropped, buyerStatement is renamed to reason: {createdAt, status, slug, reason}. Also returns statusDetails, a small status-specific object so the client doesn't need to know which of insights/refundInfo/settlementDetails to read from: held -> {holdingTime, inspectionDeadline (from the transaction, accounting for a used inspection extension)}; refunded -> {refundDate, refundAmount, reference} (from the Refund doc, via refundInfo); released -> {releasedDate, settlementTime, reference} (from the Payout doc, via settlementDetails); frozen -> {freezeReason (the backing report's reason), frozenSince (escrow.updatedAt), attendingAdmin ({id, name, slug} or null), slaRemaining (human duration until the report's sellerResponseDeadlineAt, or null once ended/no deadline/already passed)}. Added 2026-09-18 (held/refunded/released) and 2026-09-19 (frozen, tied to the new Report SLA fields)."
                   },
                   "response": []
                 }
@@ -5090,7 +5090,7 @@
                     }
                   ]
                 },
-                "description": "startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate). New reports start at 'investigating' — there's no 'new' status anymore."
+                "description": "startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate). New reports start at 'investigating' — there's no 'new' status anymore. Each row now also populates attendingAdmin ({_id, name, slug}) and carries the SLA fields — see 'Get report by ID or slug'."
               },
               "response": []
             },
@@ -5146,11 +5146,11 @@
               ]
             },
             {
-              "name": "{reportSlug}",
+              "name": "{reportId}",
               "description": "",
               "item": [
                 {
-                  "name": "Get report by slug",
+                  "name": "Get report by ID or slug",
                   "request": {
                     "method": "GET",
                     "header": [
@@ -5161,26 +5161,20 @@
                       }
                     ],
                     "url": {
-                      "raw": "{{baseUrl}}/admin/reports/{{reportSlug}}",
+                      "raw": "{{baseUrl}}/admin/reports/{{reportId}}",
                       "host": [
                         "{{baseUrl}}"
                       ],
                       "path": [
                         "admin",
                         "reports",
-                        "{{reportSlug}}"
+                        "{{reportId}}"
                       ]
                     },
-                    "description": "Populates listing/user/reporter. reporter includes name, slug, status, createdAt, rating, company."
+                    "description": "Merged from separate by-id/by-slug lookups, 2026-09-19 — accepts either a raw id or an RPT-#### slug (paste one into {{reportId}}). Populates listing/accusedUser/reporter/sellerDispute/attendingAdmin. Now also returns the seller-response SLA fields: sellerResponseDeadlineAt/sellerResponseSlaTimeInHour (both set once at creation, only when enableSellerSLA was on at that moment), attendingAdmin ({_id, name, slug} or absent — see 'Update report status' below for how it gets set), reminderSentAt, slaPeriodEnded (true once the seller has responded via seller-refund or raise-dispute; there is no auto-escalation on plain deadline expiry)."
                   },
                   "response": []
-                }
-              ]
-            },
-            {
-              "name": "{reportId}",
-              "description": "",
-              "item": [
+                },
                 {
                   "name": "status",
                   "description": "",
@@ -5213,7 +5207,7 @@
                             "status"
                           ]
                         },
-                        "description": "status: investigating|disputed|resolved|dismissed. A report starts at investigating and only ever reaches disputed the instant a seller escalates it via POST /disputes/raise-dispute.",
+                        "description": "status: investigating|disputed|resolved|dismissed. A report starts at investigating and only ever reaches disputed the instant a seller escalates it via POST /disputes/raise-dispute. Also claims the report for the caller: the first admin to take ANY mutating action on a report (this, or any of the three resolve actions below) becomes its attendingAdmin — no separate 'attend' endpoint. A different admin attempting an action afterward gets 409 '{name} is already attending to this report'; the same admin who already owns it can keep acting freely.",
                         "body": {
                           "mode": "raw",
                           "raw": "{\n  \"status\": \"investigating\"\n}",
@@ -5256,7 +5250,7 @@
                             "release"
                           ]
                         },
-                        "description": "Side with the seller — releases the held money to them (minus the admin-configured commission), same as a normal completed sale. Resolves via this report's own `transaction` field (set at creation, see Create report's transactionId), not a transaction id in the URL — moved here from /admin/transactions, 2026-09-17: this is a report-resolution feature. 400s if this report has no associated transaction. Records a Payout row and closes the report to resolved."
+                        "description": "Side with the seller — releases the held money to them (minus the admin-configured commission), same as a normal completed sale. Resolves via this report's own `transaction` field (set at creation, see Create report's transactionId), not a transaction id in the URL — moved here from /admin/transactions, 2026-09-17: this is a report-resolution feature. 400s if this report has no associated transaction. Records a Payout row and closes the report to resolved. Also subject to the attendingAdmin claim (see 'Update report status') — 409s if a different admin already owns this report."
                       },
                       "response": []
                     },
@@ -5289,7 +5283,7 @@
                             "refund"
                           ]
                         },
-                        "description": "Refund the buyer in full — the listing stays up (reverts to active). The transaction's own status stays DISPUTED (unlike every other refund path in this app) — only disputeStatus moves to 'refunded'. Closes the report to resolved. Optional `reason` in the body.",
+                        "description": "Refund the buyer in full — the listing stays up (reverts to active). The transaction's own status stays DISPUTED (unlike every other refund path in this app) — only disputeStatus moves to 'refunded'. Closes the report to resolved. Optional `reason` in the body. Also subject to the attendingAdmin claim (see 'Update report status') — 409s if a different admin already owns this report.",
                         "body": {
                           "mode": "raw",
                           "raw": "{\n  \"reason\": \"Reviewed the evidence submitted by both parties.\"\n}",
@@ -5331,7 +5325,7 @@
                             "delist-and-refund"
                           ]
                         },
-                        "description": "Upholds the report — full refund to the buyer, delists the seller's listing, and applies a policy strike against the seller's trust score. Same 'stays DISPUTED' shape as the refund-only action above. Closes the report to resolved. Optional `reason` in the body.",
+                        "description": "Upholds the report — full refund to the buyer, delists the seller's listing, and applies a policy strike against the seller's trust score. Same 'stays DISPUTED' shape as the refund-only action above. Closes the report to resolved. Optional `reason` in the body. Also subject to the attendingAdmin claim (see 'Update report status') — 409s if a different admin already owns this report.",
                         "body": {
                           "mode": "raw",
                           "raw": "{\n  \"reason\": \"Reviewed the evidence submitted by both parties.\"\n}",
