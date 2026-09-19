@@ -21,6 +21,7 @@ import {
 } from './dto/admin-list.dto';
 import { SetKycStatusDto } from './dto/set-kyc-status.dto';
 import { SuspendUserDto } from './dto/suspend-user.dto';
+import { BanUserDto } from './dto/ban-user.dto';
 import { EmailSellerDto } from './dto/email-seller.dto';
 import { CreateTransactionNoteDto } from './dto/create-transaction-note.dto';
 import { UpdateTransactionNoteDto } from './dto/update-transaction-note.dto';
@@ -132,8 +133,12 @@ export class AdminController {
 
   @Patch('users/:id/ban')
   @RequirePermission('users', 'write')
-  banUser(@Param('id') id: string) {
-    return this.adminService.banUser(id);
+  banUser(
+    @CurrentAdmin() admin: AdminAccessTokenPayload,
+    @Param('id') id: string,
+    @Body() dto: BanUserDto,
+  ) {
+    return this.adminService.banUser(id, admin.sub, dto);
   }
 
   @Patch('users/:id/kyc')

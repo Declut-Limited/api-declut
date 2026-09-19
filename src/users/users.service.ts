@@ -225,8 +225,6 @@ export class UsersService {
     params: {
       reason: string;
       durationDays: number;
-      outcome: string;
-      notes?: string;
     },
   ): Promise<UserDocument> {
     const user = await this.userModel.findById(userId).exec();
@@ -237,8 +235,6 @@ export class UsersService {
     user.suspension = {
       reason: params.reason,
       durationDays: params.durationDays,
-      outcome: params.outcome,
-      notes: params.notes,
       suspendedAt: new Date(),
       suspendedBy: new Types.ObjectId(adminId),
     };
@@ -253,13 +249,14 @@ export class UsersService {
     }
     user.accountStatus = AccountStatus.ACTIVE;
     user.suspension = undefined;
+    user.ban = undefined;
     await user.save();
     return user;
   }
 
-  // Simpler flat status flips than suspend() — no duration/reason/outcome
-  // sub-document, since none was asked for. Both undone via reactivate()
-  // above, same as suspend. 2026-09-17, explicit instruction.
+  // Simpler flat status flip than suspend()/ban() — no reason sub-document,
+  // since none was asked for. Undone via reactivate() above, same as
+  // suspend/ban. 2026-09-17, explicit instruction.
   async deactivate(userId: string): Promise<UserDocument> {
     const user = await this.userModel.findById(userId).exec();
     if (!user) {
@@ -270,12 +267,24 @@ export class UsersService {
     return user;
   }
 
-  async ban(userId: string): Promise<UserDocument> {
+  // Mirrors suspend() above, trimmed — a ban has no duration/outcome.
+  // 2026-09-19, explicit instruction ("implement banned like we did for
+  // Suspension").
+  async ban(
+    userId: string,
+    adminId: string,
+    params: { reason: string },
+  ): Promise<UserDocument> {
     const user = await this.userModel.findById(userId).exec();
     if (!user) {
       throw new NotFoundException('User not found');
     }
     user.accountStatus = AccountStatus.BANNED;
+    user.ban = {
+      reason: params.reason,
+      bannedAt: new Date(),
+      bannedBy: new Types.ObjectId(adminId),
+    };
     await user.save();
     return user;
   }
@@ -335,6 +344,32 @@ export class UsersService {
   async clearRefreshToken(userId: string): Promise<void> {
     await this.userModel
       .updateOne({ _id: userId }, { $unset: { refreshToken: 1 } })
+      .exec();
+  }
+
+  // Self-service (POST /users/me/deactivate) — distinct from the admin-
+  // triggered deactivate() above. Clears the refresh token in the same
+  // write so the account is logged out the instant this returns; the access
+  // token itself can't be revoked (stateless JWT, no blacklist) — it just
+  // keeps working until it naturally expires, same limitation already
+  // flagged for AdminAuthService.logout(). Never actually deletes the
+  // document — per instruction, an account is only ever deactivated.
+  async deactivateOwnAccount(
+    userId: string,
+    dto: { reason: string; comment?: string },
+  ): Promise<void> {
+    await this.userModel
+      .updateOne(
+        { _id: userId },
+        {
+          $set: {
+            accountStatus: AccountStatus.DEACTIVATED,
+            deactivatedAt: new Date(),
+            deactivationReason: { reason: dto.reason, comment: dto.comment },
+          },
+          $unset: { refreshToken: 1 },
+        },
+      )
       .exec();
   }
 

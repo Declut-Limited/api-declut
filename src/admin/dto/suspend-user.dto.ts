@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import { IsInt, IsString, Min, MinLength } from 'class-validator';
 
 export class SuspendUserDto {
   @IsString()
@@ -8,12 +8,4 @@ export class SuspendUserDto {
   @IsInt()
   @Min(1)
   durationDays: number;
-
-  @IsString()
-  @MinLength(1)
-  outcome: string;
-
-  @IsOptional()
-  @IsString()
-  notes?: string;
 }

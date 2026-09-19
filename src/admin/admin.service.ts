@@ -9,14 +9,17 @@ import { ReviewsService } from '../reviews/reviews.service';
 import { ReviewStatus } from '../reviews/schemas/review.schema';
 import { TrustScoreService } from '../trust-score/trust-score.service';
 import { KycService } from '../kyc/kyc.service';
-import { KycStatus } from '../users/schemas/user.schema';
+import { AccountStatus, KycStatus } from '../users/schemas/user.schema';
 import { SettingsService } from '../settings/settings.service';
 import { UpdateGeneralSettingsDto } from '../settings/dto/update-general-settings.dto';
 import { UpdatePaymentSettingsDto } from '../settings/dto/update-payment-settings.dto';
 import { UpdateFeesSettingsDto } from '../settings/dto/update-fees-settings.dto';
 import { UpdateIssueResolutionSlaDto } from '../settings/dto/update-issue-resolution-sla.dto';
 import { AdminAuthService } from '../admin-auth/admin-auth.service';
-import type { AdminDocument } from '../admin-auth/schemas/admin.schema';
+import {
+  AdminAccountStatus,
+  type AdminDocument,
+} from '../admin-auth/schemas/admin.schema';
 import { EmailService } from '../email/email.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { EscrowService } from '../escrow/escrow.service';
@@ -29,6 +32,7 @@ import {
   TransactionTab,
 } from './dto/admin-list.dto';
 import { SuspendUserDto } from './dto/suspend-user.dto';
+import { BanUserDto } from './dto/ban-user.dto';
 import { EmailSellerDto } from './dto/email-seller.dto';
 import { CreateTransactionNoteDto } from './dto/create-transaction-note.dto';
 import { UpdateTransactionNoteDto } from './dto/update-transaction-note.dto';
@@ -37,6 +41,15 @@ import type { DashboardInsightsFilter } from './dto/dashboard.dto';
 import { toCsv } from '../common/utils/csv.util';
 import { countTrend } from '../common/utils/trend.util';
 import { DateRangeDto } from '../common/dto/date-range.dto';
+
+// Statuses under which a User's deactivatedAt/deactivationReason are shown
+// to an admin — explicit instruction, 2026-09-19. Shared by listUsers() and
+// getUserOrAdminDetail() so the rule isn't duplicated.
+const USER_REASON_VISIBLE_STATUSES: string[] = [
+  AccountStatus.DEACTIVATED,
+  AccountStatus.BANNED,
+  AccountStatus.SUSPENDED,
+];
 
 /**
  * Thin orchestration layer over services that already exist — every method
@@ -112,6 +125,26 @@ export class AdminService {
       joinedAt: Date;
       // User rows only — Admin has no concept of a policy strike.
       policyStrike?: number;
+      // Only present when status is deactivated/banned/suspended (User) or
+      // deactivated (Admin) — explicit instruction, 2026-09-19: "we don't
+      // need to show this except admins are fetching users that are ...
+      // deactivated, banned or suspended". Only ever populated for a
+      // self-service deactivation (POST /users/me/deactivate or
+      // /admin/auth/me/deactivate) — the older admin-triggered
+      // deactivate()/ban() flat status flips capture no reason, so this is
+      // absent for those.
+      deactivatedAt?: Date;
+      deactivationReason?: { reason: string; comment?: string };
+      // suspension is only ever set while status is currently suspended (see
+      // UsersService.suspend()/reactivate()); ban likewise for banned. Both
+      // User-only — Admin has neither concept.
+      suspension?: {
+        reason: string;
+        durationDays: number;
+        suspendedAt: Date;
+        suspendedBy: unknown;
+      };
+      ban?: { reason: string; bannedAt: Date; bannedBy: unknown };
     };
 
     const userRows: Row[] = users.map((u) => ({
@@ -125,6 +158,14 @@ export class AdminService {
       status: u.accountStatus,
       joinedAt: (u as unknown as { createdAt: Date }).createdAt,
       policyStrike: u.policyStrike,
+      ...(USER_REASON_VISIBLE_STATUSES.includes(u.accountStatus)
+        ? {
+            deactivatedAt: u.deactivatedAt,
+            deactivationReason: u.deactivationReason,
+            suspension: u.suspension,
+            ban: u.ban,
+          }
+        : {}),
     }));
 
     const adminRows: Row[] = admins.map((a) => {
@@ -143,6 +184,12 @@ export class AdminService {
         roleName: populatedRole?.name,
         status: a.accountStatus,
         joinedAt: (a as unknown as { createdAt: Date }).createdAt,
+        ...(a.accountStatus === AdminAccountStatus.DEACTIVATED
+          ? {
+              deactivatedAt: a.deactivatedAt,
+              deactivationReason: a.deactivationReason,
+            }
+          : {}),
       };
     });
 
@@ -227,6 +274,16 @@ export class AdminService {
           phone: user.phone,
           // Admin-only — see User.policyStrike's own schema comment.
           policyStrike: user.policyStrike,
+          // Only present for deactivated/banned/suspended — see
+          // USER_REASON_VISIBLE_STATUSES above.
+          ...(USER_REASON_VISIBLE_STATUSES.includes(user.accountStatus)
+            ? {
+                deactivatedAt: user.deactivatedAt,
+                deactivationReason: user.deactivationReason,
+                suspension: user.suspension,
+                ban: user.ban,
+              }
+            : {}),
         },
         recentTransactions,
       };
@@ -267,6 +324,14 @@ export class AdminService {
                 permissions: assignedRole.permissions,
               }
             : null,
+          // Only present when deactivated — Admin has no suspended/banned
+          // state to gate on (see AdminAccountStatus).
+          ...(admin.accountStatus === AdminAccountStatus.DEACTIVATED
+            ? {
+                deactivatedAt: admin.deactivatedAt,
+                deactivationReason: admin.deactivationReason,
+              }
+            : {}),
         },
       };
     }
@@ -284,16 +349,17 @@ export class AdminService {
     return this.usersService.getPrivateProfile(userId);
   }
 
-  // Simpler counterparts to suspendUser() above — flat status flips, no
-  // duration/reason/outcome. Both undone via reactivateUser() above, same as
-  // suspend. 2026-09-17, explicit instruction.
+  // Simpler counterpart to suspendUser() above — a flat status flip, no
+  // reason sub-document. Undone via reactivateUser() above, same as
+  // suspend/ban. 2026-09-17, explicit instruction.
   async deactivateUser(userId: string) {
     await this.usersService.deactivate(userId);
     return this.usersService.getPrivateProfile(userId);
   }
 
-  async banUser(userId: string) {
-    await this.usersService.ban(userId);
+  // Mirrors suspendUser() above — 2026-09-19, explicit instruction.
+  async banUser(userId: string, adminId: string, dto: BanUserDto) {
+    await this.usersService.ban(userId, adminId, dto);
     return this.usersService.getPrivateProfile(userId);
   }
 

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -109,6 +110,16 @@ export class AdminAuthService {
     const matches = await bcrypt.compare(dto.password, admin.password);
     if (!matches) {
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    // Checked only after credentials are confirmed correct — otherwise a
+    // wrong-password attempt against a deactivated account would leak that
+    // the account exists/its status, ahead of the generic "invalid
+    // credentials" response. 2026-09-19, explicit instruction.
+    if (admin.accountStatus === AdminAccountStatus.DEACTIVATED) {
+      throw new ForbiddenException(
+        'Your account has been deactivated - Contact an admin to restore access',
+      );
     }
 
     // First login: stamps initialLoginAt and flips a still-PENDING admin to
@@ -239,6 +250,34 @@ export class AdminAuthService {
     await admin.save();
     await admin.populate('role', ROLE_POPULATE_FIELDS);
     return this.toProfile(admin);
+  }
+
+  // Self-service (POST /admin/auth/me/deactivate) — distinct from the
+  // admin-triggered deactivateAdmin() above (one admin acting on another,
+  // no reason captured). Clears the refresh token and drops the live bell
+  // socket in the same call as logout() does, so the admin is logged out
+  // the instant this returns — the access token itself still can't be
+  // revoked (stateless JWT, no blacklist), same flagged limitation as
+  // logout(). Never actually deletes the document — only ever deactivated.
+  async deactivateOwnAccount(
+    adminId: string,
+    dto: { reason: string; comment?: string },
+  ): Promise<void> {
+    await this.adminModel
+      .updateOne(
+        { _id: adminId },
+        {
+          $set: {
+            accountStatus: AdminAccountStatus.DEACTIVATED,
+            deactivatedAt: new Date(),
+            deactivationReason: { reason: dto.reason, comment: dto.comment },
+          },
+          $unset: { refreshToken: 1 },
+        },
+      )
+      .exec();
+
+    this.notificationsService.disconnectAdminSockets(adminId);
   }
 
   // Backs RolesService.findAll()/remove() — how many admins are currently assigned to a role, computed live rather than cached (see the Role schema comment).

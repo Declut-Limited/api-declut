@@ -37,6 +37,29 @@ export class Phone {
   countryCode: string;
 }
 
+// Self-service account deactivation (POST /admin/auth/me/deactivate) —
+// added 2026-09-19, explicit instruction. Distinct from the existing
+// admin-triggered AdminAuthService.deactivateAdmin() (a flat status flip
+// with no reason capture, used by one admin acting on another) — these
+// predefined reasons only make sense as the account owner's own stated
+// reason for leaving.
+export const ADMIN_DEACTIVATION_REASONS = [
+  'leaving the company',
+  'role changed',
+  'others',
+] as const;
+export type AdminDeactivationReasonValue =
+  (typeof ADMIN_DEACTIVATION_REASONS)[number];
+
+@Schema({ _id: false })
+export class DeactivationReason {
+  @Prop({ required: true, enum: ADMIN_DEACTIVATION_REASONS })
+  reason: AdminDeactivationReasonValue;
+
+  @Prop({ trim: true, maxlength: 1000 })
+  comment?: string;
+}
+
 // Endpoint 2 of the 3 admin-profile update endpoints (PATCH
 // /admin/auth/me/dashboard-preferences), added 2026-08-27. Per-admin
 // display preferences only — nothing in the app currently reads these to
@@ -103,6 +126,15 @@ export class Admin {
     default: AdminAccountStatus.PENDING,
   })
   accountStatus: AdminAccountStatus;
+
+  // Set only by POST /admin/auth/me/deactivate (self-service) — see
+  // AdminAuthService.deactivateOwnAccount(). Admin-triggered
+  // deactivateAdmin() (a flat status flip, no reason) leaves these unset.
+  @Prop()
+  deactivatedAt?: Date;
+
+  @Prop({ type: DeactivationReason })
+  deactivationReason?: DeactivationReason;
 
   // Set once, the very first time this admin successfully logs in — the
   // same moment accountStatus flips PENDING -> ACTIVE (see

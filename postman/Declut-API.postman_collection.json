@@ -707,6 +707,46 @@
                 }
               },
               "response": []
+            },
+            {
+              "name": "Deactivate my account",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/users/me/deactivate",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "users",
+                    "me",
+                    "deactivate"
+                  ]
+                },
+                "description": "Self-service — we never delete an account, only deactivate it. Sets accountStatus to deactivated, stamps deactivatedAt/deactivationReason, and clears the refresh token so the caller is logged out immediately. The access token itself cannot be revoked (stateless JWT) — it simply keeps working until it naturally expires. reason must be one of the predefined USER_DEACTIVATION_REASONS values (see the schema); comment is optional free text. A subsequent login attempt gets a 403: \"Your account has been deactivated - Contact an admin to restore access\".",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reason\": \"I need a break from declut\",\n  \"comment\": \"Taking a short break, will be back.\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
             }
           ]
         },
@@ -3290,7 +3330,7 @@
                     }
                   ]
                 },
-                "description": "Federated view — merges Users and Admins into one list, sorted by joinedAt. status filter narrows to Users only. type explicitly picks all/user/admin (default all) — type=admin/type=user skip the other collection's query entirely. Each row's own identity field is `_id` only (no `id` key at all, explicit instruction 2026-09-19). User rows carry slug (USR-####); Admin rows carry roleId (the assigned Role's id, see the roles folder) instead. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate). Admin rows now carry their own real accountStatus (active/suspended/deactivated) in the status field too, instead of a hardcoded 'active'. Admin rows no longer carry listingsCount at all (was previously hardcoded to 0) — an admin can never own a listing."
+                "description": "Federated view — merges Users and Admins into one list, sorted by joinedAt. status filter narrows to Users only. type explicitly picks all/user/admin (default all) — type=admin/type=user skip the other collection's query entirely. Each row's own identity field is `_id` only (no `id` key at all, explicit instruction 2026-09-19). User rows carry slug (USR-####); Admin rows carry roleId (the assigned Role's id, see the roles folder) instead. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate). Admin rows now carry their own real accountStatus (active/suspended/deactivated) in the status field too, instead of a hardcoded 'active'. Admin rows no longer carry listingsCount at all (was previously hardcoded to 0) — an admin can never own a listing. Each row also carries deactivatedAt/deactivationReason/suspension/ban under the same condition as the detail view (status deactivated/banned/suspended only)."
               },
               "response": []
             },
@@ -3366,7 +3406,7 @@
                         "{{userId}}"
                       ]
                     },
-                    "description": "Works on a User id-or-slug (USR-####, insights + recent transactions + KYC) or an Admin id-or-slug (ADM-####, role/company/permissions instead) — both sides resolve by slug now (2026-09-18), not just id. Admin's status field is its real accountStatus (pending/active/deactivated), not hardcoded. Admin's details.name is now populated (2026-09-19 — was missing entirely). assignedRole uses `_id` (not `id`) for the Role's own id, matching the app-wide id -> _id rename on this detail view."
+                    "description": "Works on a User id-or-slug (USR-####, insights + recent transactions + KYC) or an Admin id-or-slug (ADM-####, role/company/permissions instead) — both sides resolve by slug now (2026-09-18), not just id. Admin's status field is its real accountStatus (pending/active/deactivated), not hardcoded. Admin's details.name is now populated (2026-09-19 — was missing entirely). assignedRole uses `_id` (not `id`) for the Role's own id, matching the app-wide id -> _id rename on this detail view. Also returns deactivatedAt/deactivationReason, suspension, and ban — but only while status is deactivated/banned/suspended (explicit instruction, 2026-09-19); absent entirely for an active/pending user. deactivatedAt/deactivationReason are only ever populated by a self-service POST /users/me/deactivate or POST /admin/auth/me/deactivate — the admin-triggered deactivate() stays a flat status flip with no reason."
                   },
                   "response": []
                 },
@@ -3402,10 +3442,10 @@
                             "suspend"
                           ]
                         },
-                        "description": "",
+                        "description": "outcome/notes removed from the request and from the stored Suspension sub-document (2026-09-19, explicit instruction) — just reason + durationDays now. Sets accountStatus to suspended and records {reason, durationDays, suspendedAt, suspendedBy}, shown back to admins on the user detail/list views only while the account is currently deactivated/banned/suspended. Undone via reactivate.",
                         "body": {
                           "mode": "raw",
-                          "raw": "{\n  \"reason\": \"Repeated no-shows reported by multiple buyers\",\n  \"durationDays\": 14,\n  \"outcome\": \"temporary_suspension\",\n  \"notes\": \"Escalate to permanent ban if it happens again\"\n}",
+                          "raw": "{\n  \"reason\": \"Repeated no-shows reported by multiple buyers\",\n  \"durationDays\": 14\n}",
                           "options": {
                             "raw": {
                               "language": "json"
@@ -3496,6 +3536,11 @@
                             "key": "Authorization",
                             "value": "Bearer {{adminAccessToken}}",
                             "type": "text"
+                          },
+                          {
+                            "key": "Content-Type",
+                            "value": "application/json",
+                            "type": "text"
                           }
                         ],
                         "url": {
@@ -3510,7 +3555,16 @@
                             "ban"
                           ]
                         },
-                        "description": "Flat status flip to banned — user-only, no Admin equivalent. Undone via reactivate."
+                        "description": "Now requires a body (2026-09-19, explicit instruction — \"implement banned like we did for Suspension\") — mirrors suspend, trimmed (no duration/outcome, a ban is indefinite). Sets accountStatus to banned and records {reason, bannedAt, bannedBy}, shown back to admins on the user detail/list views only while the account is currently deactivated/banned/suspended. User-only, no Admin equivalent. Undone via reactivate.",
+                        "body": {
+                          "mode": "raw",
+                          "raw": "{\n  \"reason\": \"Repeated scam listings reported by multiple buyers\"\n}",
+                          "options": {
+                            "raw": {
+                              "language": "json"
+                            }
+                          }
+                        }
                       },
                       "response": []
                     }
@@ -5999,6 +6053,47 @@
                     "body": {
                       "mode": "raw",
                       "raw": "{\n  \"landingPage\": \"Dashboard\",\n  \"rowsPerPage\": 20,\n  \"dateFormat\": \"DD/MM/YYYY\",\n  \"timeFormat\": \"24-Hour\",\n  \"timezone\": \"Africa/Lagos\",\n  \"language\": \"English\"\n}",
+                      "options": {
+                        "raw": {
+                          "language": "json"
+                        }
+                      }
+                    }
+                  },
+                  "response": []
+                },
+                {
+                  "name": "Deactivate my account",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/auth/me/deactivate",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "auth",
+                        "me",
+                        "deactivate"
+                      ]
+                    },
+                    "description": "Self-service — we never delete the account, only deactivate it. Sets accountStatus to deactivated, stamps deactivatedAt/deactivationReason, clears the refresh token, and force-disconnects the live bell socket (same as logout) — the admin is logged out immediately. The access token itself cannot be revoked (stateless JWT), same flagged limitation as logout. reason must be one of the predefined ADMIN_DEACTIVATION_REASONS values (see the schema); comment is optional free text. A subsequent login attempt gets a 403: \"Your account has been deactivated - Contact an admin to restore access\".",
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"reason\": \"leaving the company\",\n  \"comment\": \"Last day is Friday.\"\n}",
                       "options": {
                         "raw": {
                           "language": "json"

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -13,6 +14,7 @@ import * as bcrypt from 'bcrypt';
 import type { StringValue } from 'ms';
 import { UsersService } from '../users/users.service';
 import {
+  AccountStatus,
   AuthProvider,
   KycStatus,
   UserDocument,
@@ -149,6 +151,12 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // Checked only after credentials are confirmed correct — otherwise a
+    // wrong-password attempt against a deactivated/suspended/banned account
+    // would leak that the account exists/its status, ahead of the generic
+    // "invalid credentials" response.
+    this.assertAccountIsUsable(user);
+
     if (dto.pushToken) {
       await this.usersService.addDeviceTokens(user._id.toString(), [
         dto.pushToken,
@@ -196,6 +204,11 @@ export class AuthService {
         );
       }
     }
+
+    // A freshly-created user can never already be deactivated/suspended/
+    // banned — this only ever actually fires for an existing account
+    // signing back in via Google.
+    this.assertAccountIsUsable(user);
 
     return this.issueTokens(user);
   }
@@ -539,5 +552,34 @@ export class AuthService {
 
   private saltRounds(): number {
     return this.config.get<number>('BCRYPT_SALT_ROUNDS', 12);
+  }
+
+  // Blocks a session from being issued to a deactivated/suspended/banned
+  // account, with the exact per-status message the client shows. Shared by
+  // login() and googleAuth() — both end the same way (issueTokens()), so
+  // this is the one choke point to add the check for both auth paths. Not
+  // enforced by JwtAuthGuard on already-issued tokens (out of scope, same
+  // "stateless JWT, no per-request DB lookup" posture this app already
+  // has), and not checked on refresh() either — a deactivated/suspended/
+  // banned account's refresh token was already just cleared the moment
+  // that status was set (see UsersService.deactivateOwnAccount()), so
+  // refresh() fails on its own there regardless. 2026-09-19, explicit
+  // instruction.
+  private assertAccountIsUsable(user: UserDocument): void {
+    if (user.accountStatus === AccountStatus.DEACTIVATED) {
+      throw new ForbiddenException(
+        'Your account has been deactivated - Contact an admin to restore access',
+      );
+    }
+    if (user.accountStatus === AccountStatus.SUSPENDED) {
+      throw new ForbiddenException(
+        'Your account has been suspended - Contact an admin to restore access',
+      );
+    }
+    if (user.accountStatus === AccountStatus.BANNED) {
+      throw new ForbiddenException(
+        'Your account has been banned - Contact an admin to restore access',
+      );
+    }
   }
 }

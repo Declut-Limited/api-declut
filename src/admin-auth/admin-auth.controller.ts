@@ -20,6 +20,7 @@ import { AdminChangePasswordDto } from './dto/admin-change-password.dto';
 import { UpdateAdminRoleDto } from './dto/update-admin-role.dto';
 import { UpdateAdminGeneralProfileDto } from './dto/update-admin-general-profile.dto';
 import { UpdateDashboardPreferencesDto } from './dto/update-dashboard-preferences.dto';
+import { DeactivateAdminAccountDto } from './dto/deactivate-admin-account.dto';
 import { AdminJwtAuthGuard } from './guards/admin-jwt-auth.guard';
 import { CurrentAdmin } from './decorators/current-admin.decorator';
 import type { AdminAccessTokenPayload } from './interfaces/admin-jwt-payload.interface';
@@ -97,6 +98,20 @@ export class AdminAuthController {
     @Body() dto: UpdateDashboardPreferencesDto,
   ) {
     return this.adminAuthService.updateDashboardPreferences(admin.sub, dto);
+  }
+
+  // Self-service — the caller deactivates their own account and is logged
+  // out immediately (refresh token cleared, live bell socket disconnected).
+  // We never delete the account, only deactivate it.
+  @UseGuards(AdminJwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @Post('me/deactivate')
+  async deactivateMe(
+    @CurrentAdmin() admin: AdminAccessTokenPayload,
+    @Body() dto: DeactivateAdminAccountDto,
+  ) {
+    await this.adminAuthService.deactivateOwnAccount(admin.sub, dto);
+    return { deactivated: true };
   }
 
   @UseGuards(AdminJwtAuthGuard)

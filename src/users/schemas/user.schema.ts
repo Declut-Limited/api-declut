@@ -58,16 +58,51 @@ class Suspension {
   durationDays: number;
 
   @Prop({ required: true })
-  outcome: string;
-
-  @Prop()
-  notes?: string;
-
-  @Prop({ required: true })
   suspendedAt: Date;
 
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Admin', required: true })
   suspendedBy: Types.ObjectId;
+}
+
+// Mirrors Suspension above, trimmed — a ban has no duration/outcome
+// concept (it's indefinite, not time-boxed). Set/cleared by
+// UsersService.ban()/reactivate(), same admin-triggered pattern as
+// Suspension. 2026-09-19, explicit instruction ("implement banned like we
+// did for Suspension").
+@Schema({ _id: false })
+class Ban {
+  @Prop({ required: true })
+  reason: string;
+
+  @Prop({ required: true })
+  bannedAt: Date;
+
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Admin', required: true })
+  bannedBy: Types.ObjectId;
+}
+
+// Self-service account deactivation (POST /users/me/deactivate) — added
+// 2026-09-19, explicit instruction. Distinct from the existing admin-
+// triggered UsersService.deactivate() (a flat status flip with no reason
+// capture) — these predefined reasons ("I need a break...") only make sense
+// as the account owner's own stated reason for leaving.
+export const USER_DEACTIVATION_REASONS = [
+  'I need a break from declut',
+  'I want a fresh start',
+  "I don't like declut",
+  'I have sold all my items',
+  'others',
+] as const;
+export type UserDeactivationReasonValue =
+  (typeof USER_DEACTIVATION_REASONS)[number];
+
+@Schema({ _id: false })
+class DeactivationReason {
+  @Prop({ required: true, enum: USER_DEACTIVATION_REASONS })
+  reason: UserDeactivationReasonValue;
+
+  @Prop({ trim: true, maxlength: 1000 })
+  comment?: string;
 }
 
 // Single user type — can both buy and sell. "buyer"/"seller" elsewhere in
@@ -119,6 +154,18 @@ export class User {
 
   @Prop({ type: Suspension })
   suspension?: Suspension;
+
+  @Prop({ type: Ban })
+  ban?: Ban;
+
+  // Set only by POST /users/me/deactivate (self-service) — see
+  // UsersService.deactivateOwnAccount(). Admin-triggered deactivate() (a
+  // flat status flip, no reason) leaves these unset.
+  @Prop()
+  deactivatedAt?: Date;
+
+  @Prop({ type: DeactivationReason })
+  deactivationReason?: DeactivationReason;
 
   // USR-#### — assigned once at creation via CounterService.
   @Prop({ unique: true, sparse: true })
