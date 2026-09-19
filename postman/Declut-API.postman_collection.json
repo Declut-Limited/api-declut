@@ -3290,7 +3290,7 @@
                     }
                   ]
                 },
-                "description": "Federated view — merges Users and Admins into one list, sorted by joinedAt. status filter narrows to Users only. type explicitly picks all/user/admin (default all) — type=admin/type=user skip the other collection's query entirely. User rows carry slug (USR-####); Admin rows carry roleId (the assigned Role's id, see the roles folder) instead. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate). Admin rows now carry their own real accountStatus (active/suspended/deactivated) in the status field too, instead of a hardcoded 'active'. Admin rows no longer carry listingsCount at all (was previously hardcoded to 0) — an admin can never own a listing."
+                "description": "Federated view — merges Users and Admins into one list, sorted by joinedAt. status filter narrows to Users only. type explicitly picks all/user/admin (default all) — type=admin/type=user skip the other collection's query entirely. Each row's own identity field is `_id` only (no `id` key at all, explicit instruction 2026-09-19). User rows carry slug (USR-####); Admin rows carry roleId (the assigned Role's id, see the roles folder) instead. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate). Admin rows now carry their own real accountStatus (active/suspended/deactivated) in the status field too, instead of a hardcoded 'active'. Admin rows no longer carry listingsCount at all (was previously hardcoded to 0) — an admin can never own a listing."
               },
               "response": []
             },
@@ -3334,7 +3334,7 @@
                         }
                       ]
                     },
-                    "description": "Same federated set as List users, as CSV. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
+                    "description": "Same federated set as List users, as CSV. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate). CSV column renamed `id` -> `_id` (2026-09-19), matching the list response."
                   },
                   "response": []
                 }
@@ -3366,7 +3366,7 @@
                         "{{userId}}"
                       ]
                     },
-                    "description": "Works on a User id-or-slug (USR-####, insights + recent transactions + KYC) or an Admin id-or-slug (ADM-####, role/company/permissions instead) — both sides resolve by slug now (2026-09-18), not just id. Admin's status field is its real accountStatus (pending/active/deactivated), not hardcoded."
+                    "description": "Works on a User id-or-slug (USR-####, insights + recent transactions + KYC) or an Admin id-or-slug (ADM-####, role/company/permissions instead) — both sides resolve by slug now (2026-09-18), not just id. Admin's status field is its real accountStatus (pending/active/deactivated), not hardcoded. Admin's details.name is now populated (2026-09-19 — was missing entirely). assignedRole uses `_id` (not `id`) for the Role's own id, matching the app-wide id -> _id rename on this detail view."
                   },
                   "response": []
                 },
@@ -4179,70 +4179,75 @@
               "response": []
             },
             {
-              "name": "Update transaction note",
-              "request": {
-                "method": "PATCH",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{adminAccessToken}}",
-                    "type": "text"
+              "name": "{transactionNoteId}",
+              "item": [
+                {
+                  "name": "Update transaction note",
+                  "request": {
+                    "method": "PATCH",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json",
+                        "type": "text"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"description\": \"Buyer called back — item condition confirmed, no defect.\"\n}",
+                      "options": {
+                        "raw": {
+                          "language": "json"
+                        }
+                      }
+                    },
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/transaction-notes/{{transactionNoteId}}",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "transaction-notes",
+                        "{{transactionNoteId}}"
+                      ]
+                    },
+                    "description": "Only description is editable — transactionId/writtenBy are fixed at creation and aren't accepted here at all. Only the admin who wrote the note can edit it — 403 for any other admin, even with transactions/write."
                   },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"description\": \"Buyer called back — item condition confirmed, no defect.\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
+                  "response": []
                 },
-                "url": {
-                  "raw": "{{baseUrl}}/admin/transaction-notes/{{transactionNoteId}}",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "admin",
-                    "transaction-notes",
-                    "{{transactionNoteId}}"
-                  ]
-                },
-                "description": "Only description is editable — transactionId/writtenBy are fixed at creation and aren't accepted here at all. Only the admin who wrote the note can edit it — 403 for any other admin, even with transactions/write."
-              },
-              "response": []
-            },
-            {
-              "name": "Remove transaction note",
-              "request": {
-                "method": "DELETE",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{adminAccessToken}}",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/admin/transaction-notes/{{transactionNoteId}}",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "admin",
-                    "transaction-notes",
-                    "{{transactionNoteId}}"
-                  ]
-                },
-                "description": "Hard delete — a note has no downstream reference elsewhere. Only the admin who wrote the note can remove it — 403 for any other admin, even with transactions/delete."
-              },
-              "response": []
+                {
+                  "name": "Remove transaction note",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/transaction-notes/{{transactionNoteId}}",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "transaction-notes",
+                        "{{transactionNoteId}}"
+                      ]
+                    },
+                    "description": "Hard delete — a note has no downstream reference elsewhere. Only the admin who wrote the note can remove it — 403 for any other admin, even with transactions/delete."
+                  },
+                  "response": []
+                }
+              ]
             }
           ]
         },
@@ -4261,7 +4266,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/admin/escrows?page=1&limit=20&startDate=2026-08-01&endDate=2026-08-29",
+                  "raw": "{{baseUrl}}/admin/escrows?page=1&limit=20&status=held&startDate=2026-08-01&endDate=2026-08-29",
                   "host": [
                     "{{baseUrl}}"
                   ],
@@ -4283,6 +4288,12 @@
                       "description": "Results per page, 1-100. Default 20."
                     },
                     {
+                      "key": "status",
+                      "value": "held",
+                      "disabled": true,
+                      "description": "One of held|refunded|released|frozen."
+                    },
+                    {
                       "key": "startDate",
                       "value": "2026-08-01",
                       "disabled": true,
@@ -4296,75 +4307,91 @@
                     }
                   ]
                 },
-                "description": "Escrow is its own collection/module (src/escrow/) as of 2026-08-28 — one row per Transaction, created once payment is verified. Gated under the transactions permission bucket, no dedicated RBAC bucket of its own. transaction is now populated ({_id, reference}) on each row (was a flat transactionId string); the listing field was renamed from product; status gained FROZEN. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate). Each row now also includes the escrow's own _id (2026-09-18 — was missing entirely before, only the nested transaction._id was present)."
+                "description": "Escrow is its own collection/module (src/escrow/) as of 2026-08-28 — one row per Transaction, created once payment is verified. Gated under the transactions permission bucket, no dedicated RBAC bucket of its own. transaction is now populated ({_id, reference}) on each row (was a flat transactionId string); the listing field was renamed from product; status gained FROZEN. status optionally filters to one exact EscrowStatus value (2026-09-19 — was missing entirely before). startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate). Each row now also includes the escrow's own _id (2026-09-18 — was missing entirely before, only the nested transaction._id was present)."
               },
               "response": []
             },
             {
-              "name": "Export escrows (CSV)",
-              "request": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{adminAccessToken}}",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/admin/escrows/export?startDate=2026-01-01&endDate=2026-12-31",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "admin",
-                    "escrows",
-                    "export"
-                  ],
-                  "query": [
-                    {
-                      "key": "startDate",
-                      "value": "2026-01-01",
-                      "disabled": true,
-                      "description": "Filters on createdAt."
+              "name": "export",
+              "item": [
+                {
+                  "name": "Export escrows (CSV)",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/escrows/export?status=held&startDate=2026-01-01&endDate=2026-12-31",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "escrows",
+                        "export"
+                      ],
+                      "query": [
+                        {
+                          "key": "status",
+                          "value": "held",
+                          "disabled": true,
+                          "description": "One of held|refunded|released|frozen."
+                        },
+                        {
+                          "key": "startDate",
+                          "value": "2026-01-01",
+                          "disabled": true,
+                          "description": "Filters on createdAt."
+                        },
+                        {
+                          "key": "endDate",
+                          "value": "2026-12-31",
+                          "disabled": true,
+                          "description": "endDate must not be earlier than startDate."
+                        }
+                      ]
                     },
-                    {
-                      "key": "endDate",
-                      "value": "2026-12-31",
-                      "disabled": true,
-                      "description": "endDate must not be earlier than startDate."
-                    }
-                  ]
-                },
-                "description": "Unpaginated CSV, same date-range filter as \"List escrows\". One row per escrow: slug, transactionReference, buyerName/Email, sellerName/Email, listingTitle, amountPaid, amountHeld, platformFee, sellerPayoutAmount, status, createdAt. Gated transactions/view (no dedicated escrow RBAC bucket, same as the list/detail)."
-              },
-              "response": []
+                    "description": "Unpaginated CSV, same status/date-range filter as \"List escrows\" (2026-09-19: status filter added). One row per escrow: slug, transactionReference, buyerName/Email, sellerName/Email, listingTitle, amountPaid, amountHeld, platformFee, sellerPayoutAmount, status, createdAt. Gated transactions/view (no dedicated escrow RBAC bucket, same as the list/detail)."
+                  },
+                  "response": []
+                }
+              ]
             },
             {
-              "name": "Get escrow by ID or slug",
-              "request": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{adminAccessToken}}",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/admin/escrows/{{escrowId}}",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "admin",
-                    "escrows",
-                    "{{escrowId}}"
-                  ]
-                },
-                "description": "Resolves by raw id or ESC-#### slug. Mirrors the admin transaction detail almost entirely — listing/seller/buyer/activityLog/transactionNotes/disputeInfo/refundInfo are all reused verbatim from GET /admin/transactions/:idOrRef, since an Escrow is 1:1 with the Transaction it was created from. Route lives here (not in a separate escrow-only module boundary) for a DI-direction reason: TransactionsService builds this shape and EscrowModule can't inject TransactionsModule back without a cycle. Adds: insights ({amountHeld, platformCommission, sellerReceivable, holdingDuration, currentStage}) — holdingDuration runs from escrow.createdAt to now (still held/frozen) or escrow.updatedAt (once released/refunded, the exact moment status flips) — deliberately not Payout/Refund's own completedAt/refundedAt, which are often still unset right after the action (Paystack transfer/refund calls usually come back pending, confirmed later by the 15-min reconciliation sweep); platformEarning ({platformFee, processingFee, totalEarned — literally equal to platformFee}); financialBreakdown ({itemPrice, platformFeePercentage, processingFeePercentage (derived — no dedicated stored percentage exists for the gateway charge), totalPaidByBuyer, sellerReceivable, refundAmount, netSettlement}); paymentDetails (reference/gateway/method/status/currency/date/time, from the transaction's own initial payment); settlementDetails (only when status is released, sourced from the matching Payout row — bankName/maskedBankAccount resolved via the same lookup/masking bank-account setup already uses; null for held/frozen, and for refunded, where refundInfo above already covers it). Live-tested against real data across all 4 statuses (held/released/refunded/frozen), including a temporarily-inserted synthetic Payout row to verify settlementDetails end-to-end (no real Payout rows exist yet in this environment — the feature postdates most existing completed transactions, no backfill run, same as disputeStatus/inspectionOutcome on old data). Updated 2026-09-18: paymentDetails.paymentStatus is now the fixed string \"Captured\" (an Escrow only ever exists once the initial payment was verified, regardless of what the transaction has since moved on to) rather than the transaction's current status, and gained gatewayResponse (\"Transaction Successful\") and gatewayReference (same value as paymentReference) — neither is stored anywhere, both are fixed/derived per explicit instruction, not fabricated data presented as real. financialBreakdown gained platformFee and processingFee as Naira amounts alongside the existing *Percentage fields. disputeInfo is now a narrower shape than the transaction detail's own version — sellerStatement and both evidence fields are dropped, buyerStatement is renamed to reason: {createdAt, status, slug, reason}."
-              },
-              "response": []
+              "name": "{escrowId}",
+              "item": [
+                {
+                  "name": "Get escrow by ID or slug",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/escrows/{{escrowId}}",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "escrows",
+                        "{{escrowId}}"
+                      ]
+                    },
+                    "description": "Resolves by raw id or ESC-#### slug. Mirrors the admin transaction detail almost entirely — listing/seller/buyer/activityLog/transactionNotes/disputeInfo/refundInfo are all reused verbatim from GET /admin/transactions/:idOrRef, since an Escrow is 1:1 with the Transaction it was created from. Route lives here (not in a separate escrow-only module boundary) for a DI-direction reason: TransactionsService builds this shape and EscrowModule can't inject TransactionsModule back without a cycle. Adds: insights ({amountHeld, platformCommission, sellerReceivable, holdingDuration, currentStage}) — holdingDuration runs from escrow.createdAt to now (still held/frozen) or escrow.updatedAt (once released/refunded, the exact moment status flips) — deliberately not Payout/Refund's own completedAt/refundedAt, which are often still unset right after the action (Paystack transfer/refund calls usually come back pending, confirmed later by the 15-min reconciliation sweep); platformEarning ({platformFee, processingFee, totalEarned — literally equal to platformFee}); financialBreakdown ({itemPrice, platformFeePercentage, processingFeePercentage (derived — no dedicated stored percentage exists for the gateway charge), totalPaidByBuyer, sellerReceivable, refundAmount, netSettlement}); paymentDetails (reference/gateway/method/status/currency/date/time, from the transaction's own initial payment); settlementDetails (only when status is released, sourced from the matching Payout row — bankName/maskedBankAccount resolved via the same lookup/masking bank-account setup already uses; null for held/frozen, and for refunded, where refundInfo above already covers it). Live-tested against real data across all 4 statuses (held/released/refunded/frozen), including a temporarily-inserted synthetic Payout row to verify settlementDetails end-to-end (no real Payout rows exist yet in this environment — the feature postdates most existing completed transactions, no backfill run, same as disputeStatus/inspectionOutcome on old data). Updated 2026-09-18: paymentDetails.paymentStatus is now the fixed string \"Captured\" (an Escrow only ever exists once the initial payment was verified, regardless of what the transaction has since moved on to) rather than the transaction's current status, and gained gatewayResponse (\"Transaction Successful\") and gatewayReference (same value as paymentReference) — neither is stored anywhere, both are fixed/derived per explicit instruction, not fabricated data presented as real. financialBreakdown gained platformFee and processingFee as Naira amounts alongside the existing *Percentage fields. disputeInfo is now a narrower shape than the transaction detail's own version — sellerStatement and both evidence fields are dropped, buyerStatement is renamed to reason: {createdAt, status, slug, reason}."
+                  },
+                  "response": []
+                }
+              ]
             }
           ]
         },
@@ -7253,283 +7280,308 @@
               "response": []
             },
             {
-              "name": "Export feedback (CSV)",
-              "request": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{adminAccessToken}}",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/admin/feedback/export?status=new&type=report_a_problem&search=crash&startDate=2026-01-01&endDate=2026-12-31",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "admin",
-                    "feedback",
-                    "export"
-                  ],
-                  "query": [
-                    {
-                      "key": "status",
-                      "value": "new",
-                      "disabled": true,
-                      "description": "One of new|in_review|resolved|escalated."
+              "name": "export",
+              "item": [
+                {
+                  "name": "Export feedback (CSV)",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/feedback/export?status=new&type=report_a_problem&search=crash&startDate=2026-01-01&endDate=2026-12-31",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "feedback",
+                        "export"
+                      ],
+                      "query": [
+                        {
+                          "key": "status",
+                          "value": "new",
+                          "disabled": true,
+                          "description": "One of new|in_review|resolved|escalated."
+                        },
+                        {
+                          "key": "type",
+                          "value": "report_a_problem",
+                          "disabled": true,
+                          "description": "One of share_an_improvement|report_a_problem|share_an_issue|others."
+                        },
+                        {
+                          "key": "search",
+                          "value": "crash",
+                          "disabled": true,
+                          "description": "Case-insensitive substring match against feedbackDescription."
+                        },
+                        {
+                          "key": "startDate",
+                          "value": "2026-01-01",
+                          "disabled": true,
+                          "description": "Filters on createdAt."
+                        },
+                        {
+                          "key": "endDate",
+                          "value": "2026-12-31",
+                          "disabled": true,
+                          "description": "endDate must not be earlier than startDate."
+                        }
+                      ]
                     },
-                    {
-                      "key": "type",
-                      "value": "report_a_problem",
-                      "disabled": true,
-                      "description": "One of share_an_improvement|report_a_problem|share_an_issue|others."
-                    },
-                    {
-                      "key": "search",
-                      "value": "crash",
-                      "disabled": true,
-                      "description": "Case-insensitive substring match against feedbackDescription."
-                    },
-                    {
-                      "key": "startDate",
-                      "value": "2026-01-01",
-                      "disabled": true,
-                      "description": "Filters on createdAt."
-                    },
-                    {
-                      "key": "endDate",
-                      "value": "2026-12-31",
-                      "disabled": true,
-                      "description": "endDate must not be earlier than startDate."
-                    }
-                  ]
-                },
-                "description": "Unpaginated CSV, same status/type/search/date-range filter as \"List feedback\". One row per feedback: slug, type, feedbackDescription, rating, isLowRated, status, canContactMe, userName, userEmail, escalatedTo, escalatedReason, createdAt. Gated feedback/view."
-              },
-              "response": []
-            },
-            {
-              "name": "Feedback analytics",
-              "request": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{adminAccessToken}}",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/admin/feedback/analytics?period=thisMonth&startDate=2026-01-01&endDate=2026-01-31",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "admin",
-                    "feedback",
-                    "analytics"
-                  ],
-                  "query": [
-                    {
-                      "key": "period",
-                      "value": "thisMonth",
-                      "disabled": false,
-                      "description": "One of thisMonth|lastMonth|last3Months|thisYear|lastYear|custom. Default thisMonth."
-                    },
-                    {
-                      "key": "startDate",
-                      "value": "2026-01-01",
-                      "disabled": true,
-                      "description": "Required only when period=custom."
-                    },
-                    {
-                      "key": "endDate",
-                      "value": "2026-01-31",
-                      "disabled": true,
-                      "description": "Required only when period=custom."
-                    }
-                  ]
-                },
-                "description": "5 sections, all scoped to the same period: insights ({totalFeedback, awaitingReview (status=new), resolved, averageRating}), feedbackTrend (a chart array of {label, submitted, resolved} — bucket granularity auto-scales with the period's span: daily for <=31 days, weekly for <=120 days, monthly beyond that), ratingDistribution ({averageRating, totalRatings, ratingByStar: {5_star..1_star}}), filterByType (per-type counts, all 4 types always present), filterByStatus (per-status counts + percentage string, all 4 statuses always present). Gated feedback/view. thisMonth/thisYear always run their trend through the end of the calendar period (e.g. Sep 30 / Dec) even mid-period — remaining days/months just show 0, they are not cut off at today. lastMonth/lastYear/last3Months/custom are unaffected (already complete or open-ended ranges)."
-              },
-              "response": []
-            },
-            {
-              "name": "Feedback recent attention",
-              "request": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{adminAccessToken}}",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/admin/feedback/recent-attention",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "admin",
-                    "feedback",
-                    "recent-attention"
-                  ]
-                },
-                "description": "No period filter — a live snapshot, same \"some cards are live, not period-scoped\" split the main admin dashboard uses. needsAttention: {unreviewedReportProblem (type=report_a_problem AND status=new), lowRatedUnresolvedFeedback (rating<=2.5 AND status!=resolved), escalatedToOtherTeam (status=escalated)}. recentFeedback: the 3 most recent submissions, same row shape as \"List feedback\". Gated feedback/view."
-              },
-              "response": []
-            },
-            {
-              "name": "Get feedback by ID or slug",
-              "request": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{adminAccessToken}}",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/admin/feedback/{{feedbackId}}",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "admin",
-                    "feedback",
-                    "{{feedbackId}}"
-                  ]
-                },
-                "description": "Resolves by raw id or by slug (FBK-####) — use either in place of {{feedbackId}}. Returns the full detail: slug/type/feedbackDescription/rating/status/canContactMe/attachment/createdAt/updatedAt, escalatedTo/escalatedReason/escalatedInternalNote (once escalated), a richer user ({id, name, email, phone, slug, listingCount}), the full activityLogs timeline (oldest first, from submission through every admin action, each with a resolved actor), and internalNotes (newest first). Gated feedback/view."
-              },
-              "response": []
-            },
-            {
-              "name": "Mark feedback as in review",
-              "request": {
-                "method": "PATCH",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{adminAccessToken}}",
-                    "type": "text"
+                    "description": "Unpaginated CSV, same status/type/search/date-range filter as \"List feedback\". One row per feedback: slug, type, feedbackDescription, rating, isLowRated, status, canContactMe, userName, userEmail, escalatedTo, escalatedReason, createdAt. Gated feedback/view."
                   },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/admin/feedback/{{feedbackId}}/status",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "admin",
-                    "feedback",
-                    "{{feedbackId}}",
-                    "status"
-                  ]
-                },
-                "description": "One endpoint handles all three transitions (status picks which) — shown here three times with different bodies for clarity. status is one of in_review|resolved|escalated (not new — there is no \"mark as new\" action). No prior-state guard, any status can move to any other. Gated feedback/write.",
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"status\": \"in_review\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
+                  "response": []
                 }
-              },
-              "response": []
+              ]
             },
             {
-              "name": "Mark feedback as resolved",
-              "request": {
-                "method": "PATCH",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{adminAccessToken}}",
-                    "type": "text"
+              "name": "analytics",
+              "item": [
+                {
+                  "name": "Feedback analytics",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/feedback/analytics?period=thisMonth&startDate=2026-01-01&endDate=2026-01-31",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "feedback",
+                        "analytics"
+                      ],
+                      "query": [
+                        {
+                          "key": "period",
+                          "value": "thisMonth",
+                          "disabled": false,
+                          "description": "One of thisMonth|lastMonth|last3Months|thisYear|lastYear|custom. Default thisMonth."
+                        },
+                        {
+                          "key": "startDate",
+                          "value": "2026-01-01",
+                          "disabled": true,
+                          "description": "Required only when period=custom."
+                        },
+                        {
+                          "key": "endDate",
+                          "value": "2026-01-31",
+                          "disabled": true,
+                          "description": "Required only when period=custom."
+                        }
+                      ]
+                    },
+                    "description": "5 sections, all scoped to the same period: insights ({totalFeedback, awaitingReview (status=new), resolved, averageRating}), feedbackTrend (a chart array of {label, submitted, resolved} — bucket granularity auto-scales with the period's span: daily for <=31 days, weekly for <=120 days, monthly beyond that), ratingDistribution ({averageRating, totalRatings, ratingByStar: {5_star..1_star}}), filterByType (per-type counts, all 4 types always present), filterByStatus (per-status counts + percentage string, all 4 statuses always present). Gated feedback/view. thisMonth/thisYear always run their trend through the end of the calendar period (e.g. Sep 30 / Dec) even mid-period — remaining days/months just show 0, they are not cut off at today. lastMonth/lastYear/last3Months/custom are unaffected (already complete or open-ended ranges)."
                   },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/admin/feedback/{{feedbackId}}/status",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "admin",
-                    "feedback",
-                    "{{feedbackId}}",
-                    "status"
-                  ]
-                },
-                "description": "Same endpoint as \"Mark feedback as in review\" — see its description.",
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"status\": \"resolved\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
+                  "response": []
                 }
-              },
-              "response": []
+              ]
             },
             {
-              "name": "Escalate feedback",
-              "request": {
-                "method": "PATCH",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{adminAccessToken}}",
-                    "type": "text"
+              "name": "recent-attention",
+              "item": [
+                {
+                  "name": "Feedback recent attention",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/feedback/recent-attention",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "feedback",
+                        "recent-attention"
+                      ]
+                    },
+                    "description": "No period filter — a live snapshot, same \"some cards are live, not period-scoped\" split the main admin dashboard uses. needsAttention: {unreviewedReportProblem (type=report_a_problem AND status=new), lowRatedUnresolvedFeedback (rating<=2.5 AND status!=resolved), escalatedToOtherTeam (status=escalated)}. recentFeedback: the 3 most recent submissions, same row shape as \"List feedback\". Gated feedback/view."
                   },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/admin/feedback/{{feedbackId}}/status",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "admin",
-                    "feedback",
-                    "{{feedbackId}}",
-                    "status"
-                  ]
-                },
-                "description": "Same endpoint as \"Mark feedback as in review\" — status=escalated additionally requires escalatedTo (one of Customer Support|Operations|Product|Engineering|Finance), escalatedReason (one of Operational Issue|Payment Issue|Security Concern|Product Defect|Needs Product Decision), and escalatedInternalNote (5-2000 chars, free text) — all three 400 if missing/invalid. All three are stored directly on the Feedback document, not a separate schema.",
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"status\": \"escalated\",\n  \"escalatedTo\": \"Engineering\",\n  \"escalatedReason\": \"Product Defect\",\n  \"escalatedInternalNote\": \"Reproduced consistently on Android 14 — likely a native crash in the image picker.\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
+                  "response": []
                 }
-              },
-              "response": []
+              ]
+            },
+            {
+              "name": "{feedbackId}",
+              "item": [
+                {
+                  "name": "Get feedback by ID or slug",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/feedback/{{feedbackId}}",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "feedback",
+                        "{{feedbackId}}"
+                      ]
+                    },
+                    "description": "Resolves by raw id or by slug (FBK-####) — use either in place of {{feedbackId}}. Returns the full detail: slug/type/feedbackDescription/rating/status/canContactMe/attachment/createdAt/updatedAt, escalatedTo/escalatedReason/escalatedInternalNote (once escalated), a richer user ({id, name, email, phone, slug, listingCount}), the full activityLogs timeline (oldest first, from submission through every admin action, each with a resolved actor), and internalNotes (newest first). Gated feedback/view."
+                  },
+                  "response": []
+                },
+                {
+                  "name": "status",
+                  "item": [
+                    {
+                      "name": "Mark feedback as in review",
+                      "request": {
+                        "method": "PATCH",
+                        "header": [
+                          {
+                            "key": "Authorization",
+                            "value": "Bearer {{adminAccessToken}}",
+                            "type": "text"
+                          },
+                          {
+                            "key": "Content-Type",
+                            "value": "application/json",
+                            "type": "text"
+                          }
+                        ],
+                        "url": {
+                          "raw": "{{baseUrl}}/admin/feedback/{{feedbackId}}/status",
+                          "host": [
+                            "{{baseUrl}}"
+                          ],
+                          "path": [
+                            "admin",
+                            "feedback",
+                            "{{feedbackId}}",
+                            "status"
+                          ]
+                        },
+                        "description": "One endpoint handles all three transitions (status picks which) — shown here three times with different bodies for clarity. status is one of in_review|resolved|escalated (not new — there is no \"mark as new\" action). No prior-state guard, any status can move to any other. Gated feedback/write.",
+                        "body": {
+                          "mode": "raw",
+                          "raw": "{\n  \"status\": \"in_review\"\n}",
+                          "options": {
+                            "raw": {
+                              "language": "json"
+                            }
+                          }
+                        }
+                      },
+                      "response": []
+                    },
+                    {
+                      "name": "Mark feedback as resolved",
+                      "request": {
+                        "method": "PATCH",
+                        "header": [
+                          {
+                            "key": "Authorization",
+                            "value": "Bearer {{adminAccessToken}}",
+                            "type": "text"
+                          },
+                          {
+                            "key": "Content-Type",
+                            "value": "application/json",
+                            "type": "text"
+                          }
+                        ],
+                        "url": {
+                          "raw": "{{baseUrl}}/admin/feedback/{{feedbackId}}/status",
+                          "host": [
+                            "{{baseUrl}}"
+                          ],
+                          "path": [
+                            "admin",
+                            "feedback",
+                            "{{feedbackId}}",
+                            "status"
+                          ]
+                        },
+                        "description": "Same endpoint as \"Mark feedback as in review\" — see its description.",
+                        "body": {
+                          "mode": "raw",
+                          "raw": "{\n  \"status\": \"resolved\"\n}",
+                          "options": {
+                            "raw": {
+                              "language": "json"
+                            }
+                          }
+                        }
+                      },
+                      "response": []
+                    },
+                    {
+                      "name": "Escalate feedback",
+                      "request": {
+                        "method": "PATCH",
+                        "header": [
+                          {
+                            "key": "Authorization",
+                            "value": "Bearer {{adminAccessToken}}",
+                            "type": "text"
+                          },
+                          {
+                            "key": "Content-Type",
+                            "value": "application/json",
+                            "type": "text"
+                          }
+                        ],
+                        "url": {
+                          "raw": "{{baseUrl}}/admin/feedback/{{feedbackId}}/status",
+                          "host": [
+                            "{{baseUrl}}"
+                          ],
+                          "path": [
+                            "admin",
+                            "feedback",
+                            "{{feedbackId}}",
+                            "status"
+                          ]
+                        },
+                        "description": "Same endpoint as \"Mark feedback as in review\" — status=escalated additionally requires escalatedTo (one of Customer Support|Operations|Product|Engineering|Finance), escalatedReason (one of Operational Issue|Payment Issue|Security Concern|Product Defect|Needs Product Decision), and escalatedInternalNote (5-2000 chars, free text) — all three 400 if missing/invalid. All three are stored directly on the Feedback document, not a separate schema.",
+                        "body": {
+                          "mode": "raw",
+                          "raw": "{\n  \"status\": \"escalated\",\n  \"escalatedTo\": \"Engineering\",\n  \"escalatedReason\": \"Product Defect\",\n  \"escalatedInternalNote\": \"Reproduced consistently on Android 14 — likely a native crash in the image picker.\"\n}",
+                          "options": {
+                            "raw": {
+                              "language": "json"
+                            }
+                          }
+                        }
+                      },
+                      "response": []
+                    }
+                  ]
+                }
+              ]
             }
           ]
         },
