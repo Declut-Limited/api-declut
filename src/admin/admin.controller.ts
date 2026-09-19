@@ -32,6 +32,7 @@ import { UpdatePaymentSettingsDto } from '../settings/dto/update-payment-setting
 import { UpdateFeesSettingsDto } from '../settings/dto/update-fees-settings.dto';
 import { UpdateIssueResolutionSlaDto } from '../settings/dto/update-issue-resolution-sla.dto';
 import { DateRangeDto } from '../common/dto/date-range.dto';
+import { ListEscrowsDto } from '../escrow/dto/list-escrows.dto';
 import { AdminJwtAuthGuard } from '../admin-auth/guards/admin-jwt-auth.guard';
 import { PermissionsGuard } from '../admin-auth/guards/permissions.guard';
 import { RequirePermission } from '../admin-auth/decorators/require-permission.decorator';
@@ -248,6 +249,26 @@ export class AdminController {
   @RequirePermission('transactions', 'view')
   getTransactionDetail(@Param('idOrRef') idOrRef: string) {
     return this.adminService.getTransactionDetail(idOrRef);
+  }
+
+  // Must come before 'escrows/:idOrSlug' below — otherwise Nest matches
+  // "export" as the idOrSlug (same hazard as 'transactions/export' above).
+  // Lives here rather than on AdminEscrowController (src/escrow/, where the
+  // sibling GET /admin/escrows list route lives) specifically so it's
+  // guaranteed to be registered before 'escrows/:idOrSlug' — that route also
+  // lives in this same controller, and relying on cross-module/cross-
+  // controller registration order for two conflicting paths would be
+  // fragile. EscrowService.exportCsv() does the actual work; AdminModule
+  // now imports EscrowModule for this (no cycle — EscrowModule only imports
+  // AdminAuthModule, not AdminModule). Same transactions/view permission
+  // bucket the escrow list/detail already use (no dedicated escrow bucket).
+  @Get('escrows/export')
+  @RequirePermission('transactions', 'view')
+  async exportEscrows(@Query() dto: ListEscrowsDto, @Res() res: Response) {
+    const csv = await this.adminService.exportEscrowsCsv(dto);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="escrows.csv"');
+    res.send(csv);
   }
 
   // Lives here, not on AdminEscrowController (src/escrow/) where the

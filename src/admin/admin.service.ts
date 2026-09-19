@@ -19,6 +19,8 @@ import { AdminAuthService } from '../admin-auth/admin-auth.service';
 import type { AdminDocument } from '../admin-auth/schemas/admin.schema';
 import { EmailService } from '../email/email.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { EscrowService } from '../escrow/escrow.service';
+import { ListEscrowsDto } from '../escrow/dto/list-escrows.dto';
 import {
   AdminListListingsDto,
   AdminListReviewsDto,
@@ -60,6 +62,7 @@ export class AdminService {
     private readonly kycService: KycService,
     private readonly emailService: EmailService,
     private readonly auditLogService: AuditLogService,
+    private readonly escrowService: EscrowService,
   ) {}
 
   async listUsers(dto: AdminListUsersDto) {
@@ -96,7 +99,8 @@ export class AdminService {
 
     type Row = {
       type: 'user' | 'admin';
-      id: string;
+      // _id only, not id — explicit instruction.
+      _id: string;
       slug?: string;
       name: string;
       email: string;
@@ -112,7 +116,7 @@ export class AdminService {
 
     const userRows: Row[] = users.map((u) => ({
       type: 'user' as const,
-      id: u._id.toString(),
+      _id: u._id.toString(),
       slug: u.slug,
       name: u.name,
       email: u.email,
@@ -129,7 +133,7 @@ export class AdminService {
 
       return {
         type: 'admin' as const,
-        id: a._id.toString(),
+        _id: a._id.toString(),
         name: a.name,
         email: a.email,
         slug: a.slug,
@@ -161,7 +165,7 @@ export class AdminService {
     });
     return toCsv(results, [
       'type',
-      'id',
+      '_id',
       'name',
       'email',
       'role',
@@ -248,6 +252,7 @@ export class AdminService {
         type: 'admin' as const,
         details: {
           role: 'Admin',
+          name: admin.name,
           slug: admin.slug,
           title: admin.title,
           // Was hardcoded 'active' — real accountStatus since 2026-09-18.
@@ -257,7 +262,7 @@ export class AdminService {
           email: admin.email,
           assignedRole: assignedRole
             ? {
-                id: assignedRole._id.toString(),
+                _id: assignedRole._id.toString(),
                 name: assignedRole.name,
                 permissions: assignedRole.permissions,
               }
@@ -496,6 +501,10 @@ export class AdminService {
 
   getEscrowDetail(idOrSlug: string) {
     return this.transactionsService.adminFindEscrowDetail(idOrSlug);
+  }
+
+  exportEscrowsCsv(dto: ListEscrowsDto) {
+    return this.escrowService.exportCsv(dto, dto.status);
   }
 
   sendInspectionReminder(

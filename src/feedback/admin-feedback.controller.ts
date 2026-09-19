@@ -5,8 +5,10 @@ import {
   Param,
   Patch,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { FeedbackService } from './feedback.service';
 import { ListAdminFeedbackDto } from './dto/list-admin-feedback.dto';
 import { FeedbackAnalyticsDto } from './dto/feedback-analytics.dto';
@@ -44,8 +46,19 @@ export class AdminFeedbackController {
     return this.feedbackService.getRecentAttention();
   }
 
-  // Must come after the two static routes above — otherwise Nest would
-  // match "analytics"/"recent-attention" as :idOrSlug, same hazard this
+  // Must come before ':idOrSlug' below — otherwise Nest matches "export" as
+  // the idOrSlug, same hazard as every other export in this app.
+  @Get('export')
+  @RequirePermission('feedback', 'view')
+  async export(@Query() dto: ListAdminFeedbackDto, @Res() res: Response) {
+    const csv = await this.feedbackService.exportCsv(dto);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="feedback.csv"');
+    res.send(csv);
+  }
+
+  // Must come after the static routes above — otherwise Nest would match
+  // "analytics"/"recent-attention"/"export" as :idOrSlug, same hazard this
   // codebase's other "static route before dynamic param" cases document.
   @Get(':idOrSlug')
   @RequirePermission('feedback', 'view')

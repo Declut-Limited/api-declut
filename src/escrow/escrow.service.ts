@@ -6,6 +6,7 @@ import { CounterService } from '../common/counter/counter.service';
 import { PopulatedParty, shapeParty } from '../common/utils/party.util';
 import { buildDateRangeFilter } from '../common/utils/date-range.util';
 import { DateRangeDto } from '../common/dto/date-range.dto';
+import { toCsv } from '../common/utils/csv.util';
 
 const PARTY_POPULATE_FIELDS = 'name email accountStatus slug company';
 const LISTING_POPULATE_FIELDS = 'title';
@@ -68,8 +69,16 @@ export class EscrowService {
     return escrow;
   }
 
-  async adminList(page: number, limit: number, dateRange: DateRangeDto = {}) {
-    const filter = buildDateRangeFilter(dateRange);
+  async adminList(
+    page: number,
+    limit: number,
+    dateRange: DateRangeDto = {},
+    status?: EscrowStatus,
+  ) {
+    const filter = {
+      ...(status ? { status } : {}),
+      ...buildDateRangeFilter(dateRange),
+    };
     const [escrows, total] = await Promise.all([
       this.escrowModel
         .find(filter)
@@ -93,6 +102,68 @@ export class EscrowService {
       page,
       limit,
     };
+  }
+
+  // Unpaginated, same status/date-range filter as adminList(), flattened for
+  // CSV — same convention every other export in this app follows.
+  async exportCsv(
+    dateRange: DateRangeDto = {},
+    status?: EscrowStatus,
+  ): Promise<string> {
+    const filter = {
+      ...(status ? { status } : {}),
+      ...buildDateRangeFilter(dateRange),
+    };
+    const escrows = await this.escrowModel
+      .find(filter)
+      .populate('buyer', PARTY_POPULATE_FIELDS)
+      .populate('seller', PARTY_POPULATE_FIELDS)
+      .populate('listing', LISTING_POPULATE_FIELDS)
+      .populate(
+        'transaction',
+        'reference commissionAmount sellerPayoutAmount commissionPercentage amount',
+      )
+      .sort({ createdAt: -1 })
+      .exec();
+
+    const rows = escrows.map((e) => {
+      const shaped = this.shapeEscrowRow(e);
+      const buyer = shaped.buyer as { name?: string; email?: string } | null;
+      const seller = shaped.seller as { name?: string; email?: string } | null;
+      const listing = shaped.listing as { title?: string } | null;
+      const transaction = shaped.transaction as { reference?: string } | null;
+      return {
+        slug: shaped.slug,
+        transactionReference: transaction?.reference ?? '',
+        buyerName: buyer?.name ?? '',
+        buyerEmail: buyer?.email ?? '',
+        sellerName: seller?.name ?? '',
+        sellerEmail: seller?.email ?? '',
+        listingTitle: listing?.title ?? '',
+        amountPaid: shaped.amountPaid,
+        amountHeld: shaped.amountHeld,
+        platformFee: shaped.platformFee,
+        sellerPayoutAmount: shaped.sellerPayoutAmount,
+        status: shaped.status,
+        createdAt: shaped.createdAt,
+      };
+    });
+
+    return toCsv(rows, [
+      'slug',
+      'transactionReference',
+      'buyerName',
+      'buyerEmail',
+      'sellerName',
+      'sellerEmail',
+      'listingTitle',
+      'amountPaid',
+      'amountHeld',
+      'platformFee',
+      'sellerPayoutAmount',
+      'status',
+      'createdAt',
+    ]);
   }
 
   private shapeEscrowRow(escrow: EscrowDocument): Record<string, unknown> {

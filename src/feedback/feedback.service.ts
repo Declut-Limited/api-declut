@@ -20,6 +20,7 @@ import { CounterService } from '../common/counter/counter.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { buildDateRangeFilter } from '../common/utils/date-range.util';
 import { escapeRegex } from '../common/utils/regex.util';
+import { toCsv } from '../common/utils/csv.util';
 
 // A rating of 2.5 or below is "low" — explicit threshold from the product
 // ask (ratings are integers 1-5 in practice, so this is effectively <= 2,
@@ -112,16 +113,7 @@ export class FeedbackService {
   }> {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
-    const filter: Record<string, unknown> = {
-      ...(dto.status ? { status: dto.status } : {}),
-      ...(dto.type ? { type: dto.type } : {}),
-      ...buildDateRangeFilter(dto),
-    };
-    // Case-insensitive substring match against the one free-text field —
-    // same convention Listings' search switched to (regex, not $text).
-    if (dto.search) {
-      filter.feedbackDescription = new RegExp(escapeRegex(dto.search), 'i');
-    }
+    const filter = FeedbackService.buildAdminListFilter(dto);
 
     const [found, total] = await Promise.all([
       this.feedbackModel
@@ -140,6 +132,68 @@ export class FeedbackService {
       page,
       limit,
     };
+  }
+
+  // Unpaginated, same status/type/search/date-range filter as adminList(),
+  // flattened for CSV — same convention every other export in this app
+  // follows. userName/userEmail replace the nested `user` object.
+  async exportCsv(dto: ListAdminFeedbackDto): Promise<string> {
+    const filter = FeedbackService.buildAdminListFilter(dto);
+    const found = await this.feedbackModel
+      .find(filter)
+      .populate('user', ADMIN_USER_POPULATE_FIELDS)
+      .sort({ createdAt: -1 })
+      .exec();
+
+    const rows = found.map((f) => {
+      const shaped = this.shapeAdminFeedbackRow(f);
+      const user = shaped.user as { name?: string; email?: string } | null;
+      return {
+        slug: shaped.slug,
+        type: shaped.type,
+        feedbackDescription: shaped.feedbackDescription,
+        rating: shaped.rating,
+        isLowRated: shaped.isLowRated,
+        status: shaped.status,
+        canContactMe: shaped.canContactMe,
+        userName: typeof user === 'object' && user ? (user.name ?? '') : '',
+        userEmail: typeof user === 'object' && user ? (user.email ?? '') : '',
+        escalatedTo: shaped.escalatedTo ?? '',
+        escalatedReason: shaped.escalatedReason ?? '',
+        createdAt: shaped.createdAt,
+      };
+    });
+
+    return toCsv(rows, [
+      'slug',
+      'type',
+      'feedbackDescription',
+      'rating',
+      'isLowRated',
+      'status',
+      'canContactMe',
+      'userName',
+      'userEmail',
+      'escalatedTo',
+      'escalatedReason',
+      'createdAt',
+    ]);
+  }
+
+  private static buildAdminListFilter(
+    dto: ListAdminFeedbackDto,
+  ): Record<string, unknown> {
+    const filter: Record<string, unknown> = {
+      ...(dto.status ? { status: dto.status } : {}),
+      ...(dto.type ? { type: dto.type } : {}),
+      ...buildDateRangeFilter(dto),
+    };
+    // Case-insensitive substring match against the one free-text field —
+    // same convention Listings' search switched to (regex, not $text).
+    if (dto.search) {
+      filter.feedbackDescription = new RegExp(escapeRegex(dto.search), 'i');
+    }
+    return filter;
   }
 
   // Admin dashboard — 5 sections, all scoped to the same period filter

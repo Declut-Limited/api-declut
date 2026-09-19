@@ -2730,7 +2730,7 @@
                 "feedback"
               ]
             },
-            "description": "Submits feedback for the caller's own account. type is one of share_an_improvement|report_a_problem|share_an_issue|others. screenshot is required (400 otherwise) only when type is report_a_problem — same MediaAsset shape as a listing's images/video (upload to Cloudinary first via GET /media/upload-signature). experience is a 1-5 rating. canContactMe defaults to false when omitted. Response includes a server-assigned slug (FBK-####) and status (defaults to 'new').",
+            "description": "Submits feedback for the caller's own account. type is one of share_an_improvement|report_a_problem|share_an_issue|others. attachment is required (400 otherwise) only when type is report_a_problem — same MediaAsset shape as a listing's images/video (upload to Cloudinary first via GET /media/upload-signature). experience is a 1-5 rating. canContactMe defaults to false when omitted. Response includes a server-assigned slug (FBK-####) and status (defaults to 'new'). Renamed from `screenshot` to `attachment`.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"type\": \"share_an_improvement\",\n  \"feedbackDescription\": \"It would be great if the search page remembered my last filters between visits.\",\n  \"canContactMe\": true,\n  \"experience\": 4\n}",
@@ -2761,7 +2761,7 @@
           ]
         },
         {
-          "name": "Submit feedback (report a problem, with screenshot)",
+          "name": "Submit feedback (report a problem, with attachment)",
           "request": {
             "method": "POST",
             "header": [
@@ -2785,10 +2785,10 @@
                 "feedback"
               ]
             },
-            "description": "Same endpoint as \"Submit feedback\" — shown separately since type=report_a_problem is the one case where screenshot is required (400 with \"screenshot is required when reporting a problem\" if omitted).",
+            "description": "Same endpoint as \"Submit feedback\" — shown separately since type=report_a_problem is the one case where attachment is required (400 with \"attachment is required when reporting a problem\" if omitted).",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"type\": \"report_a_problem\",\n  \"feedbackDescription\": \"The app crashed when I tried to upload a photo while creating a listing.\",\n  \"canContactMe\": false,\n  \"screenshot\": {\n    \"publicId\": \"feedback/screenshot_001\",\n    \"url\": \"http://res.cloudinary.com/example/image/upload/v1/feedback/screenshot_001.png\",\n    \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/feedback/screenshot_001.png\"\n  },\n  \"experience\": 2\n}",
+              "raw": "{\n  \"type\": \"report_a_problem\",\n  \"feedbackDescription\": \"The app crashed when I tried to upload a photo while creating a listing.\",\n  \"canContactMe\": false,\n  \"attachment\": {\n    \"publicId\": \"feedback/attachment_001\",\n    \"url\": \"http://res.cloudinary.com/example/image/upload/v1/feedback/attachment_001.png\",\n    \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/feedback/attachment_001.png\"\n  },\n  \"experience\": 2\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4297,6 +4297,46 @@
                   ]
                 },
                 "description": "Escrow is its own collection/module (src/escrow/) as of 2026-08-28 — one row per Transaction, created once payment is verified. Gated under the transactions permission bucket, no dedicated RBAC bucket of its own. transaction is now populated ({_id, reference}) on each row (was a flat transactionId string); the listing field was renamed from product; status gained FROZEN. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate). Each row now also includes the escrow's own _id (2026-09-18 — was missing entirely before, only the nested transaction._id was present)."
+              },
+              "response": []
+            },
+            {
+              "name": "Export escrows (CSV)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/escrows/export?startDate=2026-01-01&endDate=2026-12-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "escrows",
+                    "export"
+                  ],
+                  "query": [
+                    {
+                      "key": "startDate",
+                      "value": "2026-01-01",
+                      "disabled": true,
+                      "description": "Filters on createdAt."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-12-31",
+                      "disabled": true,
+                      "description": "endDate must not be earlier than startDate."
+                    }
+                  ]
+                },
+                "description": "Unpaginated CSV, same date-range filter as \"List escrows\". One row per escrow: slug, transactionReference, buyerName/Email, sellerName/Email, listingTitle, amountPaid, amountHeld, platformFee, sellerPayoutAmount, status, createdAt. Gated transactions/view (no dedicated escrow RBAC bucket, same as the list/detail)."
               },
               "response": []
             },
@@ -7213,6 +7253,64 @@
               "response": []
             },
             {
+              "name": "Export feedback (CSV)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/feedback/export?status=new&type=report_a_problem&search=crash&startDate=2026-01-01&endDate=2026-12-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "feedback",
+                    "export"
+                  ],
+                  "query": [
+                    {
+                      "key": "status",
+                      "value": "new",
+                      "disabled": true,
+                      "description": "One of new|in_review|resolved|escalated."
+                    },
+                    {
+                      "key": "type",
+                      "value": "report_a_problem",
+                      "disabled": true,
+                      "description": "One of share_an_improvement|report_a_problem|share_an_issue|others."
+                    },
+                    {
+                      "key": "search",
+                      "value": "crash",
+                      "disabled": true,
+                      "description": "Case-insensitive substring match against feedbackDescription."
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-01-01",
+                      "disabled": true,
+                      "description": "Filters on createdAt."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-12-31",
+                      "disabled": true,
+                      "description": "endDate must not be earlier than startDate."
+                    }
+                  ]
+                },
+                "description": "Unpaginated CSV, same status/type/search/date-range filter as \"List feedback\". One row per feedback: slug, type, feedbackDescription, rating, isLowRated, status, canContactMe, userName, userEmail, escalatedTo, escalatedReason, createdAt. Gated feedback/view."
+              },
+              "response": []
+            },
+            {
               "name": "Feedback analytics",
               "request": {
                 "method": "GET",
@@ -7281,6 +7379,199 @@
                   ]
                 },
                 "description": "No period filter — a live snapshot, same \"some cards are live, not period-scoped\" split the main admin dashboard uses. needsAttention: {unreviewedReportProblem (type=report_a_problem AND status=new), lowRatedUnresolvedFeedback (rating<=2.5 AND status!=resolved), escalatedToOtherTeam (status=escalated)}. recentFeedback: the 3 most recent submissions, same row shape as \"List feedback\". Gated feedback/view."
+              },
+              "response": []
+            },
+            {
+              "name": "Get feedback by ID or slug",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/feedback/{{feedbackId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "feedback",
+                    "{{feedbackId}}"
+                  ]
+                },
+                "description": "Resolves by raw id or by slug (FBK-####) — use either in place of {{feedbackId}}. Returns the full detail: slug/type/feedbackDescription/rating/status/canContactMe/attachment/createdAt/updatedAt, escalatedTo/escalatedReason/escalatedInternalNote (once escalated), a richer user ({id, name, email, phone, slug, listingCount}), the full activityLogs timeline (oldest first, from submission through every admin action, each with a resolved actor), and internalNotes (newest first). Gated feedback/view."
+              },
+              "response": []
+            },
+            {
+              "name": "Mark feedback as in review",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/feedback/{{feedbackId}}/status",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "feedback",
+                    "{{feedbackId}}",
+                    "status"
+                  ]
+                },
+                "description": "One endpoint handles all three transitions (status picks which) — shown here three times with different bodies for clarity. status is one of in_review|resolved|escalated (not new — there is no \"mark as new\" action). No prior-state guard, any status can move to any other. Gated feedback/write.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"in_review\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Mark feedback as resolved",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/feedback/{{feedbackId}}/status",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "feedback",
+                    "{{feedbackId}}",
+                    "status"
+                  ]
+                },
+                "description": "Same endpoint as \"Mark feedback as in review\" — see its description.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"resolved\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Escalate feedback",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/feedback/{{feedbackId}}/status",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "feedback",
+                    "{{feedbackId}}",
+                    "status"
+                  ]
+                },
+                "description": "Same endpoint as \"Mark feedback as in review\" — status=escalated additionally requires escalatedTo (one of Customer Support|Operations|Product|Engineering|Finance), escalatedReason (one of Operational Issue|Payment Issue|Security Concern|Product Defect|Needs Product Decision), and escalatedInternalNote (5-2000 chars, free text) — all three 400 if missing/invalid. All three are stored directly on the Feedback document, not a separate schema.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"escalated\",\n  \"escalatedTo\": \"Engineering\",\n  \"escalatedReason\": \"Product Defect\",\n  \"escalatedInternalNote\": \"Reproduced consistently on Android 14 — likely a native crash in the image picker.\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "feedback-notes",
+          "item": [
+            {
+              "name": "Add feedback internal note",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/feedback-notes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "feedback-notes"
+                  ]
+                },
+                "description": "Admin-only, gated feedback/write (not just any authenticated admin). writtenBy always comes from the caller's own token, never the body. Mirrors POST /admin/transaction-notes exactly — same shape, same \"flat route next to its parent resource\" convention. Shown inline on the feedback detail's internalNotes, newest first.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"feedbackId\": \"{{feedbackId}}\",\n  \"description\": \"Reached out to the user for device/OS details to reproduce the crash.\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
               },
               "response": []
             }

@@ -11,6 +11,7 @@ import { SettingsModule } from '../settings/settings.module';
 import { KycModule } from '../kyc/kyc.module';
 import { EmailModule } from '../email/email.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
+import { EscrowModule } from '../escrow/escrow.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { AuditLogModule } from '../audit-log/audit-log.module';
     KycModule,
     EmailModule,
     AuditLogModule,
+    EscrowModule,
   ],
   controllers: [AdminController],
   providers: [AdminService],
