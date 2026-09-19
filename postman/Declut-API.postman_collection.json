@@ -3406,7 +3406,7 @@
                         "{{userId}}"
                       ]
                     },
-                    "description": "Works on a User id-or-slug (USR-####, insights + recent transactions + KYC) or an Admin id-or-slug (ADM-####, role/company/permissions instead) — both sides resolve by slug now (2026-09-18), not just id. Admin's status field is its real accountStatus (pending/active/deactivated), not hardcoded. Admin's details.name is now populated (2026-09-19 — was missing entirely). assignedRole uses `_id` (not `id`) for the Role's own id, matching the app-wide id -> _id rename on this detail view. Also returns deactivation ({reason, comment?, deactivatedAt}), suspension, and ban — but only while status is deactivated/banned/suspended (explicit instruction, 2026-09-19); absent entirely for an active/pending user. deactivation is only ever populated by a self-service POST /users/me/deactivate or POST /admin/auth/me/deactivate — the admin-triggered deactivate() stays a flat status flip with no reason."
+                    "description": "Works on a User id-or-slug (USR-####, insights + recent transactions + KYC) or an Admin id-or-slug (ADM-####, role/company/permissions instead) — both sides resolve by slug now (2026-09-18), not just id. Admin's status field is its real accountStatus (pending/active/deactivated), not hardcoded. Admin's details.name is now populated (2026-09-19 — was missing entirely). assignedRole uses `_id` (not `id`) for the Role's own id, matching the app-wide id -> _id rename on this detail view. Also returns deactivation ({reason, comment?, deactivatedAt, reactivatedAt?, reactivatedBy?, reactivationReason?}), suspension ({reason, durationDays, suspendedAt, suspendedBy, unsuspendedAt?, unsuspendedBy?, unsuspensionReason?}), and ban — but only while status is deactivated/banned/suspended (explicit instruction, 2026-09-19); absent entirely for an active/pending user. The original reason/comment (why the account was deactivated/suspended) are permanent, never cleared by reactivate/unsuspend — the reversal’s own reason lives in reactivationReason/unsuspensionReason instead (explicit instruction — \"do not remove the predefined reason\")."
                   },
                   "response": []
                 },
@@ -3458,6 +3458,53 @@
                   ]
                 },
                 {
+                  "name": "unsuspend",
+                  "description": "",
+                  "item": [
+                    {
+                      "name": "Unsuspend user",
+                      "request": {
+                        "method": "PATCH",
+                        "header": [
+                          {
+                            "key": "Authorization",
+                            "value": "Bearer {{adminAccessToken}}",
+                            "type": "text"
+                          },
+                          {
+                            "key": "Content-Type",
+                            "value": "application/json",
+                            "type": "text"
+                          }
+                        ],
+                        "url": {
+                          "raw": "{{baseUrl}}/admin/users/{{userId}}/unsuspend",
+                          "host": [
+                            "{{baseUrl}}"
+                          ],
+                          "path": [
+                            "admin",
+                            "users",
+                            "{{userId}}",
+                            "unsuspend"
+                          ]
+                        },
+                        "description": "User-only — Admin has no suspended state. Only valid while currently suspended. The original suspension reason/durationDays/suspendedBy are never touched (explicit instruction — \"do not remove the predefined reason\"); only suspendedAt is nulled, and unsuspendedAt/unsuspendedBy/unsuspensionReason are stamped (the calling admin’s own stated reason for lifting it). Audit-logged as user.unsuspended. 2026-09-19, explicit instruction.",
+                        "body": {
+                          "mode": "raw",
+                          "raw": "{\n  \"unsuspensionReason\": \"Appeal reviewed and approved by compliance team.\"\n}",
+                          "options": {
+                            "raw": {
+                              "language": "json"
+                            }
+                          }
+                        }
+                      },
+                      "response": []
+                    }
+                  ]
+                },
+                {
                   "name": "reactivate",
                   "description": "",
                   "item": [
@@ -3469,6 +3516,11 @@
                           {
                             "key": "Authorization",
                             "value": "Bearer {{adminAccessToken}}",
+                            "type": "text"
+                          },
+                          {
+                            "key": "Content-Type",
+                            "value": "application/json",
                             "type": "text"
                           }
                         ],
@@ -3484,7 +3536,16 @@
                             "reactivate"
                           ]
                         },
-                        "description": ""
+                        "description": "Unified (2026-09-19, explicit instruction — \"give me an endpoint to re-activate (whether an admin or a user)\") — {{userId}} can be either a User or an Admin id/slug, resolved the same way GET /admin/users/{{userId}} does. Only valid from deactivated (or, for a User only, banned — goes through the older flat reversal with no field tracking, since no \"unban\" action exists yet); a suspended User 400s pointing to unsuspend instead. The original deactivation reason/comment are never touched (explicit instruction — \"do not remove the predefined reason\"); only deactivatedAt is nulled, and reactivatedAt/reactivatedBy/reactivationReason are stamped (the calling admin’s own stated reason for restoring access). Superseded the separate admin-only PATCH admin/auth/sub-admins/{{subAdminId}}/reactivate, which is now removed. Audit-logged as user.reactivated / admin.reactivated.",
+                        "body": {
+                          "mode": "raw",
+                          "raw": "{\n  \"reactivationReason\": \"Verified via support ticket, identity confirmed.\"\n}",
+                          "options": {
+                            "raw": {
+                              "language": "json"
+                            }
+                          }
+                        }
                       },
                       "response": []
                     }
@@ -6341,40 +6402,6 @@
                               ]
                             },
                             "description": "Flat status flip to deactivated."
-                          },
-                          "response": []
-                        }
-                      ]
-                    },
-                    {
-                      "name": "reactivate",
-                      "description": "",
-                      "item": [
-                        {
-                          "name": "Reactivate admin",
-                          "request": {
-                            "method": "PATCH",
-                            "header": [
-                              {
-                                "key": "Authorization",
-                                "value": "Bearer {{adminAccessToken}}",
-                                "type": "text"
-                              }
-                            ],
-                            "url": {
-                              "raw": "{{baseUrl}}/admin/auth/sub-admins/{{subAdminId}}/reactivate",
-                              "host": [
-                                "{{baseUrl}}"
-                              ],
-                              "path": [
-                                "admin",
-                                "auth",
-                                "sub-admins",
-                                "{{subAdminId}}",
-                                "reactivate"
-                              ]
-                            },
-                            "description": "Flat status flip back to active — undoes either suspend or deactivate."
                           },
                           "response": []
                         }

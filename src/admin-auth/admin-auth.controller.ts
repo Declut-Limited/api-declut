@@ -143,19 +143,15 @@ export class AdminAuthController {
     return this.adminAuthService.updateRole(id, dto);
   }
 
-  // Same flat trust model as sub-admin creation/role reassignment above —
-  // any authenticated admin, no extra RBAC check. 2026-09-17. 'suspend'
-  // removed entirely 2026-09-18, explicit instruction — AdminAccountStatus
-  // no longer has a 'suspended' value.
-  @UseGuards(AdminJwtAuthGuard)
-  @Patch('sub-admins/:id/deactivate')
-  deactivateAdmin(@Param('id') id: string) {
-    return this.adminAuthService.deactivateAdmin(id);
-  }
-
-  @UseGuards(AdminJwtAuthGuard)
-  @Patch('sub-admins/:id/reactivate')
-  reactivateAdmin(@Param('id') id: string) {
-    return this.adminAuthService.reactivateAdmin(id);
-  }
+  // 'suspend' removed entirely 2026-09-18, explicit instruction —
+  // AdminAccountStatus no longer has a 'suspended' value. Its own
+  // 'reactivate' and 'deactivate' counterparts are gone too (2026-09-19) —
+  // both superseded by the unified PATCH /admin/users/:idOrSlug/reactivate
+  // and /deactivate (see AdminController), which resolve either a User or
+  // an Admin from one call site, now gated `users`/`write` (a deliberate
+  // exception to the flat-trust-model precedent every other admin-on-admin
+  // action here still follows) and, for reactivate, apply real field
+  // tracking (reactivatedAt/reactivatedBy/reactivationReason) rather than
+  // this flat flip. AdminAuthService.deactivateAdmin() itself still exists
+  // — AdminService's unified method calls it directly.
 }

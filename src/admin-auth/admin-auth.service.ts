@@ -12,7 +12,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { JwtService } from '@nestjs/jwt';
-import { Model, isValidObjectId } from 'mongoose';
+import { Model, Types, isValidObjectId } from 'mongoose';
 import { randomBytes, randomUUID, createHash } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import type { StringValue } from 'ms';
@@ -234,8 +234,43 @@ export class AdminAuthService {
     return this.setAccountStatus(adminId, AdminAccountStatus.DEACTIVATED);
   }
 
-  async reactivateAdmin(adminId: string): Promise<AdminProfile> {
-    return this.setAccountStatus(adminId, AdminAccountStatus.ACTIVE);
+  // Replaces the old flat reactivateAdmin() (removed 2026-09-19) — Admin
+  // only ever has DEACTIVATED as a "problem" status (no suspended/banned),
+  // so this fully covers Admin's reactivation, with real field tracking.
+  // The original deactivation.reason/comment (why it was deactivated) are
+  // never touched — explicit instruction, 2026-09-19: "do not remove the
+  // predefined reason for deactivations." Only deactivatedAt is nulled;
+  // stamps reactivatedAt/reactivatedBy/reactivationReason (the acting
+  // admin's own stated reason for restoring it). Called only from
+  // AdminService.reactivateUserOrAdmin() (the unified admin-or-user
+  // endpoint). An admin deactivated via the older flat, reason-less
+  // deactivateAdmin() has no `deactivation` object at all — this still
+  // works for that case, just without a reason/comment to preserve.
+  async reactivateFromDeactivation(
+    adminId: string,
+    byAdminId: string,
+    reactivationReason: string,
+  ): Promise<AdminProfile> {
+    const admin = await this.adminModel.findById(adminId).exec();
+    if (!admin) {
+      throw new NotFoundException('Admin not found');
+    }
+    if (admin.accountStatus !== AdminAccountStatus.DEACTIVATED) {
+      throw new BadRequestException(
+        `Admin is ${admin.accountStatus} — reactivate only applies to a deactivated account`,
+      );
+    }
+    admin.accountStatus = AdminAccountStatus.ACTIVE;
+    admin.deactivation = {
+      ...admin.deactivation,
+      deactivatedAt: null,
+      reactivatedAt: new Date(),
+      reactivatedBy: new Types.ObjectId(byAdminId),
+      reactivationReason,
+    };
+    await admin.save();
+    await admin.populate('role', ROLE_POPULATE_FIELDS);
+    return this.toProfile(admin);
   }
 
   private async setAccountStatus(

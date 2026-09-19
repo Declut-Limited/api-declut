@@ -54,18 +54,47 @@ export type AdminDeactivationReasonValue =
 // Mirrors User's Suspension/Ban shape — one object, not a field split
 // across deactivatedAt + deactivationReason (reworked 2026-09-19, explicit
 // instruction — "do the deactivation like you did the suspension and ban").
-// No *By field — deactivation is always self-service, there's no separate
-// acting party to record.
+// No *By field on deactivation itself — deactivation is always self-service;
+// reactivatedBy below is different, since restoring access IS always an
+// admin action.
 @Schema({ _id: false })
 export class Deactivation {
-  @Prop({ required: true, enum: ADMIN_DEACTIVATION_REASONS })
-  reason: AdminDeactivationReasonValue;
+  // Permanent — never touched by reactivateFromDeactivation() (explicit
+  // instruction, 2026-09-19: "do not remove the predefined reason for
+  // deactivations"). Why the account was deactivated stays on record even
+  // after it's restored; the reason it was *restored* lives in its own
+  // reactivationReason field below instead. Not `required` (unlike the DTO,
+  // which does require it at the actual deactivation boundary) — an admin
+  // deactivated via the older flat, reason-less deactivateAdmin() has no
+  // `deactivation` object at all, and reactivating it must still work
+  // without one to preserve.
+  @Prop({ enum: ADMIN_DEACTIVATION_REASONS })
+  reason?: AdminDeactivationReasonValue;
 
   @Prop({ trim: true, maxlength: 1000 })
   comment?: string;
 
-  @Prop({ required: true })
-  deactivatedAt: Date;
+  // Nulled (not removed) by reactivateFromDeactivation() — required: true
+  // dropped so the write doesn't fail validation. 2026-09-19, explicit
+  // instruction ("the atDate ... to null"). Explicit `type: Date` —
+  // @nestjs/mongoose can't infer a type from a `Date | null` union via
+  // reflection.
+  @Prop({ type: Date })
+  deactivatedAt?: Date | null;
+
+  // Set only by AdminAuthService.reactivateFromDeactivation() — 2026-09-19,
+  // explicit instruction.
+  @Prop()
+  reactivatedAt?: Date;
+
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Admin' })
+  reactivatedBy?: Types.ObjectId;
+
+  // The acting admin's own stated reason for restoring the account —
+  // distinct from `reason` above (why it was deactivated in the first
+  // place). Free text, no predefined list. 2026-09-19, explicit instruction.
+  @Prop({ trim: true, maxlength: 1000 })
+  reactivationReason?: string;
 }
 
 // Endpoint 2 of the 3 admin-profile update endpoints (PATCH

@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, isValidObjectId } from 'mongoose';
 import {
@@ -242,6 +246,11 @@ export class UsersService {
     return user;
   }
 
+  // Flat, no field-tracking — kept as the only reversal path for BANNED
+  // (no "unban" action was asked for, 2026-09-19). DEACTIVATED and
+  // SUSPENDED each have their own precise reversal now (see
+  // reactivateFromDeactivation()/unsuspend() below), which no longer route
+  // through here.
   async reactivate(userId: string): Promise<UserDocument> {
     const user = await this.userModel.findById(userId).exec();
     if (!user) {
@@ -250,6 +259,78 @@ export class UsersService {
     user.accountStatus = AccountStatus.ACTIVE;
     user.suspension = undefined;
     user.ban = undefined;
+    await user.save();
+    return user;
+  }
+
+  // Counterpart to suspend() above — only valid from SUSPENDED. The
+  // original `reason` (why it was suspended) is never touched — explicit
+  // instruction, 2026-09-19: "do not remove the predefined reason." Only
+  // `suspendedAt` is nulled (required: true dropped from it on the schema
+  // for exactly this write); durationDays/suspendedBy are left untouched
+  // too, a permanent record of the original suspension's terms. Stamps
+  // unsuspendedAt/unsuspendedBy/unsuspensionReason (the acting admin's own
+  // stated reason for lifting it — a distinct field, not a reuse of
+  // `reason`).
+  async unsuspend(
+    userId: string,
+    adminId: string,
+    unsuspensionReason: string,
+  ): Promise<UserDocument> {
+    const user = await this.userModel.findById(userId).exec();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (user.accountStatus !== AccountStatus.SUSPENDED) {
+      throw new BadRequestException(
+        `User is ${user.accountStatus} — unsuspend only applies to a suspended account`,
+      );
+    }
+    user.accountStatus = AccountStatus.ACTIVE;
+    user.suspension = {
+      ...user.suspension!,
+      suspendedAt: null,
+      unsuspendedAt: new Date(),
+      unsuspendedBy: new Types.ObjectId(adminId),
+      unsuspensionReason,
+    };
+    await user.save();
+    return user;
+  }
+
+  // Counterpart to deactivateOwnAccount() — only valid from DEACTIVATED.
+  // The original `reason`/`comment` (why the account was deactivated) are
+  // never touched — explicit instruction, 2026-09-19: "do not remove the
+  // predefined reason for deactivations." Only `deactivatedAt` is nulled;
+  // stamps reactivatedAt/reactivatedBy/reactivationReason (the acting
+  // admin's own stated reason for restoring it — a distinct field). Always
+  // an admin action (unlike self-service deactivation) — matches
+  // reactivate()/unsuspend()'s own admin-only posture. An account
+  // deactivated via the older flat, reason-less deactivate() has no
+  // `deactivation` object at all — this still works for that case, just
+  // without a `reason`/`comment` to preserve.
+  async reactivateFromDeactivation(
+    userId: string,
+    adminId: string,
+    reactivationReason: string,
+  ): Promise<UserDocument> {
+    const user = await this.userModel.findById(userId).exec();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (user.accountStatus !== AccountStatus.DEACTIVATED) {
+      throw new BadRequestException(
+        `User is ${user.accountStatus} — reactivate only applies to a deactivated or banned account`,
+      );
+    }
+    user.accountStatus = AccountStatus.ACTIVE;
+    user.deactivation = {
+      ...user.deactivation,
+      deactivatedAt: null,
+      reactivatedAt: new Date(),
+      reactivatedBy: new Types.ObjectId(adminId),
+      reactivationReason,
+    };
     await user.save();
     return user;
   }

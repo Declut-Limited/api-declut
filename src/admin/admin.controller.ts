@@ -22,6 +22,8 @@ import {
 import { SetKycStatusDto } from './dto/set-kyc-status.dto';
 import { SuspendUserDto } from './dto/suspend-user.dto';
 import { BanUserDto } from './dto/ban-user.dto';
+import { ReactivateAccountDto } from './dto/reactivate-account.dto';
+import { UnsuspendUserDto } from './dto/unsuspend-user.dto';
 import { EmailSellerDto } from './dto/email-seller.dto';
 import { CreateTransactionNoteDto } from './dto/create-transaction-note.dto';
 import { UpdateTransactionNoteDto } from './dto/update-transaction-note.dto';
@@ -119,16 +121,39 @@ export class AdminController {
     return this.adminService.suspendUser(id, admin.sub, dto);
   }
 
-  @Patch('users/:id/reactivate')
+  // Unified — reactivates either a User or an Admin, whichever idOrSlug
+  // resolves to (same dispatch pattern as GET users/:idOrSlug above).
+  // Replaces the old User-only PATCH users/:id/reactivate and the separate
+  // PATCH admin/auth/sub-admins/:id/reactivate (removed) — 2026-09-19,
+  // explicit instruction ("give me an endpoint to re-activate (whether an
+  // admin or a user)").
+  @Patch('users/:idOrSlug/reactivate')
   @RequirePermission('users', 'write')
-  reactivateUser(@Param('id') id: string) {
-    return this.adminService.reactivateUser(id);
+  reactivateUserOrAdmin(
+    @CurrentAdmin() admin: AdminAccessTokenPayload,
+    @Param('idOrSlug') idOrSlug: string,
+    @Body() dto: ReactivateAccountDto,
+  ) {
+    return this.adminService.reactivateUserOrAdmin(
+      idOrSlug,
+      admin.sub,
+      dto.reactivationReason,
+    );
   }
 
-  @Patch('users/:id/deactivate')
+  // Unified — deactivates either a User or an Admin, whichever idOrSlug
+  // resolves to (same dispatch pattern as reactivate above). Replaces the
+  // old User-only PATCH users/:id/deactivate and the separate
+  // PATCH admin/auth/sub-admins/:id/deactivate (removed) — 2026-09-19,
+  // explicit instruction ("admin can also deactivate users so improve this
+  // or remove it").
+  @Patch('users/:idOrSlug/deactivate')
   @RequirePermission('users', 'write')
-  deactivateUser(@Param('id') id: string) {
-    return this.adminService.deactivateUser(id);
+  deactivateUserOrAdmin(
+    @CurrentAdmin() admin: AdminAccessTokenPayload,
+    @Param('idOrSlug') idOrSlug: string,
+  ) {
+    return this.adminService.deactivateUserOrAdmin(idOrSlug, admin.sub);
   }
 
   @Patch('users/:id/ban')
@@ -139,6 +164,22 @@ export class AdminController {
     @Body() dto: BanUserDto,
   ) {
     return this.adminService.banUser(id, admin.sub, dto);
+  }
+
+  // User-only — Admin has no suspended state. 2026-09-19, explicit
+  // instruction ("another to unsuspend user").
+  @Patch('users/:id/unsuspend')
+  @RequirePermission('users', 'write')
+  unsuspendUser(
+    @CurrentAdmin() admin: AdminAccessTokenPayload,
+    @Param('id') id: string,
+    @Body() dto: UnsuspendUserDto,
+  ) {
+    return this.adminService.unsuspendUser(
+      id,
+      admin.sub,
+      dto.unsuspensionReason,
+    );
   }
 
   @Patch('users/:id/kyc')

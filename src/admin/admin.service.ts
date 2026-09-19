@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { ListingsService } from '../listings/listings.service';
 import { ListingStatus } from '../listings/schemas/listing.schema';
@@ -135,15 +139,25 @@ export class AdminService {
       // absent for those. suspension/ban mirror the same one-object shape
       // (reworked 2026-09-19, explicit instruction — "do the deactivation
       // like you did the suspension and ban").
-      deactivation?: { reason: string; comment?: string; deactivatedAt: Date };
+      deactivation?: {
+        reason?: string;
+        comment?: string;
+        deactivatedAt?: Date | null;
+        reactivatedAt?: Date;
+        reactivatedBy?: unknown;
+        reactivationReason?: string;
+      };
       // suspension is only ever set while status is currently suspended (see
-      // UsersService.suspend()/reactivate()); ban likewise for banned. Both
+      // UsersService.suspend()/unsuspend()); ban likewise for banned. Both
       // User-only — Admin has neither concept.
       suspension?: {
         reason: string;
         durationDays: number;
-        suspendedAt: Date;
+        suspendedAt?: Date | null;
         suspendedBy: unknown;
+        unsuspendedAt?: Date;
+        unsuspendedBy?: unknown;
+        unsuspensionReason?: string;
       };
       ban?: { reason: string; bannedAt: Date; bannedBy: unknown };
     };
@@ -337,22 +351,152 @@ export class AdminService {
     return this.usersService.getPrivateProfile(userId);
   }
 
-  async reactivateUser(userId: string) {
-    await this.usersService.reactivate(userId);
-    return this.usersService.getPrivateProfile(userId);
-  }
+  // Unified — resolves either a User or an Admin by id/slug (same dispatch
+  // pattern as reactivateUserOrAdmin() above) and deactivates whichever it
+  // is. Replaces the separate User-only PATCH /admin/users/:id/deactivate
+  // and Admin-only PATCH /admin/auth/sub-admins/:id/deactivate (removed) —
+  // 2026-09-19, explicit instruction ("admin can also deactivate users so
+  // improve this or remove it"), the same consolidation reactivate already
+  // got. Both remain flat status flips — no reason captured, unchanged
+  // from before, just reached through one call site now. Every
+  // deactivation is now audit-logged too — a real pre-existing gap
+  // (flagged when reactivate/unsuspend were built), closed here since this
+  // pass already touches both call sites.
+  async deactivateUserOrAdmin(idOrSlug: string, adminId: string) {
+    const user = await this.usersService.findByIdOrSlug(idOrSlug);
+    if (user) {
+      const userId = user._id.toString();
+      const oldStatus = user.accountStatus;
+      await this.usersService.deactivate(userId);
+      await this.auditLogService.record({
+        entityType: 'user',
+        entityId: userId,
+        event: 'user.deactivated',
+        actor: adminId,
+        oldState: oldStatus,
+        newState: AccountStatus.DEACTIVATED,
+      });
+      return this.usersService.getPrivateProfile(userId);
+    }
 
-  // Simpler counterpart to suspendUser() above — a flat status flip, no
-  // reason sub-document. Undone via reactivateUser() above, same as
-  // suspend/ban. 2026-09-17, explicit instruction.
-  async deactivateUser(userId: string) {
-    await this.usersService.deactivate(userId);
-    return this.usersService.getPrivateProfile(userId);
+    const admin = await this.adminAuthService.findByIdOrSlug(idOrSlug);
+    if (admin) {
+      const targetAdminId = admin._id.toString();
+      const oldStatus = admin.accountStatus;
+      const profile =
+        await this.adminAuthService.deactivateAdmin(targetAdminId);
+      await this.auditLogService.record({
+        entityType: 'admin',
+        entityId: targetAdminId,
+        event: 'admin.deactivated',
+        actor: adminId,
+        oldState: oldStatus,
+        newState: AdminAccountStatus.DEACTIVATED,
+      });
+      return profile;
+    }
+
+    throw new NotFoundException('User not found');
   }
 
   // Mirrors suspendUser() above — 2026-09-19, explicit instruction.
   async banUser(userId: string, adminId: string, dto: BanUserDto) {
     await this.usersService.ban(userId, adminId, dto);
+    return this.usersService.getPrivateProfile(userId);
+  }
+
+  // Unified — resolves either a User or an Admin by id/slug (same dispatch
+  // pattern as getUserOrAdminDetail()) and reactivates whichever it is.
+  // Explicit instruction, 2026-09-19 ("give me an endpoint to re-activate
+  // (whether an admin or a user)"). A User currently DEACTIVATED gets the
+  // new field-tracked reversal (UsersService.reactivateFromDeactivation() —
+  // preserves the original reason/comment, stamps reactivatedAt/
+  // reactivatedBy/reactivationReason); a User currently BANNED still goes
+  // through the older flat reactivate() (no field tracking — no "unban"
+  // action was asked for this pass). An Admin only ever has DEACTIVATED to
+  // reactivate from (no suspended/banned concept). SUSPENDED is explicitly
+  // rejected here — that's what the separate unsuspendUser() below is for.
+  // Every successful reactivation is audit-logged.
+  async reactivateUserOrAdmin(
+    idOrSlug: string,
+    adminId: string,
+    reactivationReason: string,
+  ) {
+    const user = await this.usersService.findByIdOrSlug(idOrSlug);
+    if (user) {
+      const userId = user._id.toString();
+      const oldStatus = user.accountStatus;
+      if (oldStatus === AccountStatus.DEACTIVATED) {
+        await this.usersService.reactivateFromDeactivation(
+          userId,
+          adminId,
+          reactivationReason,
+        );
+      } else if (oldStatus === AccountStatus.BANNED) {
+        await this.usersService.reactivate(userId);
+      } else if (oldStatus === AccountStatus.SUSPENDED) {
+        throw new BadRequestException(
+          'User is suspended — use unsuspend instead of reactivate',
+        );
+      } else {
+        throw new BadRequestException(
+          `User is ${oldStatus} — reactivate only applies to a deactivated or banned account`,
+        );
+      }
+      await this.auditLogService.record({
+        entityType: 'user',
+        entityId: userId,
+        event: 'user.reactivated',
+        actor: adminId,
+        oldState: oldStatus,
+        newState: AccountStatus.ACTIVE,
+        metadata: { reactivationReason },
+      });
+      return this.usersService.getPrivateProfile(userId);
+    }
+
+    const admin = await this.adminAuthService.findByIdOrSlug(idOrSlug);
+    if (admin) {
+      const targetAdminId = admin._id.toString();
+      const oldStatus = admin.accountStatus;
+      const profile = await this.adminAuthService.reactivateFromDeactivation(
+        targetAdminId,
+        adminId,
+        reactivationReason,
+      );
+      await this.auditLogService.record({
+        entityType: 'admin',
+        entityId: targetAdminId,
+        event: 'admin.reactivated',
+        actor: adminId,
+        oldState: oldStatus,
+        newState: AdminAccountStatus.ACTIVE,
+        metadata: { reactivationReason },
+      });
+      return profile;
+    }
+
+    throw new NotFoundException('User not found');
+  }
+
+  // User-only — Admin has no suspended state. Only valid while currently
+  // suspended (guarded, and re-guarded, in UsersService.unsuspend()).
+  // Explicit instruction, 2026-09-19 ("another to unsuspend user").
+  async unsuspendUser(
+    userId: string,
+    adminId: string,
+    unsuspensionReason: string,
+  ) {
+    await this.usersService.unsuspend(userId, adminId, unsuspensionReason);
+    await this.auditLogService.record({
+      entityType: 'user',
+      entityId: userId,
+      event: 'user.unsuspended',
+      actor: adminId,
+      oldState: AccountStatus.SUSPENDED,
+      newState: AccountStatus.ACTIVE,
+      metadata: { unsuspensionReason },
+    });
     return this.usersService.getPrivateProfile(userId);
   }
 

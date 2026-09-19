@@ -51,17 +51,38 @@ class KycInfo {
 
 @Schema({ _id: false })
 class Suspension {
+  // Permanent — never touched by unsuspend() (explicit instruction,
+  // 2026-09-19: "do not remove the predefined reason"). Why the suspension
+  // happened stays on record even after it's lifted; the reason it was
+  // *lifted* lives in its own unsuspensionReason field below instead.
   @Prop({ required: true })
   reason: string;
 
   @Prop({ required: true })
   durationDays: number;
 
-  @Prop({ required: true })
-  suspendedAt: Date;
+  // Nulled (not removed) by unsuspend() — required: true dropped so that
+  // write doesn't fail validation. 2026-09-19, explicit instruction ("the
+  // atDate ... to null"). Explicit `type: Date` — @nestjs/mongoose can't
+  // infer a type from a `Date | null` union via reflection.
+  @Prop({ type: Date })
+  suspendedAt?: Date | null;
 
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Admin', required: true })
   suspendedBy: Types.ObjectId;
+
+  // Set only by UsersService.unsuspend() — 2026-09-19, explicit instruction.
+  @Prop()
+  unsuspendedAt?: Date;
+
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Admin' })
+  unsuspendedBy?: Types.ObjectId;
+
+  // The acting admin's own stated reason for lifting the suspension —
+  // distinct from `reason` above (why it was imposed). Free text, no
+  // predefined list. 2026-09-19, explicit instruction.
+  @Prop({ trim: true, maxlength: 1000 })
+  unsuspensionReason?: string;
 }
 
 // Mirrors Suspension above, trimmed — a ban has no duration/outcome
@@ -99,18 +120,50 @@ export type UserDeactivationReasonValue =
 // Mirrors Suspension/Ban's shape — one object, not a field split across
 // deactivatedAt + deactivationReason (reworked 2026-09-19, explicit
 // instruction — "do the deactivation like you did the suspension and ban").
-// No *By field (unlike Suspension.suspendedBy/Ban.bannedBy) — deactivation
-// is always self-service, there's no separate acting party to record.
+// No *By field on deactivation itself (unlike Suspension.suspendedBy/
+// Ban.bannedBy) — deactivation is always self-service, there's no separate
+// acting party to record for that half; reactivatedBy below is different,
+// since restoring the account IS always an admin action.
 @Schema({ _id: false })
 class Deactivation {
-  @Prop({ required: true, enum: USER_DEACTIVATION_REASONS })
-  reason: UserDeactivationReasonValue;
+  // Permanent — never touched by reactivateFromDeactivation() (explicit
+  // instruction, 2026-09-19: "do not remove the predefined reason for
+  // deactivations"). Why the account was deactivated stays on record even
+  // after it's restored; the reason it was *restored* lives in its own
+  // reactivationReason field below instead. Not `required` (unlike the DTO,
+  // which does require it at the actual deactivation boundary) — an account
+  // deactivated via the older flat, reason-less UsersService.deactivate()
+  // has no `deactivation` object at all, and reactivating it must still
+  // work without one to preserve.
+  @Prop({ enum: USER_DEACTIVATION_REASONS })
+  reason?: UserDeactivationReasonValue;
 
   @Prop({ trim: true, maxlength: 1000 })
   comment?: string;
 
-  @Prop({ required: true })
-  deactivatedAt: Date;
+  // Nulled (not removed) by reactivateFromDeactivation() — required: true
+  // dropped so that write doesn't fail validation. 2026-09-19, explicit
+  // instruction ("the atDate ... to null"). Explicit `type: Date` —
+  // @nestjs/mongoose can't infer a type from a `Date | null` union via
+  // reflection.
+  @Prop({ type: Date })
+  deactivatedAt?: Date | null;
+
+  // Set only by UsersService.reactivateFromDeactivation() — 2026-09-19,
+  // explicit instruction. Always an admin action (self-deactivation is
+  // self-service, but restoring access is not — matches this app's existing
+  // "reactivate/unsuspend are all admin-only" precedent).
+  @Prop()
+  reactivatedAt?: Date;
+
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Admin' })
+  reactivatedBy?: Types.ObjectId;
+
+  // The acting admin's own stated reason for restoring the account —
+  // distinct from `reason` above (why it was deactivated in the first
+  // place). Free text, no predefined list. 2026-09-19, explicit instruction.
+  @Prop({ trim: true, maxlength: 1000 })
+  reactivationReason?: string;
 }
 
 // Single user type — can both buy and sell. "buyer"/"seller" elsewhere in
