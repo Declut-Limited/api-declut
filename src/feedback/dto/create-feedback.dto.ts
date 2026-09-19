@@ -23,7 +23,7 @@ export class CreateFeedbackDto {
   @IsString()
   @MinLength(5)
   @MaxLength(2000)
-  moreDescription: string;
+  feedbackDescription: string;
 
   @IsOptional()
   @IsBoolean()

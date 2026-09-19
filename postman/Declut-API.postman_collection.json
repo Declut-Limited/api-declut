@@ -2733,7 +2733,7 @@
             "description": "Submits feedback for the caller's own account. category is one of share_an_improvement|report_a_problem|share_an_issue|others. screenshot is required (400 otherwise) only when category is report_a_problem — same MediaAsset shape as a listing's images/video (upload to Cloudinary first via GET /media/upload-signature). experience is a 1-5 rating. canContactMe defaults to false when omitted.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"category\": \"share_an_improvement\",\n  \"moreDescription\": \"It would be great if the search page remembered my last filters between visits.\",\n  \"canContactMe\": true,\n  \"experience\": 4\n}",
+              "raw": "{\n  \"category\": \"share_an_improvement\",\n  \"feedbackDescription\": \"It would be great if the search page remembered my last filters between visits.\",\n  \"canContactMe\": true,\n  \"experience\": 4\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2785,7 +2785,7 @@
             "description": "Same endpoint as \"Submit feedback\" — shown separately since category=report_a_problem is the one case where screenshot is required (400 with \"screenshot is required when reporting a problem\" if omitted).",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"category\": \"report_a_problem\",\n  \"moreDescription\": \"The app crashed when I tried to upload a photo while creating a listing.\",\n  \"canContactMe\": false,\n  \"screenshot\": {\n    \"publicId\": \"feedback/screenshot_001\",\n    \"url\": \"http://res.cloudinary.com/example/image/upload/v1/feedback/screenshot_001.png\",\n    \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/feedback/screenshot_001.png\"\n  },\n  \"experience\": 2\n}",
+              "raw": "{\n  \"category\": \"report_a_problem\",\n  \"feedbackDescription\": \"The app crashed when I tried to upload a photo while creating a listing.\",\n  \"canContactMe\": false,\n  \"screenshot\": {\n    \"publicId\": \"feedback/screenshot_001\",\n    \"url\": \"http://res.cloudinary.com/example/image/upload/v1/feedback/screenshot_001.png\",\n    \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/feedback/screenshot_001.png\"\n  },\n  \"experience\": 2\n}",
               "options": {
                 "raw": {
                   "language": "json"

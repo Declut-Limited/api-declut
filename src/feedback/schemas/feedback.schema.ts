@@ -26,7 +26,7 @@ export class Feedback {
   category: FeedbackCategory;
 
   @Prop({ required: true, trim: true, maxlength: 2000 })
-  moreDescription: string;
+  feedbackDescription: string;
 
   @Prop({ default: false })
   canContactMe: boolean;

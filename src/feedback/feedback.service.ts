@@ -17,7 +17,7 @@ export class FeedbackService {
     return this.feedbackModel.create({
       user: userId,
       category: dto.category,
-      moreDescription: dto.moreDescription,
+      feedbackDescription: dto.feedbackDescription,
       canContactMe: dto.canContactMe ?? false,
       screenshot: dto.screenshot,
       experience: dto.experience,
