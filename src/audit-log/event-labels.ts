@@ -44,6 +44,8 @@ const EVENT_LABELS: Record<string, string> = {
   'feedback.resolved': 'Marked as resolved',
   'feedback.escalated': 'Escalated',
   feedback_note_added: 'Internal note added',
+  feedback_note_updated: 'Internal note updated',
+  feedback_note_removed: 'Internal note removed',
   // code_mismatch_max_attempts: 'Marked as disputed after repeated wrong codes',
   // code_mismatch: 'Wrong confirmation code entered',
 };

@@ -7625,7 +7625,92 @@
                   }
                 }
               },
-              "response": []
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const data = pm.response.json();",
+                      "if (data && data.data && data.data[\"id\"]) {",
+                      "    pm.collectionVariables.set(\"feedbackNoteId\", data.data[\"id\"]);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "{feedbackNoteId}",
+              "item": [
+                {
+                  "name": "Update feedback internal note",
+                  "request": {
+                    "method": "PATCH",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json",
+                        "type": "text"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"description\": \"Followed up with the user — device/OS confirmed, escalating to engineering.\"\n}",
+                      "options": {
+                        "raw": {
+                          "language": "json"
+                        }
+                      }
+                    },
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/feedback-notes/{{feedbackNoteId}}",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "feedback-notes",
+                        "{{feedbackNoteId}}"
+                      ]
+                    },
+                    "description": "Only description is editable — feedbackId/writtenBy are fixed at creation and aren't accepted here at all. Only the admin who wrote the note can edit it — 403 for any other admin, even with feedback/write."
+                  },
+                  "response": []
+                },
+                {
+                  "name": "Remove feedback internal note",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/feedback-notes/{{feedbackNoteId}}",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "feedback-notes",
+                        "{{feedbackNoteId}}"
+                      ]
+                    },
+                    "description": "Hard delete — a note has no downstream reference elsewhere. Only the admin who wrote the note can remove it — 403 for any other admin, even with feedback/delete."
+                  },
+                  "response": []
+                }
+              ]
             }
           ]
         }
@@ -7788,6 +7873,11 @@
     },
     {
       "key": "feedbackSlug",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "feedbackNoteId",
       "value": "",
       "type": "string"
     }

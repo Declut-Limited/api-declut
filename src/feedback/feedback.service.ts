@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, isValidObjectId } from 'mongoose';
 import {
@@ -412,6 +416,65 @@ export class FeedbackService {
     return this.shapeNote(note);
   }
 
+  // Admin-only (gated at the controller). Only description is editable —
+  // feedback/writtenBy are fixed at creation and can never change, so
+  // neither is accepted here (see UpdateFeedbackNoteDto). Object-level
+  // ownership: only the admin who wrote the note can edit it — explicit
+  // instruction, same posture as TransactionsService.updateNote(). 403, not
+  // 404 — the note genuinely exists, the caller just isn't allowed to touch it.
+  async updateNote(noteId: string, adminId: string, description: string) {
+    const note = await this.findRawNote(noteId);
+    if (note.writtenBy.toString() !== adminId) {
+      throw new ForbiddenException(
+        'Only the admin who wrote this note can edit it',
+      );
+    }
+    const oldDescription = note.description;
+    note.description = description;
+    await note.save();
+
+    await this.auditLogService.record({
+      entityType: 'feedback',
+      entityId: note.feedback.toString(),
+      event: 'feedback_note_updated',
+      actor: adminId,
+      oldState: oldDescription,
+      newState: description,
+      metadata: { noteId },
+    });
+
+    await note.populate({
+      path: 'writtenBy',
+      select: 'name role',
+      populate: { path: 'role', select: 'name' },
+    });
+    return this.shapeNote(note);
+  }
+
+  // Hard delete — a note has no downstream reference the way Listings/
+  // Transactions do. Same writtenBy-only ownership check as updateNote() above.
+  async removeNote(noteId: string, adminId: string): Promise<void> {
+    const note = await this.findRawNote(noteId);
+    if (note.writtenBy.toString() !== adminId) {
+      throw new ForbiddenException(
+        'Only the admin who wrote this note can remove it',
+      );
+    }
+    const feedbackId = note.feedback.toString();
+    const description = note.description;
+    await note.deleteOne();
+
+    await this.auditLogService.record({
+      entityType: 'feedback',
+      entityId: feedbackId,
+      event: 'feedback_note_removed',
+      actor: adminId,
+      oldState: description,
+      newState: 'deleted',
+      metadata: { noteId },
+    });
+  }
+
   // Mark in_review / resolved / escalate — one endpoint for all three
   // transitions (status picks which), same shape as ReportsService.updateStatus().
   // No prior-state guard — same "any status to any other, admin's call"
@@ -462,6 +525,19 @@ export class FeedbackService {
       throw new NotFoundException('Feedback not found');
     }
     return feedback;
+  }
+
+  // Mirrors TransactionsService.findRawNote() — a malformed id 404s instead
+  // of throwing a raw Mongoose CastError.
+  private async findRawNote(id: string): Promise<FeedbackNoteDocument> {
+    if (!isValidObjectId(id)) {
+      throw new NotFoundException('Feedback note not found');
+    }
+    const note = await this.feedbackNoteModel.findById(id);
+    if (!note) {
+      throw new NotFoundException('Feedback note not found');
+    }
+    return note;
   }
 
   private async findNotesForFeedback(
