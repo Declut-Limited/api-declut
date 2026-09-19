@@ -51,13 +51,21 @@ export const ADMIN_DEACTIVATION_REASONS = [
 export type AdminDeactivationReasonValue =
   (typeof ADMIN_DEACTIVATION_REASONS)[number];
 
+// Mirrors User's Suspension/Ban shape — one object, not a field split
+// across deactivatedAt + deactivationReason (reworked 2026-09-19, explicit
+// instruction — "do the deactivation like you did the suspension and ban").
+// No *By field — deactivation is always self-service, there's no separate
+// acting party to record.
 @Schema({ _id: false })
-export class DeactivationReason {
+export class Deactivation {
   @Prop({ required: true, enum: ADMIN_DEACTIVATION_REASONS })
   reason: AdminDeactivationReasonValue;
 
   @Prop({ trim: true, maxlength: 1000 })
   comment?: string;
+
+  @Prop({ required: true })
+  deactivatedAt: Date;
 }
 
 // Endpoint 2 of the 3 admin-profile update endpoints (PATCH
@@ -129,12 +137,9 @@ export class Admin {
 
   // Set only by POST /admin/auth/me/deactivate (self-service) — see
   // AdminAuthService.deactivateOwnAccount(). Admin-triggered
-  // deactivateAdmin() (a flat status flip, no reason) leaves these unset.
-  @Prop()
-  deactivatedAt?: Date;
-
-  @Prop({ type: DeactivationReason })
-  deactivationReason?: DeactivationReason;
+  // deactivateAdmin() (a flat status flip, no reason) leaves this unset.
+  @Prop({ type: Deactivation })
+  deactivation?: Deactivation;
 
   // Set once, the very first time this admin successfully logs in — the
   // same moment accountStatus flips PENDING -> ACTIVE (see

@@ -42,9 +42,9 @@ import { toCsv } from '../common/utils/csv.util';
 import { countTrend } from '../common/utils/trend.util';
 import { DateRangeDto } from '../common/dto/date-range.dto';
 
-// Statuses under which a User's deactivatedAt/deactivationReason are shown
-// to an admin — explicit instruction, 2026-09-19. Shared by listUsers() and
-// getUserOrAdminDetail() so the rule isn't duplicated.
+// Statuses under which a User's deactivation/suspension/ban details are
+// shown to an admin — explicit instruction, 2026-09-19. Shared by
+// listUsers() and getUserOrAdminDetail() so the rule isn't duplicated.
 const USER_REASON_VISIBLE_STATUSES: string[] = [
   AccountStatus.DEACTIVATED,
   AccountStatus.BANNED,
@@ -128,13 +128,14 @@ export class AdminService {
       // Only present when status is deactivated/banned/suspended (User) or
       // deactivated (Admin) — explicit instruction, 2026-09-19: "we don't
       // need to show this except admins are fetching users that are ...
-      // deactivated, banned or suspended". Only ever populated for a
-      // self-service deactivation (POST /users/me/deactivate or
-      // /admin/auth/me/deactivate) — the older admin-triggered
+      // deactivated, banned or suspended". `deactivation` is only ever
+      // populated for a self-service deactivation (POST /users/me/deactivate
+      // or /admin/auth/me/deactivate) — the older admin-triggered
       // deactivate()/ban() flat status flips capture no reason, so this is
-      // absent for those.
-      deactivatedAt?: Date;
-      deactivationReason?: { reason: string; comment?: string };
+      // absent for those. suspension/ban mirror the same one-object shape
+      // (reworked 2026-09-19, explicit instruction — "do the deactivation
+      // like you did the suspension and ban").
+      deactivation?: { reason: string; comment?: string; deactivatedAt: Date };
       // suspension is only ever set while status is currently suspended (see
       // UsersService.suspend()/reactivate()); ban likewise for banned. Both
       // User-only — Admin has neither concept.
@@ -160,8 +161,7 @@ export class AdminService {
       policyStrike: u.policyStrike,
       ...(USER_REASON_VISIBLE_STATUSES.includes(u.accountStatus)
         ? {
-            deactivatedAt: u.deactivatedAt,
-            deactivationReason: u.deactivationReason,
+            deactivation: u.deactivation,
             suspension: u.suspension,
             ban: u.ban,
           }
@@ -185,10 +185,7 @@ export class AdminService {
         status: a.accountStatus,
         joinedAt: (a as unknown as { createdAt: Date }).createdAt,
         ...(a.accountStatus === AdminAccountStatus.DEACTIVATED
-          ? {
-              deactivatedAt: a.deactivatedAt,
-              deactivationReason: a.deactivationReason,
-            }
+          ? { deactivation: a.deactivation }
           : {}),
       };
     });
@@ -278,8 +275,7 @@ export class AdminService {
           // USER_REASON_VISIBLE_STATUSES above.
           ...(USER_REASON_VISIBLE_STATUSES.includes(user.accountStatus)
             ? {
-                deactivatedAt: user.deactivatedAt,
-                deactivationReason: user.deactivationReason,
+                deactivation: user.deactivation,
                 suspension: user.suspension,
                 ban: user.ban,
               }
@@ -327,10 +323,7 @@ export class AdminService {
           // Only present when deactivated — Admin has no suspended/banned
           // state to gate on (see AdminAccountStatus).
           ...(admin.accountStatus === AdminAccountStatus.DEACTIVATED
-            ? {
-                deactivatedAt: admin.deactivatedAt,
-                deactivationReason: admin.deactivationReason,
-              }
+            ? { deactivation: admin.deactivation }
             : {}),
         },
       };

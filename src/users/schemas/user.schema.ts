@@ -96,13 +96,21 @@ export const USER_DEACTIVATION_REASONS = [
 export type UserDeactivationReasonValue =
   (typeof USER_DEACTIVATION_REASONS)[number];
 
+// Mirrors Suspension/Ban's shape — one object, not a field split across
+// deactivatedAt + deactivationReason (reworked 2026-09-19, explicit
+// instruction — "do the deactivation like you did the suspension and ban").
+// No *By field (unlike Suspension.suspendedBy/Ban.bannedBy) — deactivation
+// is always self-service, there's no separate acting party to record.
 @Schema({ _id: false })
-class DeactivationReason {
+class Deactivation {
   @Prop({ required: true, enum: USER_DEACTIVATION_REASONS })
   reason: UserDeactivationReasonValue;
 
   @Prop({ trim: true, maxlength: 1000 })
   comment?: string;
+
+  @Prop({ required: true })
+  deactivatedAt: Date;
 }
 
 // Single user type — can both buy and sell. "buyer"/"seller" elsewhere in
@@ -160,12 +168,9 @@ export class User {
 
   // Set only by POST /users/me/deactivate (self-service) — see
   // UsersService.deactivateOwnAccount(). Admin-triggered deactivate() (a
-  // flat status flip, no reason) leaves these unset.
-  @Prop()
-  deactivatedAt?: Date;
-
-  @Prop({ type: DeactivationReason })
-  deactivationReason?: DeactivationReason;
+  // flat status flip, no reason) leaves this unset.
+  @Prop({ type: Deactivation })
+  deactivation?: Deactivation;
 
   // USR-#### — assigned once at creation via CounterService.
   @Prop({ unique: true, sparse: true })

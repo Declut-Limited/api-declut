@@ -269,8 +269,11 @@ export class AdminAuthService {
         {
           $set: {
             accountStatus: AdminAccountStatus.DEACTIVATED,
-            deactivatedAt: new Date(),
-            deactivationReason: { reason: dto.reason, comment: dto.comment },
+            deactivation: {
+              reason: dto.reason,
+              comment: dto.comment,
+              deactivatedAt: new Date(),
+            },
           },
           $unset: { refreshToken: 1 },
         },
