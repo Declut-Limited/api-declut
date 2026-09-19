@@ -128,6 +128,13 @@ export class FeedbackService {
       endDate,
     );
     const periodFilter = { createdAt: { $gte: since, $lt: until } };
+    // The trend chart always runs to the full calendar period (end of
+    // month / Dec 31), not just "so far" — an ongoing thisMonth/thisYear
+    // still shows its remaining, not-yet-happened days/months as 0 rather
+    // than simply not existing on the chart. insights/ratingDistribution/
+    // filterByType/filterByStatus above are untouched — they only ever
+    // reflect data that's actually happened, bounded by `until`.
+    const trendUntil = FeedbackService.resolveTrendUntil(period, since, until);
 
     const [facet, trend] = await Promise.all([
       this.feedbackModel.aggregate<{
@@ -150,7 +157,7 @@ export class FeedbackService {
           },
         },
       ]),
-      this.buildFeedbackTrend(since, until),
+      this.buildFeedbackTrend(since, trendUntil),
     ]);
 
     const { total, byStatus, byType, byStar, avgRating } = facet[0];
@@ -416,6 +423,28 @@ export class FeedbackService {
         const since = new Date(now.getFullYear(), now.getMonth(), 1);
         return { since, until: now };
       }
+    }
+  }
+
+  // thisMonth/thisYear are the only two periods that are both "ongoing"
+  // (their real until is `now`, mid-period) and tied to a calendar unit
+  // with a known future end — so only these two get widened for the trend
+  // chart, to the first moment of the next month/year respectively.
+  // lastMonth/lastYear are already fully-elapsed periods (until IS their
+  // real end); last3Months/custom are rolling/arbitrary ranges with no
+  // "complete the period" concept to extend to.
+  private static resolveTrendUntil(
+    period: FeedbackAnalyticsPeriod,
+    since: Date,
+    until: Date,
+  ): Date {
+    switch (period) {
+      case 'thisMonth':
+        return new Date(since.getFullYear(), since.getMonth() + 1, 1);
+      case 'thisYear':
+        return new Date(since.getFullYear() + 1, 0, 1);
+      default:
+        return until;
     }
   }
 }

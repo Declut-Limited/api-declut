@@ -7254,7 +7254,7 @@
                     }
                   ]
                 },
-                "description": "5 sections, all scoped to the same period: insights ({totalFeedback, awaitingReview (status=new), resolved, averageRating}), feedbackTrend (a chart array of {label, submitted, resolved} — bucket granularity auto-scales with the period's span: daily for <=31 days, weekly for <=120 days, monthly beyond that), ratingDistribution ({averageRating, totalRatings, ratingByStar: {5_star..1_star}}), filterByType (per-type counts, all 4 types always present), filterByStatus (per-status counts + percentage string, all 4 statuses always present). Gated feedback/view."
+                "description": "5 sections, all scoped to the same period: insights ({totalFeedback, awaitingReview (status=new), resolved, averageRating}), feedbackTrend (a chart array of {label, submitted, resolved} — bucket granularity auto-scales with the period's span: daily for <=31 days, weekly for <=120 days, monthly beyond that), ratingDistribution ({averageRating, totalRatings, ratingByStar: {5_star..1_star}}), filterByType (per-type counts, all 4 types always present), filterByStatus (per-status counts + percentage string, all 4 statuses always present). Gated feedback/view. thisMonth/thisYear always run their trend through the end of the calendar period (e.g. Sep 30 / Dec) even mid-period — remaining days/months just show 0, they are not cut off at today. lastMonth/lastYear/last3Months/custom are unaffected (already complete or open-ended ranges)."
               },
               "response": []
             },
