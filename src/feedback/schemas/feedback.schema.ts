@@ -5,15 +5,28 @@ import { MediaAsset } from '../../listings/schemas/listing.schema';
 export type FeedbackDocument = HydratedDocument<Feedback>;
 
 // Predefined, not free text — a fixed dropdown on the client.
-export enum FeedbackCategory {
+export enum FeedbackType {
   SHARE_IMPROVEMENT = 'share_an_improvement',
   REPORT_PROBLEM = 'report_a_problem',
   SHARE_ISSUE = 'share_an_issue',
   OTHERS = 'others',
 }
 
+export enum FeedbackStatus {
+  NEW = 'new',
+  IN_REVIEW = 'in_review',
+  RESOLVED = 'resolved',
+  ESCALATED = 'escalated',
+}
+
 @Schema({ timestamps: true })
 export class Feedback {
+  // FBK-#### — assigned once at creation via CounterService, sequential
+  // (not literally random) for the same collision-avoidance reasoning every
+  // other slug in this app uses.
+  @Prop({ required: true, unique: true })
+  slug: string;
+
   @Prop({
     type: MongooseSchema.Types.ObjectId,
     ref: 'User',
@@ -22,8 +35,8 @@ export class Feedback {
   })
   user: Types.ObjectId;
 
-  @Prop({ type: String, enum: FeedbackCategory, required: true })
-  category: FeedbackCategory;
+  @Prop({ type: String, enum: FeedbackType, required: true })
+  type: FeedbackType;
 
   @Prop({ required: true, trim: true, maxlength: 2000 })
   feedbackDescription: string;
@@ -33,7 +46,7 @@ export class Feedback {
 
   // Same MediaAsset shape as Listing.video/Dispute.evidenceVideo — a single
   // Cloudinary upload object, not a plain URL string. Only ever set when
-  // category is REPORT_PROBLEM (enforced in CreateFeedbackDto), but left
+  // type is REPORT_PROBLEM (enforced in CreateFeedbackDto), but left
   // optional at the schema level regardless, same as every other
   // conditionally-required media field in this app.
   @Prop({ type: MediaAsset })
@@ -41,6 +54,14 @@ export class Feedback {
 
   @Prop({ required: true, min: 1, max: 5 })
   experience: number;
+
+  @Prop({
+    type: String,
+    enum: FeedbackStatus,
+    default: FeedbackStatus.NEW,
+    index: true,
+  })
+  status: FeedbackStatus;
 
   createdAt: Date;
   updatedAt: Date;

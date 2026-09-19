@@ -2730,10 +2730,10 @@
                 "feedback"
               ]
             },
-            "description": "Submits feedback for the caller's own account. category is one of share_an_improvement|report_a_problem|share_an_issue|others. screenshot is required (400 otherwise) only when category is report_a_problem — same MediaAsset shape as a listing's images/video (upload to Cloudinary first via GET /media/upload-signature). experience is a 1-5 rating. canContactMe defaults to false when omitted.",
+            "description": "Submits feedback for the caller's own account. type is one of share_an_improvement|report_a_problem|share_an_issue|others. screenshot is required (400 otherwise) only when type is report_a_problem — same MediaAsset shape as a listing's images/video (upload to Cloudinary first via GET /media/upload-signature). experience is a 1-5 rating. canContactMe defaults to false when omitted. Response includes a server-assigned slug (FBK-####) and status (defaults to 'new').",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"category\": \"share_an_improvement\",\n  \"feedbackDescription\": \"It would be great if the search page remembered my last filters between visits.\",\n  \"canContactMe\": true,\n  \"experience\": 4\n}",
+              "raw": "{\n  \"type\": \"share_an_improvement\",\n  \"feedbackDescription\": \"It would be great if the search page remembered my last filters between visits.\",\n  \"canContactMe\": true,\n  \"experience\": 4\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2751,6 +2751,9 @@
                   "const data = pm.response.json();",
                   "if (data && data.data && data.data[\"_id\"]) {",
                   "    pm.collectionVariables.set(\"feedbackId\", data.data[\"_id\"]);",
+                  "}",
+                  "if (data && data.data && data.data[\"slug\"]) {",
+                  "    pm.collectionVariables.set(\"feedbackSlug\", data.data[\"slug\"]);",
                   "}"
                 ]
               }
@@ -2782,10 +2785,10 @@
                 "feedback"
               ]
             },
-            "description": "Same endpoint as \"Submit feedback\" — shown separately since category=report_a_problem is the one case where screenshot is required (400 with \"screenshot is required when reporting a problem\" if omitted).",
+            "description": "Same endpoint as \"Submit feedback\" — shown separately since type=report_a_problem is the one case where screenshot is required (400 with \"screenshot is required when reporting a problem\" if omitted).",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"category\": \"report_a_problem\",\n  \"feedbackDescription\": \"The app crashed when I tried to upload a photo while creating a listing.\",\n  \"canContactMe\": false,\n  \"screenshot\": {\n    \"publicId\": \"feedback/screenshot_001\",\n    \"url\": \"http://res.cloudinary.com/example/image/upload/v1/feedback/screenshot_001.png\",\n    \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/feedback/screenshot_001.png\"\n  },\n  \"experience\": 2\n}",
+              "raw": "{\n  \"type\": \"report_a_problem\",\n  \"feedbackDescription\": \"The app crashed when I tried to upload a photo while creating a listing.\",\n  \"canContactMe\": false,\n  \"screenshot\": {\n    \"publicId\": \"feedback/screenshot_001\",\n    \"url\": \"http://res.cloudinary.com/example/image/upload/v1/feedback/screenshot_001.png\",\n    \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/feedback/screenshot_001.png\"\n  },\n  \"experience\": 2\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7136,6 +7139,152 @@
               ]
             }
           ]
+        },
+        {
+          "name": "feedback",
+          "item": [
+            {
+              "name": "List feedback",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/feedback?page=1&limit=20&status=new&type=report_a_problem&search=crash&startDate=2026-01-01&endDate=2026-12-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "feedback"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "disabled": true,
+                      "description": "Page number, >= 1. Default 1."
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "disabled": true,
+                      "description": "Results per page, 1-100. Default 20."
+                    },
+                    {
+                      "key": "status",
+                      "value": "new",
+                      "disabled": true,
+                      "description": "One of new|in_review|resolved|escalated."
+                    },
+                    {
+                      "key": "type",
+                      "value": "report_a_problem",
+                      "disabled": true,
+                      "description": "One of share_an_improvement|report_a_problem|share_an_issue|others."
+                    },
+                    {
+                      "key": "search",
+                      "value": "crash",
+                      "disabled": true,
+                      "description": "Case-insensitive substring match against feedbackDescription."
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-01-01",
+                      "disabled": true,
+                      "description": "Filters on createdAt. Same date-range convention as every other admin list."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-12-31",
+                      "disabled": true,
+                      "description": "endDate must not be earlier than startDate."
+                    }
+                  ]
+                },
+                "description": "Every feedback submission, filterable by status/type/search/date range. Each row includes the populated user ({id, name, email, slug}), rating (the experience field, renamed for admin-facing clarity), and isLowRated (true when rating <= 2.5). Gated feedback/view."
+              },
+              "response": []
+            },
+            {
+              "name": "Feedback analytics",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/feedback/analytics?period=thisMonth&startDate=2026-01-01&endDate=2026-01-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "feedback",
+                    "analytics"
+                  ],
+                  "query": [
+                    {
+                      "key": "period",
+                      "value": "thisMonth",
+                      "disabled": false,
+                      "description": "One of thisMonth|lastMonth|last3Months|thisYear|lastYear|custom. Default thisMonth."
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-01-01",
+                      "disabled": true,
+                      "description": "Required only when period=custom."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-01-31",
+                      "disabled": true,
+                      "description": "Required only when period=custom."
+                    }
+                  ]
+                },
+                "description": "5 sections, all scoped to the same period: insights ({totalFeedback, awaitingReview (status=new), resolved, averageRating}), feedbackTrend (a chart array of {label, submitted, resolved} — bucket granularity auto-scales with the period's span: daily for <=31 days, weekly for <=120 days, monthly beyond that), ratingDistribution ({averageRating, totalRatings, ratingByStar: {5_star..1_star}}), filterByType (per-type counts, all 4 types always present), filterByStatus (per-status counts + percentage string, all 4 statuses always present). Gated feedback/view."
+              },
+              "response": []
+            },
+            {
+              "name": "Feedback recent attention",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/feedback/recent-attention",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "feedback",
+                    "recent-attention"
+                  ]
+                },
+                "description": "No period filter — a live snapshot, same \"some cards are live, not period-scoped\" split the main admin dashboard uses. needsAttention: {unreviewedReportProblem (type=report_a_problem AND status=new), lowRatedUnresolvedFeedback (rating<=2.5 AND status!=resolved), escalatedToOtherTeam (status=escalated)}. recentFeedback: the 3 most recent submissions, same row shape as \"List feedback\". Gated feedback/view."
+              },
+              "response": []
+            }
+          ]
         }
       ]
     }
@@ -7291,6 +7440,11 @@
     },
     {
       "key": "feedbackId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "feedbackSlug",
       "value": "",
       "type": "string"
     }
