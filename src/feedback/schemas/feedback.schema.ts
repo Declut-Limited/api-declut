@@ -19,6 +19,25 @@ export enum FeedbackStatus {
   ESCALATED = 'escalated',
 }
 
+// Predefined teams a feedback item can be escalated to — literal display
+// strings as the enum values (not slugified), matching what the client
+// sends/shows verbatim.
+export enum EscalationTeam {
+  CUSTOMER_SUPPORT = 'Customer Support',
+  OPERATIONS = 'Operations',
+  PRODUCT = 'Product',
+  ENGINEERING = 'Engineering',
+  FINANCE = 'Finance',
+}
+
+export enum EscalationReason {
+  OPERATIONAL_ISSUE = 'Operational Issue',
+  PAYMENT_ISSUE = 'Payment Issue',
+  SECURITY_CONCERN = 'Security Concern',
+  PRODUCT_DEFECT = 'Product Defect',
+  NEEDS_PRODUCT_DECISION = 'Needs Product Decision',
+}
+
 @Schema({ timestamps: true })
 export class Feedback {
   // FBK-#### — assigned once at creation via CounterService, sequential
@@ -48,9 +67,11 @@ export class Feedback {
   // Cloudinary upload object, not a plain URL string. Only ever set when
   // type is REPORT_PROBLEM (enforced in CreateFeedbackDto), but left
   // optional at the schema level regardless, same as every other
-  // conditionally-required media field in this app.
+  // conditionally-required media field in this app. Renamed from
+  // `screenshot`, explicit instruction — the frontend now calls it
+  // `attachment`.
   @Prop({ type: MediaAsset })
-  screenshot?: MediaAsset;
+  attachment?: MediaAsset;
 
   @Prop({ required: true, min: 1, max: 5 })
   experience: number;
@@ -62,6 +83,18 @@ export class Feedback {
     index: true,
   })
   status: FeedbackStatus;
+
+  // Set only when status is escalated (PATCH /admin/feedback/:id/status) —
+  // explicit instruction to keep these on the Feedback document itself,
+  // not a separate schema.
+  @Prop({ type: String, enum: EscalationTeam })
+  escalatedTo?: EscalationTeam;
+
+  @Prop({ type: String, enum: EscalationReason })
+  escalatedReason?: EscalationReason;
+
+  @Prop({ trim: true, maxlength: 2000 })
+  escalatedInternalNote?: string;
 
   createdAt: Date;
   updatedAt: Date;

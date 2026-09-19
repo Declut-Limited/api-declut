@@ -39,6 +39,11 @@ const EVENT_LABELS: Record<string, string> = {
   transaction_note_added: 'Admin note added',
   transaction_note_updated: 'Admin note updated',
   transaction_note_removed: 'Admin note removed',
+  'feedback.created': 'Feedback submitted',
+  'feedback.marked_in_review': 'Marked as in review',
+  'feedback.resolved': 'Marked as resolved',
+  'feedback.escalated': 'Escalated',
+  feedback_note_added: 'Internal note added',
   // code_mismatch_max_attempts: 'Marked as disputed after repeated wrong codes',
   // code_mismatch: 'Wrong confirmation code entered',
 };

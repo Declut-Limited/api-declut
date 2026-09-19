@@ -126,6 +126,34 @@ export class AuditLogService {
     return 'system';
   }
 
+  // Oldest-first, includes a resolved actor summary + metadata — for any
+  // entity's own rich admin-facing activity timeline that has no buyer/
+  // seller concept (unlike findAdminTimelineForEntity() above, built
+  // specifically for Transactions' buyer/seller rolePlayed). Backs the
+  // admin feedback detail's activityLogs.
+  async findEntityTimelineWithActor(
+    entityType: string,
+    entityId: string,
+  ): Promise<Record<string, unknown>[]> {
+    const entries = await this.auditLogModel
+      .find({ entityType, entityId })
+      .sort({ createdAt: 1 })
+      .exec();
+    return Promise.all(
+      entries.map(async (entry) => ({
+        id: entry._id.toString(),
+        slug: entry.slug,
+        event: entry.event,
+        label: describeEvent(entry.event),
+        oldState: entry.oldState,
+        newState: entry.newState,
+        metadata: entry.metadata,
+        actor: await this.resolveActorSummary(entry.actor),
+        createdAt: entry.createdAt,
+      })),
+    );
+  }
+
   // Full chronological (oldest-first) timeline for one entity — backs a
   // "progress"/history view on the entity's own detail response, unlike
   // findForEntity() above (newest-first, capped) which backs a "recent

@@ -1,16 +1,23 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Model, Types, isValidObjectId } from 'mongoose';
 import {
   Feedback,
   FeedbackDocument,
   FeedbackStatus,
   FeedbackType,
 } from './schemas/feedback.schema';
+import {
+  FeedbackNote,
+  FeedbackNoteDocument,
+} from './schemas/feedback-note.schema';
+import { Listing, ListingDocument } from '../listings/schemas/listing.schema';
 import { CreateFeedbackDto } from './dto/create-feedback.dto';
 import { ListAdminFeedbackDto } from './dto/list-admin-feedback.dto';
 import { FeedbackAnalyticsPeriod } from './dto/feedback-analytics.dto';
+import { UpdateFeedbackStatusDto } from './dto/update-feedback-status.dto';
 import { CounterService } from '../common/counter/counter.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { buildDateRangeFilter } from '../common/utils/date-range.util';
 import { escapeRegex } from '../common/utils/regex.util';
 
@@ -20,6 +27,13 @@ import { escapeRegex } from '../common/utils/regex.util';
 const LOW_RATING_THRESHOLD = 2.5;
 
 const ADMIN_USER_POPULATE_FIELDS = 'name email slug';
+const ADMIN_DETAIL_USER_POPULATE_FIELDS = 'name email phone slug';
+
+const STATUS_EVENT: Record<string, string> = {
+  [FeedbackStatus.IN_REVIEW]: 'feedback.marked_in_review',
+  [FeedbackStatus.RESOLVED]: 'feedback.resolved',
+  [FeedbackStatus.ESCALATED]: 'feedback.escalated',
+};
 
 interface TrendBucket {
   label: string;
@@ -31,7 +45,11 @@ interface TrendBucket {
 export class FeedbackService {
   constructor(
     @InjectModel(Feedback.name) private feedbackModel: Model<FeedbackDocument>,
+    @InjectModel(FeedbackNote.name)
+    private feedbackNoteModel: Model<FeedbackNoteDocument>,
+    @InjectModel(Listing.name) private listingModel: Model<ListingDocument>,
     private readonly counterService: CounterService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   async create(
@@ -39,15 +57,25 @@ export class FeedbackService {
     dto: CreateFeedbackDto,
   ): Promise<FeedbackDocument> {
     const slug = await this.counterService.nextSlug('feedback', 'FBK', 4);
-    return this.feedbackModel.create({
+    const feedback = await this.feedbackModel.create({
       slug,
       user: userId,
       type: dto.type,
       feedbackDescription: dto.feedbackDescription,
       canContactMe: dto.canContactMe ?? false,
-      screenshot: dto.screenshot,
+      attachment: dto.attachment,
       experience: dto.experience,
     });
+
+    await this.auditLogService.record({
+      entityType: 'feedback',
+      entityId: feedback._id.toString(),
+      event: 'feedback.created',
+      actor: userId,
+      newState: feedback.status,
+    });
+
+    return feedback;
   }
 
   async listForUser(
@@ -244,6 +272,208 @@ export class FeedbackService {
     };
   }
 
+  // Admin — rich single-feedback detail view, resolved by raw id or slug
+  // (FBK-####), mirroring the id-or-slug dispatch this app already uses
+  // for Listings/Escrow. Populates user further (email/phone/listingCount)
+  // and adds the entity's own activity timeline + internal notes.
+  async adminFindByIdOrSlug(
+    idOrSlug: string,
+  ): Promise<Record<string, unknown>> {
+    const filter = isValidObjectId(idOrSlug)
+      ? { _id: idOrSlug }
+      : { slug: idOrSlug };
+    const feedback = await this.feedbackModel
+      .findOne(filter)
+      .populate('user', ADMIN_DETAIL_USER_POPULATE_FIELDS)
+      .exec();
+    if (!feedback) {
+      throw new NotFoundException('Feedback not found');
+    }
+
+    const feedbackId = feedback._id.toString();
+    const rawUser = feedback.user as unknown;
+    const userDoc =
+      rawUser && !(rawUser instanceof Types.ObjectId)
+        ? (rawUser as {
+            _id: Types.ObjectId;
+            name?: string;
+            email?: string;
+            phone?: string;
+            slug?: string;
+          })
+        : null;
+
+    const [listingCount, activityLogs, internalNotes] = await Promise.all([
+      userDoc
+        ? this.listingModel.countDocuments({ seller: userDoc._id })
+        : Promise.resolve(0),
+      this.auditLogService.findEntityTimelineWithActor('feedback', feedbackId),
+      this.findNotesForFeedback(feedbackId),
+    ]);
+
+    const { core } = this.pickCoreFeedbackFields(feedback);
+    return {
+      ...core,
+      user: userDoc
+        ? {
+            id: userDoc._id.toString(),
+            name: userDoc.name,
+            email: userDoc.email,
+            phone: userDoc.phone,
+            slug: userDoc.slug,
+            listingCount,
+          }
+        : null,
+      activityLogs,
+      internalNotes,
+    };
+  }
+
+  // Admin-only (gated at the controller). feedbackId/description come from
+  // the request body, writtenBy always from the caller's own token — mirrors
+  // TransactionsService.createNote() exactly.
+  async createNote(feedbackId: string, adminId: string, description: string) {
+    const feedback = await this.findRaw(feedbackId);
+
+    const note = await this.feedbackNoteModel.create({
+      feedback: feedback._id,
+      writtenBy: adminId,
+      description,
+    });
+
+    await this.auditLogService.record({
+      entityType: 'feedback',
+      entityId: feedbackId,
+      event: 'feedback_note_added',
+      actor: adminId,
+      metadata: { noteId: note._id.toString() },
+    });
+
+    await note.populate({
+      path: 'writtenBy',
+      select: 'name role',
+      populate: { path: 'role', select: 'name' },
+    });
+
+    return this.shapeNote(note);
+  }
+
+  // Mark in_review / resolved / escalate — one endpoint for all three
+  // transitions (status picks which), same shape as ReportsService.updateStatus().
+  // No prior-state guard — same "any status to any other, admin's call"
+  // posture Reports' own status update already has.
+  async updateStatus(
+    id: string,
+    adminId: string,
+    dto: UpdateFeedbackStatusDto,
+  ): Promise<Record<string, unknown>> {
+    const feedback = await this.findRaw(id);
+    const oldStatus = feedback.status;
+    feedback.status = dto.status;
+
+    if (dto.status === FeedbackStatus.ESCALATED) {
+      feedback.escalatedTo = dto.escalatedTo;
+      feedback.escalatedReason = dto.escalatedReason;
+      feedback.escalatedInternalNote = dto.escalatedInternalNote;
+    }
+    await feedback.save();
+
+    await this.auditLogService.record({
+      entityType: 'feedback',
+      entityId: id,
+      event: STATUS_EVENT[dto.status],
+      actor: adminId,
+      oldState: oldStatus,
+      newState: dto.status,
+      ...(dto.status === FeedbackStatus.ESCALATED
+        ? {
+            metadata: {
+              escalatedTo: dto.escalatedTo,
+              escalatedReason: dto.escalatedReason,
+              escalatedInternalNote: dto.escalatedInternalNote,
+            },
+          }
+        : {}),
+    });
+
+    return this.shapeAdminFeedbackRow(feedback);
+  }
+
+  private async findRaw(id: string): Promise<FeedbackDocument> {
+    if (!isValidObjectId(id)) {
+      throw new NotFoundException('Feedback not found');
+    }
+    const feedback = await this.feedbackModel.findById(id);
+    if (!feedback) {
+      throw new NotFoundException('Feedback not found');
+    }
+    return feedback;
+  }
+
+  private async findNotesForFeedback(
+    feedbackId: string,
+  ): Promise<Record<string, unknown>[]> {
+    const notes = await this.feedbackNoteModel
+      .find({ feedback: feedbackId })
+      .sort({ createdAt: -1 })
+      .populate({
+        path: 'writtenBy',
+        select: 'name role',
+        populate: { path: 'role', select: 'name' },
+      })
+      .exec();
+    return notes.map((note) => this.shapeNote(note));
+  }
+
+  private shapeNote(note: FeedbackNoteDocument): Record<string, unknown> {
+    const writtenBy = note.writtenBy as unknown as {
+      _id: Types.ObjectId;
+      name: string;
+      role?: { name: string } | null;
+    } | null;
+    return {
+      id: note._id.toString(),
+      description: note.description,
+      createdAt: note.createdAt,
+      updatedAt: note.updatedAt,
+      writtenBy: writtenBy
+        ? {
+            id: writtenBy._id.toString(),
+            name: writtenBy.name,
+            role: writtenBy.role?.name,
+          }
+        : null,
+    };
+  }
+
+  // Shared core reshape (id/rating/isLowRated + every other top-level field
+  // as-is) used by both shapeAdminFeedbackRow() (list rows — a light user
+  // shape) and adminFindByIdOrSlug() (detail — its own richer user shape).
+  // `user` is deliberately excluded here so each caller can shape it
+  // appropriately for its own populate depth.
+  private pickCoreFeedbackFields(doc: FeedbackDocument): {
+    core: Record<string, unknown>;
+    rawUser: unknown;
+  } {
+    const obj = doc.toObject() as unknown as Record<string, unknown> & {
+      _id: Types.ObjectId;
+      experience: number;
+      user?: unknown;
+      __v?: unknown;
+    };
+    const { _id, experience, user, __v, ...rest } = obj;
+    void __v;
+    return {
+      core: {
+        id: _id.toString(),
+        ...rest,
+        rating: experience,
+        isLowRated: experience <= LOW_RATING_THRESHOLD,
+      },
+      rawUser: user,
+    };
+  }
+
   // Shared by adminList() and getRecentAttention() — one row shape
   // everywhere admin-facing feedback is listed. Reshapes experience -> rating
   // (matching the admin-facing wording) and adds isLowRated, same "reshape
@@ -252,20 +482,17 @@ export class FeedbackService {
   private shapeAdminFeedbackRow(
     doc: FeedbackDocument,
   ): Record<string, unknown> {
-    const obj = doc.toObject() as unknown as Record<string, unknown> & {
-      _id: Types.ObjectId;
-      experience: number;
-      user?: unknown;
-    };
-    const { _id, experience, user, __v, ...rest } = obj as Record<
-      string,
-      unknown
-    > & { _id: Types.ObjectId; experience: number; __v?: unknown };
-    void __v;
+    const { core, rawUser } = this.pickCoreFeedbackFields(doc);
 
-    let shapedUser = user;
-    if (user && typeof user === 'object') {
-      const u = user as {
+    // rawUser is a raw ObjectId when the query never populated it (e.g.
+    // updateStatus()/createNote() both work off a plain findById) — fall
+    // back to the bare id string rather than misreading it as a populated
+    // object (a Mongoose ObjectId is still `typeof === 'object'`).
+    let shapedUser: unknown = rawUser;
+    if (rawUser instanceof Types.ObjectId) {
+      shapedUser = rawUser.toString();
+    } else if (rawUser && typeof rawUser === 'object') {
+      const u = rawUser as {
         _id?: Types.ObjectId;
         name?: string;
         email?: string;
@@ -279,13 +506,7 @@ export class FeedbackService {
       };
     }
 
-    return {
-      id: _id.toString(),
-      ...rest,
-      rating: experience,
-      isLowRated: experience <= LOW_RATING_THRESHOLD,
-      user: shapedUser,
-    };
+    return { ...core, user: shapedUser };
   }
 
   private async buildFeedbackTrend(

@@ -33,12 +33,13 @@ export class CreateFeedbackDto {
   // first (GET /media/upload-signature) and forwards the resulting object,
   // same as every other media field in this app. IsDefined is load-bearing
   // here: ValidateNested alone silently passes on an undefined value, so
-  // without it a missing screenshot would slip through uncaught.
+  // without it a missing attachment would slip through uncaught. Renamed
+  // from `screenshot`, explicit instruction — matches the frontend now.
   @ValidateIf((o: CreateFeedbackDto) => o.type === FeedbackType.REPORT_PROBLEM)
-  @IsDefined({ message: 'screenshot is required when reporting a problem' })
+  @IsDefined({ message: 'attachment is required when reporting a problem' })
   @ValidateNested()
   @Type(() => MediaAssetDto)
-  screenshot?: MediaAssetDto;
+  attachment?: MediaAssetDto;
 
   @IsInt()
   @Min(1)
