@@ -17,11 +17,13 @@ interface ActorSummary {
   name: string;
   role: 'User' | 'Admin' | 'System';
   image?: string;
+  // The actor's own account status (accountStatus, User or Admin) —
+  // 2026-09-19, explicit instruction. Absent for a 'System' actor.
+  status?: string;
 }
 
 interface ActorDetail extends ActorSummary {
   email?: string;
-  status?: string;
   createdAt?: Date;
   rating?: number;
   company?: string;
@@ -319,17 +321,29 @@ export class AuditLogService {
         name: user.name,
         role: 'User',
         image: user.profileImage,
+        // 2026-09-19, explicit instruction.
+        status: user.accountStatus,
       };
     }
     const admin = await this.adminAuthService.findById(actor);
     if (admin) {
-      return { id: actor, name: admin.name, role: 'Admin' };
+      return {
+        id: actor,
+        name: admin.name,
+        role: 'Admin',
+        status: admin.accountStatus,
+      };
     }
     return { id: actor, name: 'Unknown', role: 'System' };
   }
 
-  // Admin has no accountStatus/avgRating/company/listings — those fields
-  // are simply omitted for an Admin actor rather than faked.
+  // Admin has no avgRating/company/totalListings — those fields are simply
+  // omitted for an Admin actor rather than faked. Admin DOES have its own
+  // accountStatus (pending/active/deactivated, since the 2026-09-18 admin
+  // lifecycle rework) — this comment previously claimed otherwise, and the
+  // Admin branch below was missing `status` as a result; fixed 2026-09-19,
+  // explicit instruction ("add status to the populated users ... including
+  // admins").
   private async resolveActorDetail(actor: string): Promise<ActorDetail> {
     if (actor === 'system' || !isValidObjectId(actor)) {
       return { id: actor, name: capitalize(actor), role: 'System' };
@@ -359,6 +373,7 @@ export class AuditLogService {
         name: admin.name,
         role: 'Admin',
         email: admin.email,
+        status: admin.accountStatus,
         createdAt: admin.createdAt,
       };
     }

@@ -899,7 +899,7 @@
                 }
               ]
             },
-            "description": "Paginated. All params optional and combinable. Replaces the old flat category/condition/minPrice/maxPrice/lat/lng/radiusKm shape entirely — shares its filter logic with GET /listings/count, so the two always agree on what matches. Excludes the caller's own listings — use 'Get my listings' for those. Also excludes listings the caller previously had a purchase REFUNDED for."
+            "description": "Paginated. All params optional and combinable. Replaces the old flat category/condition/minPrice/maxPrice/lat/lng/radiusKm shape entirely — shares its filter logic with GET /listings/count, so the two always agree on what matches. Excludes the caller's own listings — use 'Get my listings' for those. Also excludes listings the caller previously had a purchase REFUNDED for. Also excludes any listing whose seller is currently deactivated (2026-09-19, explicit instruction) — the listing itself stays active, it just stops surfacing here while the seller is deactivated; admin views are unaffected."
           },
           "response": []
         },
@@ -944,7 +944,7 @@
                 }
               ]
             },
-            "description": "Count of active listings within radiusKm (default 5) of (lat, lng) — not a mirror of every GET /listings filter, just location. Excludes the caller's own listings — use 'Get my listings' for those. Also excludes listings the caller previously had a purchase REFUNDED for."
+            "description": "Count of active listings within radiusKm (default 5) of (lat, lng) — not a mirror of every GET /listings filter, just location. Excludes the caller's own listings — use 'Get my listings' for those. Also excludes listings the caller previously had a purchase REFUNDED for. Also excludes any listing whose seller is currently deactivated (2026-09-19, explicit instruction) — the listing itself stays active, it just stops surfacing here while the seller is deactivated; admin views are unaffected."
           },
           "response": []
         },
@@ -1049,7 +1049,7 @@
                 }
               ]
             },
-            "description": "Active listings within radiusKm of (lat, lng), closest first. Unlike the main search endpoint's radiusKm, this one is actually enforced (via $geoNear's maxDistance). Excludes the caller's own listings — use 'Get my listings' for those. Also accepts categoryId/itemCondition/priceRange/address/state/area as additional narrowing filters (no search) — combined with the radius, not an alternative to it. Also excludes listings the caller previously had a purchase REFUNDED for."
+            "description": "Active listings within radiusKm of (lat, lng), closest first. Unlike the main search endpoint's radiusKm, this one is actually enforced (via $geoNear's maxDistance). Excludes the caller's own listings — use 'Get my listings' for those. Also accepts categoryId/itemCondition/priceRange/address/state/area as additional narrowing filters (no search) — combined with the radius, not an alternative to it. Also excludes listings the caller previously had a purchase REFUNDED for. Also excludes any listing whose seller is currently deactivated (2026-09-19, explicit instruction) — the listing itself stays active, it just stops surfacing here while the seller is deactivated; admin views are unaffected."
           },
           "response": []
         },
@@ -1136,7 +1136,7 @@
                 }
               ]
             },
-            "description": "Active listings created in the last 7 days, newest first. The window is fixed (not admin-configurable). Excludes the caller's own listings — use 'Get my listings' for those. Also accepts categoryId/itemCondition/priceRange/address/state/area as additional filters (no search). Also excludes listings the caller previously had a purchase REFUNDED for."
+            "description": "Active listings created in the last 7 days, newest first. The window is fixed (not admin-configurable). Excludes the caller's own listings — use 'Get my listings' for those. Also accepts categoryId/itemCondition/priceRange/address/state/area as additional filters (no search). Also excludes listings the caller previously had a purchase REFUNDED for. Also excludes any listing whose seller is currently deactivated (2026-09-19, explicit instruction) — the listing itself stays active, it just stops surfacing here while the seller is deactivated; admin views are unaffected."
           },
           "response": []
         },
@@ -3578,7 +3578,7 @@
                             "deactivate"
                           ]
                         },
-                        "description": "Flat status flip to deactivated — no duration/reason, unlike suspend. Undone via reactivate."
+                        "description": "Unified (2026-09-19, explicit instruction — \"admin can also deactivate users so improve this or remove it\") — {{userId}} can be either a User or an Admin id/slug, resolved the same way GET /admin/users/{{userId}} does. Flat status flip to deactivated — no reason/body, unchanged behavior from before, just reached through one call site now (was two separate endpoints: this one, User-only, and the now-removed admin/auth/sub-admins/{{subAdminId}}/deactivate). Undone via the matching unified reactivate. Audit-logged as user.deactivated / admin.deactivated."
                       },
                       "response": []
                     }
@@ -4195,7 +4195,7 @@
                         "{{transactionId}}"
                       ]
                     },
-                    "description": "Resolves by raw id or by the human reference (TXN-YYYY-#####) — Transactions have no separate slug field, the reference already fills that role. Adds, beyond the list shape: listing further populated (images, video, category {_id,title}, brand, condition, price, description, slug, status, createdAt, hasDefect, defectDescription, location, locationLabel, address); escrow further populated (slug, createdAt, amount); gateway/paymentMethod/gatewayProcessingFee (renamed from paystackFee); disputeStatus (under_investigation/refunded/resolved — present only once the transaction has been disputed; see DisputeStatus); inspectionOutcome (pending/Accepted/Disputed, mirrors inspectionStatus's own transitions); activityLog (the transaction's AuditLog timeline, oldest-first — trimmed to {id, slug, event, label, metadata, actor}, where actor now also carries rolePlayed: buyer/seller/admin/system/webhook); communicationLog (every real push/email actually sent for this transaction, one row per recipient per channel — never collapsed into a single 'both' row, since buyer/seller wording usually differs; no SMS, this app has no SMS gateway); transactionNotes (admin-only internal notes, newest first); inspectionReminderCount (null if the buyer's inspectionReminders setting is off, a real count otherwise); insights ({transactionAmount, escrowAmount, transactionDuration (human string), currentStage}); currentStage (top-level replica of insights.currentStage) — now one of Awaiting payment / Inspection / Reported / Resolved (completed) / Refund Processed (refunded) / Under Dispute (disputed) / Buyer's decision (cancelled, not one of the named outcomes); refundInfo (present when status is refunded, OR status is disputed with disputeStatus refunded — {id, slug, amount, reason, status (pending/processed/failed — Paystack refunds aren't instant, a reconciliation sweep corrects a pending row later), triggeredBy ({id, name, slug, role, rolePlayed} — rolePlayed is buyer/seller/admin/system), payoutAccountNumber, payoutBankCode, refundedAt, reference, refundCode, createdAt}); payoutInfo (present when status is completed — same shape as refundInfo minus reason/refundedAt, plus transferCode/completedAt). disputeInfo (present when status is disputed and the transaction has a real seller-raised Dispute behind it — absent for the older payment-race-loss auto-dispute path, which has none — {createdAt, status (the underlying Report's own moderation status: new/investigating/resolved/dismissed), slug (the Report's slug), buyerStatement (the Report's reason), sellerStatement (the Dispute's disputeClaim), evidenceImages, evidenceVideo})."
+                    "description": "Resolves by raw id or by the human reference (TXN-YYYY-#####) — Transactions have no separate slug field, the reference already fills that role. Adds, beyond the list shape: listing further populated (images, video, category {_id,title}, brand, condition, price, description, slug, status, createdAt, hasDefect, defectDescription, location, locationLabel, address); escrow further populated (slug, createdAt, amount); gateway/paymentMethod/gatewayProcessingFee (renamed from paystackFee); disputeStatus (under_investigation/refunded/resolved — present only once the transaction has been disputed; see DisputeStatus); inspectionOutcome (pending/Accepted/Disputed, mirrors inspectionStatus's own transitions); activityLog (the transaction's AuditLog timeline, oldest-first — trimmed to {id, slug, event, label, metadata, actor}, where actor now also carries rolePlayed: buyer/seller/admin/system/webhook); communicationLog (every real push/email actually sent for this transaction, one row per recipient per channel — never collapsed into a single 'both' row, since buyer/seller wording usually differs; no SMS, this app has no SMS gateway); transactionNotes (admin-only internal notes, newest first); inspectionReminderCount (null if the buyer's inspectionReminders setting is off, a real count otherwise); insights ({transactionAmount, escrowAmount, transactionDuration (human string), currentStage}); currentStage (top-level replica of insights.currentStage) — now one of Awaiting payment / Inspection / Reported / Resolved (completed) / Refund Processed (refunded) / Under Dispute (disputed) / Buyer's decision (cancelled, not one of the named outcomes); refundInfo (present when status is refunded, OR status is disputed with disputeStatus refunded — {id, slug, amount, reason, status (pending/processed/failed — Paystack refunds aren't instant, a reconciliation sweep corrects a pending row later), triggeredBy ({id, name, slug, role, rolePlayed} — rolePlayed is buyer/seller/admin/system), payoutAccountNumber, payoutBankCode, refundedAt, reference, refundCode, createdAt}); payoutInfo (present when status is completed — same shape as refundInfo minus reason/refundedAt, plus transferCode/completedAt). disputeInfo (present when status is disputed and the transaction has a real seller-raised Dispute behind it — absent for the older payment-race-loss auto-dispute path, which has none — {createdAt, status (the underlying Report's own moderation status: new/investigating/resolved/dismissed), slug (the Report's slug), buyerStatement (the Report's reason), sellerStatement (the Dispute's disputeClaim), evidenceImages, evidenceVideo}). 2026-09-19, explicit instruction (\"add status to the populated users ... including admins\"): populated users/admins referenced here now include their account status."
                   },
                   "response": []
                 },
@@ -4289,7 +4289,7 @@
                     "transaction-notes"
                   ]
                 },
-                "description": "Admin-only internal note on a transaction — never shown to the buyer/seller, only on the admin detail view. writtenBy always comes from the caller's own token, never the body."
+                "description": "Admin-only internal note on a transaction — never shown to the buyer/seller, only on the admin detail view. writtenBy always comes from the caller's own token, never the body. 2026-09-19, explicit instruction (\"add status to the populated users ... including admins\"): populated users/admins referenced here now include their account status."
               },
               "response": []
             },
@@ -4332,7 +4332,7 @@
                         "{{transactionNoteId}}"
                       ]
                     },
-                    "description": "Only description is editable — transactionId/writtenBy are fixed at creation and aren't accepted here at all. Only the admin who wrote the note can edit it — 403 for any other admin, even with transactions/write."
+                    "description": "Only description is editable — transactionId/writtenBy are fixed at creation and aren't accepted here at all. Only the admin who wrote the note can edit it — 403 for any other admin, even with transactions/write. 2026-09-19, explicit instruction (\"add status to the populated users ... including admins\"): populated users/admins referenced here now include their account status."
                   },
                   "response": []
                 },
@@ -4502,7 +4502,7 @@
                         "{{escrowId}}"
                       ]
                     },
-                    "description": "Resolves by raw id or ESC-#### slug. Mirrors the admin transaction detail almost entirely — listing/seller/buyer/activityLog/transactionNotes/disputeInfo/refundInfo are all reused verbatim from GET /admin/transactions/:idOrRef, since an Escrow is 1:1 with the Transaction it was created from. Route lives here (not in a separate escrow-only module boundary) for a DI-direction reason: TransactionsService builds this shape and EscrowModule can't inject TransactionsModule back without a cycle. Adds: insights ({amountHeld, platformCommission, sellerReceivable, holdingDuration, currentStage}) — holdingDuration runs from escrow.createdAt to now (still held/frozen) or escrow.updatedAt (once released/refunded, the exact moment status flips) — deliberately not Payout/Refund's own completedAt/refundedAt, which are often still unset right after the action (Paystack transfer/refund calls usually come back pending, confirmed later by the 15-min reconciliation sweep); platformEarning ({platformFee, processingFee, totalEarned — literally equal to platformFee}); financialBreakdown ({itemPrice, platformFeePercentage, processingFeePercentage (derived — no dedicated stored percentage exists for the gateway charge), totalPaidByBuyer, sellerReceivable, refundAmount, netSettlement}); paymentDetails (reference/gateway/method/status/currency/date/time, from the transaction's own initial payment); settlementDetails (only when status is released, sourced from the matching Payout row — bankName/maskedBankAccount resolved via the same lookup/masking bank-account setup already uses; null for held/frozen, and for refunded, where refundInfo above already covers it). Live-tested against real data across all 4 statuses (held/released/refunded/frozen), including a temporarily-inserted synthetic Payout row to verify settlementDetails end-to-end (no real Payout rows exist yet in this environment — the feature postdates most existing completed transactions, no backfill run, same as disputeStatus/inspectionOutcome on old data). Updated 2026-09-18: paymentDetails.paymentStatus is now the fixed string \"Captured\" (an Escrow only ever exists once the initial payment was verified, regardless of what the transaction has since moved on to) rather than the transaction's current status, and gained gatewayResponse (\"Transaction Successful\") and gatewayReference (same value as paymentReference) — neither is stored anywhere, both are fixed/derived per explicit instruction, not fabricated data presented as real. financialBreakdown gained platformFee and processingFee as Naira amounts alongside the existing *Percentage fields. disputeInfo is now a narrower shape than the transaction detail's own version — sellerStatement and both evidence fields are dropped, buyerStatement is renamed to reason: {createdAt, status, slug, reason}. Also returns statusDetails, a small status-specific object so the client doesn't need to know which of insights/refundInfo/settlementDetails to read from: held -> {holdingTime, inspectionDeadline (from the transaction, accounting for a used inspection extension)}; refunded -> {refundDate, refundAmount, reference} (from the Refund doc, via refundInfo); released -> {releasedDate, settlementTime, reference} (from the Payout doc, via settlementDetails); frozen -> {freezeReason (the backing report's reason), frozenSince (escrow.updatedAt), attendingAdmin ({id, name, slug} or null), slaRemaining (human duration until the report's sellerResponseDeadlineAt, or null once ended/no deadline/already passed)}. Added 2026-09-18 (held/refunded/released) and 2026-09-19 (frozen, tied to the new Report SLA fields)."
+                    "description": "Resolves by raw id or ESC-#### slug. Mirrors the admin transaction detail almost entirely — listing/seller/buyer/activityLog/transactionNotes/disputeInfo/refundInfo are all reused verbatim from GET /admin/transactions/:idOrRef, since an Escrow is 1:1 with the Transaction it was created from. Route lives here (not in a separate escrow-only module boundary) for a DI-direction reason: TransactionsService builds this shape and EscrowModule can't inject TransactionsModule back without a cycle. Adds: insights ({amountHeld, platformCommission, sellerReceivable, holdingDuration, currentStage}) — holdingDuration runs from escrow.createdAt to now (still held/frozen) or escrow.updatedAt (once released/refunded, the exact moment status flips) — deliberately not Payout/Refund's own completedAt/refundedAt, which are often still unset right after the action (Paystack transfer/refund calls usually come back pending, confirmed later by the 15-min reconciliation sweep); platformEarning ({platformFee, processingFee, totalEarned — literally equal to platformFee}); financialBreakdown ({itemPrice, platformFeePercentage, processingFeePercentage (derived — no dedicated stored percentage exists for the gateway charge), totalPaidByBuyer, sellerReceivable, refundAmount, netSettlement}); paymentDetails (reference/gateway/method/status/currency/date/time, from the transaction's own initial payment); settlementDetails (only when status is released, sourced from the matching Payout row — bankName/maskedBankAccount resolved via the same lookup/masking bank-account setup already uses; null for held/frozen, and for refunded, where refundInfo above already covers it). Live-tested against real data across all 4 statuses (held/released/refunded/frozen), including a temporarily-inserted synthetic Payout row to verify settlementDetails end-to-end (no real Payout rows exist yet in this environment — the feature postdates most existing completed transactions, no backfill run, same as disputeStatus/inspectionOutcome on old data). Updated 2026-09-18: paymentDetails.paymentStatus is now the fixed string \"Captured\" (an Escrow only ever exists once the initial payment was verified, regardless of what the transaction has since moved on to) rather than the transaction's current status, and gained gatewayResponse (\"Transaction Successful\") and gatewayReference (same value as paymentReference) — neither is stored anywhere, both are fixed/derived per explicit instruction, not fabricated data presented as real. financialBreakdown gained platformFee and processingFee as Naira amounts alongside the existing *Percentage fields. disputeInfo is now a narrower shape than the transaction detail's own version — sellerStatement and both evidence fields are dropped, buyerStatement is renamed to reason: {createdAt, status, slug, reason}. Also returns statusDetails, a small status-specific object so the client doesn't need to know which of insights/refundInfo/settlementDetails to read from: held -> {holdingTime, inspectionDeadline (from the transaction, accounting for a used inspection extension)}; refunded -> {refundDate, refundAmount, reference} (from the Refund doc, via refundInfo); released -> {releasedDate, settlementTime, reference} (from the Payout doc, via settlementDetails); frozen -> {freezeReason (the backing report's reason), frozenSince (escrow.updatedAt), attendingAdmin ({id, name, slug} or null), slaRemaining (human duration until the report's sellerResponseDeadlineAt, or null once ended/no deadline/already passed)}. Added 2026-09-18 (held/refunded/released) and 2026-09-19 (frozen, tied to the new Report SLA fields). 2026-09-19, explicit instruction (\"add status to the populated users ... including admins\"): populated users/admins referenced here now include their account status."
                   },
                   "response": []
                 }
@@ -5205,7 +5205,7 @@
                     }
                   ]
                 },
-                "description": "startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate). New reports start at 'investigating' — there's no 'new' status anymore. Each row now also populates attendingAdmin ({_id, name, slug}) and carries the SLA fields — see 'Get report by ID or slug'."
+                "description": "startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate). New reports start at 'investigating' — there's no 'new' status anymore. Each row now also populates attendingAdmin ({_id, name, slug}) and carries the SLA fields — see 'Get report by ID or slug'. 2026-09-19, explicit instruction (\"add status to the populated users ... including admins\"): populated users/admins referenced here now include their account status."
               },
               "response": []
             },
@@ -5286,7 +5286,7 @@
                         "{{reportId}}"
                       ]
                     },
-                    "description": "Merged from separate by-id/by-slug lookups, 2026-09-19 — accepts either a raw id or an RPT-#### slug (paste one into {{reportId}}). Populates listing/accusedUser/reporter/sellerDispute/attendingAdmin. Now also returns the seller-response SLA fields: sellerResponseDeadlineAt/sellerResponseSlaTimeInHour (both set once at creation, only when enableSellerSLA was on at that moment), attendingAdmin ({_id, name, slug} or absent — see 'Update report status' below for how it gets set), reminderSentAt, slaPeriodEnded (true once the seller has responded via seller-refund or raise-dispute; there is no auto-escalation on plain deadline expiry)."
+                    "description": "Merged from separate by-id/by-slug lookups, 2026-09-19 — accepts either a raw id or an RPT-#### slug (paste one into {{reportId}}). Populates listing/accusedUser/reporter/sellerDispute/attendingAdmin. Now also returns the seller-response SLA fields: sellerResponseDeadlineAt/sellerResponseSlaTimeInHour (both set once at creation, only when enableSellerSLA was on at that moment), attendingAdmin ({_id, name, slug} or absent — see 'Update report status' below for how it gets set), reminderSentAt, slaPeriodEnded (true once the seller has responded via seller-refund or raise-dispute; there is no auto-escalation on plain deadline expiry). 2026-09-19, explicit instruction (\"add status to the populated users ... including admins\"): populated users/admins referenced here now include their account status."
                   },
                   "response": []
                 },
@@ -5522,7 +5522,7 @@
                     }
                   ]
                 },
-                "description": "createdBy is populated: name, email, title, createdAt, role.name. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
+                "description": "createdBy is populated: name, email, title, createdAt, role.name. startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate). 2026-09-19, explicit instruction (\"add status to the populated users ... including admins\"): populated users/admins referenced here now include their account status."
               },
               "response": []
             },
@@ -5663,7 +5663,7 @@
                             "{{contentSlug}}"
                           ]
                         },
-                        "description": ""
+                        "description": " 2026-09-19, explicit instruction (\"add status to the populated users ... including admins\"): populated users/admins referenced here now include their account status."
                       },
                       "response": []
                     }
@@ -5696,7 +5696,7 @@
                         "{{contentId}}"
                       ]
                     },
-                    "description": ""
+                    "description": " 2026-09-19, explicit instruction (\"add status to the populated users ... including admins\"): populated users/admins referenced here now include their account status."
                   },
                   "response": []
                 },
@@ -5827,7 +5827,7 @@
                     }
                   ]
                 },
-                "description": "Each entry includes: label (readable event text), actor (id, name, role, image), and target (entityType/entityId). startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate)."
+                "description": "Each entry includes: label (readable event text), actor (id, name, role, image), and target (entityType/entityId). startDate/endDate optionally filter by createdAt (endDate inclusive of the full day, same-day valid, endDate can't be before startDate). 2026-09-19, explicit instruction (\"add status to the populated users ... including admins\"): populated users/admins referenced here now include their account status."
               },
               "response": [],
               "event": [
@@ -5917,7 +5917,7 @@
                         "{{activityLogId}}"
                       ]
                     },
-                    "description": "actor is further populated: email, status, createdAt, rating, company, totalListings (User actors only — omitted for Admin/System)."
+                    "description": "actor is further populated: email, status, createdAt, rating, company, totalListings (User actors only — omitted for Admin/System). 2026-09-19, explicit instruction (\"add status to the populated users ... including admins\"): populated users/admins referenced here now include their account status."
                   },
                   "response": []
                 },
@@ -6368,40 +6368,6 @@
                                 }
                               }
                             }
-                          },
-                          "response": []
-                        }
-                      ]
-                    },
-                    {
-                      "name": "deactivate",
-                      "description": "",
-                      "item": [
-                        {
-                          "name": "Deactivate admin",
-                          "request": {
-                            "method": "PATCH",
-                            "header": [
-                              {
-                                "key": "Authorization",
-                                "value": "Bearer {{adminAccessToken}}",
-                                "type": "text"
-                              }
-                            ],
-                            "url": {
-                              "raw": "{{baseUrl}}/admin/auth/sub-admins/{{subAdminId}}/deactivate",
-                              "host": [
-                                "{{baseUrl}}"
-                              ],
-                              "path": [
-                                "admin",
-                                "auth",
-                                "sub-admins",
-                                "{{subAdminId}}",
-                                "deactivate"
-                              ]
-                            },
-                            "description": "Flat status flip to deactivated."
                           },
                           "response": []
                         }
@@ -7391,7 +7357,7 @@
                     }
                   ]
                 },
-                "description": "Every feedback submission, filterable by status/type/search/date range. Each row includes the populated user ({id, name, email, slug}), rating (the experience field, renamed for admin-facing clarity), and isLowRated (true when rating <= 2.5). Gated feedback/view."
+                "description": "Every feedback submission, filterable by status/type/search/date range. Each row includes the populated user ({id, name, email, slug}), rating (the experience field, renamed for admin-facing clarity), and isLowRated (true when rating <= 2.5). Gated feedback/view. 2026-09-19, explicit instruction (\"add status to the populated users ... including admins\"): populated users/admins referenced here now include their account status."
               },
               "response": []
             },
@@ -7565,7 +7531,7 @@
                         "{{feedbackId}}"
                       ]
                     },
-                    "description": "Resolves by raw id or by slug (FBK-####) — use either in place of {{feedbackId}}. Returns the full detail: slug/type/feedbackDescription/rating/status/canContactMe/attachment/createdAt/updatedAt, escalatedTo/escalatedReason/escalatedInternalNote (once escalated), a richer user ({id, name, email, phone, slug, listingCount}), the full activityLogs timeline (oldest first, from submission through every admin action, each with a resolved actor), and internalNotes (newest first). Gated feedback/view."
+                    "description": "Resolves by raw id or by slug (FBK-####) — use either in place of {{feedbackId}}. Returns the full detail: slug/type/feedbackDescription/rating/status/canContactMe/attachment/createdAt/updatedAt, escalatedTo/escalatedReason/escalatedInternalNote (once escalated), a richer user ({id, name, email, phone, slug, listingCount}), the full activityLogs timeline (oldest first, from submission through every admin action, each with a resolved actor), and internalNotes (newest first). Gated feedback/view. 2026-09-19, explicit instruction (\"add status to the populated users ... including admins\"): populated users/admins referenced here now include their account status."
                   },
                   "response": []
                 },
@@ -7730,7 +7696,7 @@
                     "feedback-notes"
                   ]
                 },
-                "description": "Admin-only, gated feedback/write (not just any authenticated admin). writtenBy always comes from the caller's own token, never the body. Mirrors POST /admin/transaction-notes exactly — same shape, same \"flat route next to its parent resource\" convention. Shown inline on the feedback detail's internalNotes, newest first.",
+                "description": "Admin-only, gated feedback/write (not just any authenticated admin). writtenBy always comes from the caller's own token, never the body. Mirrors POST /admin/transaction-notes exactly — same shape, same \"flat route next to its parent resource\" convention. Shown inline on the feedback detail's internalNotes, newest first. 2026-09-19, explicit instruction (\"add status to the populated users ... including admins\"): populated users/admins referenced here now include their account status.",
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"feedbackId\": \"{{feedbackId}}\",\n  \"description\": \"Reached out to the user for device/OS details to reproduce the crash.\"\n}",
@@ -7796,7 +7762,7 @@
                         "{{feedbackNoteId}}"
                       ]
                     },
-                    "description": "Only description is editable — feedbackId/writtenBy are fixed at creation and aren't accepted here at all. Only the admin who wrote the note can edit it — 403 for any other admin, even with feedback/write."
+                    "description": "Only description is editable — feedbackId/writtenBy are fixed at creation and aren't accepted here at all. Only the admin who wrote the note can edit it — 403 for any other admin, even with feedback/write. 2026-09-19, explicit instruction (\"add status to the populated users ... including admins\"): populated users/admins referenced here now include their account status."
                   },
                   "response": []
                 },

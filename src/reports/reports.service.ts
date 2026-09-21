@@ -39,7 +39,11 @@ const POPULATE_FIELDS = {
   // narrative content, not seller/transaction/report (already known from
   // the Report itself). Explicit instruction, 2026-09-17.
   sellerDispute: 'disputeClaim evidenceImages evidenceVideo',
-  attendingAdmin: 'name slug',
+  // accountStatus added 2026-09-19, explicit instruction ("add status to
+  // the populated users ... including admins") — reshaped to `status` in
+  // shapeReport() below, same convention every other populated user/admin
+  // in this app already follows.
+  attendingAdmin: 'name slug accountStatus',
 };
 
 @Injectable()
@@ -456,6 +460,15 @@ export class ReportsService {
         };
         obj[key] = { ...rest, status: accountStatus, rating: avgRating };
       }
+    }
+    // Same accountStatus -> status reshape for attendingAdmin — 2026-09-19,
+    // explicit instruction.
+    const attendingAdmin = obj.attendingAdmin;
+    if (attendingAdmin && typeof attendingAdmin === 'object') {
+      const { accountStatus, ...rest } = attendingAdmin as {
+        accountStatus?: string;
+      };
+      obj.attendingAdmin = { ...rest, status: accountStatus };
     }
     return obj;
   }

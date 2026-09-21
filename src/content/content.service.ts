@@ -15,10 +15,20 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { toCsv } from '../common/utils/csv.util';
 import { buildDateRangeFilter } from '../common/utils/date-range.util';
 
-// Admin has no `status` field of its own (unlike User's accountStatus), so that part of the populate ask is skipped.
+// Stale as of 2026-09-18 — Admin gained its own accountStatus
+// (pending/active/deactivated) with the admin lifecycle rework; this
+// comment's original premise no longer holds. accountStatus added to the
+// select 2026-09-19, explicit instruction ("add status to the populated
+// users ... including admins"). Judgment call, flagged: `createdBy` is
+// returned as a raw populated Mongoose sub-document here (Content has no
+// shaping layer the way Reports/Reviews/Feedback/Transactions do), so this
+// surfaces as `createdBy.accountStatus`, not renamed to `status` — building
+// a reshape layer just for this one field felt like a bigger structural
+// change than a minimal fix warranted; flag if the renamed-to-`status`
+// convention should be added here too.
 const CREATED_BY_POPULATE = {
   path: 'createdBy',
-  select: 'name email title createdAt role',
+  select: 'name email title createdAt role accountStatus',
   populate: { path: 'role', select: 'name' },
 };
 

@@ -31,8 +31,11 @@ import { toCsv } from '../common/utils/csv.util';
 // but written as 2.5 to match the stated rule literally).
 const LOW_RATING_THRESHOLD = 2.5;
 
-const ADMIN_USER_POPULATE_FIELDS = 'name email slug';
-const ADMIN_DETAIL_USER_POPULATE_FIELDS = 'name email phone slug';
+// accountStatus added to both 2026-09-19, explicit instruction — surfaced
+// as `status` in shapeAdminFeedbackRow()/getByIdOrSlug() below, same
+// convention every other populated user/admin in this app already follows.
+const ADMIN_USER_POPULATE_FIELDS = 'name email slug accountStatus';
+const ADMIN_DETAIL_USER_POPULATE_FIELDS = 'name email phone slug accountStatus';
 
 const STATUS_EVENT: Record<string, string> = {
   [FeedbackStatus.IN_REVIEW]: 'feedback.marked_in_review',
@@ -358,6 +361,7 @@ export class FeedbackService {
             email?: string;
             phone?: string;
             slug?: string;
+            accountStatus?: string;
           })
         : null;
 
@@ -379,6 +383,8 @@ export class FeedbackService {
             email: userDoc.email,
             phone: userDoc.phone,
             slug: userDoc.slug,
+            // 2026-09-19, explicit instruction.
+            status: userDoc.accountStatus ?? null,
             listingCount,
           }
         : null,
@@ -409,7 +415,9 @@ export class FeedbackService {
 
     await note.populate({
       path: 'writtenBy',
-      select: 'name role',
+      // accountStatus added 2026-09-19, explicit instruction — surfaced as
+      // `status` in shapeNote() below.
+      select: 'name role accountStatus',
       populate: { path: 'role', select: 'name' },
     });
 
@@ -445,7 +453,7 @@ export class FeedbackService {
 
     await note.populate({
       path: 'writtenBy',
-      select: 'name role',
+      select: 'name role accountStatus',
       populate: { path: 'role', select: 'name' },
     });
     return this.shapeNote(note);
@@ -548,7 +556,7 @@ export class FeedbackService {
       .sort({ createdAt: -1 })
       .populate({
         path: 'writtenBy',
-        select: 'name role',
+        select: 'name role accountStatus',
         populate: { path: 'role', select: 'name' },
       })
       .exec();
@@ -560,6 +568,7 @@ export class FeedbackService {
       _id: Types.ObjectId;
       name: string;
       role?: { name: string } | null;
+      accountStatus?: string;
     } | null;
     return {
       id: note._id.toString(),
@@ -571,6 +580,8 @@ export class FeedbackService {
             id: writtenBy._id.toString(),
             name: writtenBy.name,
             role: writtenBy.role?.name,
+            // 2026-09-19, explicit instruction.
+            status: writtenBy.accountStatus ?? null,
           }
         : null,
     };
@@ -627,12 +638,15 @@ export class FeedbackService {
         name?: string;
         email?: string;
         slug?: string;
+        accountStatus?: string;
       };
       shapedUser = {
         id: u._id?.toString(),
         name: u.name,
         email: u.email,
         slug: u.slug,
+        // 2026-09-19, explicit instruction.
+        status: u.accountStatus ?? null,
       };
     }
 

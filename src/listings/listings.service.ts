@@ -22,6 +22,11 @@ import {
   TransactionDocument,
   TransactionStatus,
 } from '../transactions/schemas/transaction.schema';
+import {
+  AccountStatus,
+  User,
+  UserDocument,
+} from '../users/schemas/user.schema';
 import { CreateListingDto, MediaAssetDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { NearbyListingsDto } from './dto/nearby-listings.dto';
@@ -70,6 +75,7 @@ export class ListingsService {
     private listingViewModel: Model<ListingViewDocument>,
     @InjectModel(Transaction.name)
     private transactionModel: Model<TransactionDocument>,
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
     private readonly categoriesService: CategoriesService,
     private readonly counterService: CounterService,
     private readonly auditLogService: AuditLogService,
@@ -553,7 +559,10 @@ export class ListingsService {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
     const radiusKm = dto.radiusKm ?? 5;
-    const refundedListingIds = await this.getRefundedListingIds(currentUserId);
+    const [refundedListingIds, deactivatedSellerIds] = await Promise.all([
+      this.getRefundedListingIds(currentUserId),
+      this.getDeactivatedSellerIds(),
+    ]);
 
     const { results, total } = await this.geoPaginatedListings(
       dto.lat,
@@ -561,7 +570,10 @@ export class ListingsService {
       radiusKm * 1000,
       {
         status: ListingStatus.ACTIVE,
-        seller: { $ne: new Types.ObjectId(currentUserId) },
+        seller: {
+          $ne: new Types.ObjectId(currentUserId),
+          $nin: deactivatedSellerIds,
+        },
         _id: { $nin: refundedListingIds },
         ...this.buildExtraFilters(dto),
       },
@@ -674,12 +686,18 @@ export class ListingsService {
 
     const since = new Date();
     since.setDate(since.getDate() - RECENT_LISTINGS_DAYS);
-    const refundedListingIds = await this.getRefundedListingIds(currentUserId);
+    const [refundedListingIds, deactivatedSellerIds] = await Promise.all([
+      this.getRefundedListingIds(currentUserId),
+      this.getDeactivatedSellerIds(),
+    ]);
 
     const filter: Record<string, unknown> = {
       status: ListingStatus.ACTIVE,
       createdAt: { $gte: since },
-      seller: { $ne: new Types.ObjectId(currentUserId) },
+      seller: {
+        $ne: new Types.ObjectId(currentUserId),
+        $nin: deactivatedSellerIds,
+      },
       _id: { $nin: refundedListingIds },
       ...this.buildExtraFilters(dto),
     };
@@ -724,6 +742,25 @@ export class ListingsService {
     return this.transactionModel.distinct('listing', {
       buyer: userId,
       status: TransactionStatus.REFUNDED,
+    });
+  }
+
+  // Discovery feeds only — a deactivated seller's listing is still a real
+  // ACTIVE document (deactivating a User's account doesn't touch their
+  // listings), it just shouldn't keep surfacing in browse/search while the
+  // seller themselves is deactivated. Admin views are unaffected — admin
+  // sees/acts regardless of lifecycle state, same precedent as every other
+  // status this app already hides from ordinary users but not admins (e.g.
+  // paused). 2026-09-19, explicit instruction. Judgment call, flagged:
+  // unlike getRefundedListingIds() above (scoped to the caller's own
+  // transaction history, naturally small and bounded), this is a global
+  // list of every currently-deactivated seller — acceptable at this app's
+  // current scale, same "not scaling indefinitely" flag already applied to
+  // the federated admin users list, which does the equivalent in-memory
+  // rather than as an indexed exclusion.
+  private async getDeactivatedSellerIds(): Promise<Types.ObjectId[]> {
+    return this.userModel.distinct('_id', {
+      accountStatus: AccountStatus.DEACTIVATED,
     });
   }
 
@@ -772,11 +809,17 @@ export class ListingsService {
       delete extra.state;
       delete extra.area;
     }
-    const refundedListingIds = await this.getRefundedListingIds(currentUserId);
+    const [refundedListingIds, deactivatedSellerIds] = await Promise.all([
+      this.getRefundedListingIds(currentUserId),
+      this.getDeactivatedSellerIds(),
+    ]);
 
     const filter: Record<string, unknown> = {
       status: ListingStatus.ACTIVE,
-      seller: { $ne: new Types.ObjectId(currentUserId) },
+      seller: {
+        $ne: new Types.ObjectId(currentUserId),
+        $nin: deactivatedSellerIds,
+      },
       _id: { $nin: refundedListingIds },
       ...extra,
     };
@@ -798,7 +841,10 @@ export class ListingsService {
     radiusKm: number,
     currentUserId: string,
   ): Promise<{ count: number }> {
-    const refundedListingIds = await this.getRefundedListingIds(currentUserId);
+    const [refundedListingIds, deactivatedSellerIds] = await Promise.all([
+      this.getRefundedListingIds(currentUserId),
+      this.getDeactivatedSellerIds(),
+    ]);
     const [row] = await this.listingModel.aggregate<{ count: number }>([
       {
         $geoNear: {
@@ -808,7 +854,10 @@ export class ListingsService {
           spherical: true,
           query: {
             status: ListingStatus.ACTIVE,
-            seller: { $ne: new Types.ObjectId(currentUserId) },
+            seller: {
+              $ne: new Types.ObjectId(currentUserId),
+              $nin: deactivatedSellerIds,
+            },
             _id: { $nin: refundedListingIds },
           },
         },

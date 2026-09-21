@@ -1729,10 +1729,19 @@ export class TransactionsService {
       // this raw reportModel for elsewhere in this file.
       const report = await this.reportModel
         .findOne({ transaction: escrow.transaction })
-        .populate('attendingAdmin', 'name slug')
+        // accountStatus added 2026-09-19, explicit instruction — surfaced
+        // as `status` below, same convention every other populated
+        // user/admin in this app already follows.
+        .populate('attendingAdmin', 'name slug accountStatus')
         .exec();
       const attendingAdmin = report?.attendingAdmin as unknown as
-        { _id: Types.ObjectId; name: string; slug?: string } | undefined;
+        | {
+            _id: Types.ObjectId;
+            name: string;
+            slug?: string;
+            accountStatus?: string;
+          }
+        | undefined;
       const slaStillRunning =
         !!report?.sellerResponseDeadlineAt &&
         !report.slaPeriodEnded &&
@@ -1745,6 +1754,7 @@ export class TransactionsService {
               id: attendingAdmin._id.toString(),
               name: attendingAdmin.name,
               slug: attendingAdmin.slug ?? null,
+              status: attendingAdmin.accountStatus ?? null,
             }
           : null,
         slaRemaining: slaStillRunning
@@ -2089,7 +2099,9 @@ export class TransactionsService {
 
     await note.populate({
       path: 'writtenBy',
-      select: 'name role',
+      // accountStatus added 2026-09-19, explicit instruction — surfaced as
+      // `status` in shapeNote() below.
+      select: 'name role accountStatus',
       populate: { path: 'role', select: 'name' },
     });
 
@@ -2126,7 +2138,7 @@ export class TransactionsService {
 
     await note.populate({
       path: 'writtenBy',
-      select: 'name role',
+      select: 'name role accountStatus',
       populate: { path: 'role', select: 'name' },
     });
     return this.shapeNote(note);
@@ -2173,7 +2185,7 @@ export class TransactionsService {
       .sort({ createdAt: -1 })
       .populate({
         path: 'writtenBy',
-        select: 'name role',
+        select: 'name role accountStatus',
         populate: { path: 'role', select: 'name' },
       })
       .exec();
@@ -2185,6 +2197,7 @@ export class TransactionsService {
       _id: Types.ObjectId;
       name: string;
       role?: { name: string } | null;
+      accountStatus?: string;
     } | null;
     return {
       id: note._id.toString(),
@@ -2196,6 +2209,8 @@ export class TransactionsService {
             id: writtenBy._id.toString(),
             name: writtenBy.name,
             role: writtenBy.role?.name,
+            // 2026-09-19, explicit instruction.
+            status: writtenBy.accountStatus ?? null,
           }
         : null,
     };
@@ -2285,12 +2300,13 @@ export class TransactionsService {
 
   // Resolves a polymorphic triggeredBy (Refund.triggeredByType/triggeredBy,
   // Payout.triggeredByType/triggeredBy) into a display-ready shape —
-  // {id, name, slug, role, rolePlayed}. No Mongoose `ref` exists on either
-  // field (it can point at User or Admin), so this can't lean on
+  // {id, name, slug, role, status, rolePlayed}. No Mongoose `ref` exists on
+  // either field (it can point at User or Admin), so this can't lean on
   // .populate() the way TransactionNote.writtenBy does; it queries
   // manually instead. buyerId/sellerId (already on hand at every call site)
   // are what decide rolePlayed for a User — 'buyer' or 'seller' — without a
-  // second query. 2026-09-17, explicit instruction.
+  // second query. 2026-09-17, explicit instruction. `status` (accountStatus)
+  // added 2026-09-19, explicit instruction.
   private async resolveTriggeredBy(
     type: 'user' | 'admin' | 'system',
     id: Types.ObjectId | undefined,
@@ -2300,6 +2316,7 @@ export class TransactionsService {
     name: string | null;
     slug: string | null;
     role: string | null;
+    status: string | null;
     rolePlayed: 'buyer' | 'seller' | 'admin' | 'system';
   }> {
     if (type === 'system' || !id) {
@@ -2308,13 +2325,14 @@ export class TransactionsService {
         name: 'System',
         slug: null,
         role: null,
+        status: null,
         rolePlayed: 'system',
       };
     }
     if (type === 'admin') {
       const admin = await this.adminModel
         .findById(id)
-        .select('name slug role')
+        .select('name slug role accountStatus')
         .populate({ path: 'role', select: 'name' })
         .exec();
       const role = admin?.role as unknown as { name?: string } | null;
@@ -2323,6 +2341,7 @@ export class TransactionsService {
         name: admin?.name ?? null,
         slug: admin?.slug ?? null,
         role: role?.name ?? null,
+        status: admin?.accountStatus ?? null,
         rolePlayed: 'admin',
       };
     }
@@ -2334,6 +2353,7 @@ export class TransactionsService {
       name: user?.name ?? null,
       slug: user?.slug ?? null,
       role: null,
+      status: user?.accountStatus ?? null,
       rolePlayed,
     };
   }

@@ -161,6 +161,12 @@ export class ReviewsService {
       averageRating: number;
       slug?: string;
       email: string;
+      // The reviewer's own account status — 2026-09-19, explicit
+      // instruction. Deliberately named `status` (not `accountStatus`,
+      // matching every other populated user/admin in this app), and not a
+      // clash with the review's own top-level `status` above (different
+      // object, different meaning — moderation status vs. account status).
+      status: string | null;
     } | null;
   } | null> {
     if (!isValidObjectId(listingId)) {
@@ -169,7 +175,7 @@ export class ReviewsService {
     const review = await this.reviewModel
       .findOne({ listing: listingId })
       .select('rating comment status reviewer')
-      .populate('reviewer', 'name email slug avgRating')
+      .populate('reviewer', 'name email slug avgRating accountStatus')
       .exec();
     if (!review) {
       return null;
@@ -180,6 +186,7 @@ export class ReviewsService {
       email: string;
       slug?: string;
       avgRating: number;
+      accountStatus?: string;
     } | null;
     return {
       _id: review._id.toString(),
@@ -193,6 +200,7 @@ export class ReviewsService {
             averageRating: reviewer.avgRating,
             slug: reviewer.slug,
             email: reviewer.email,
+            status: reviewer.accountStatus ?? null,
           }
         : null,
     };
