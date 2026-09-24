@@ -200,6 +200,28 @@ export const NOTIFICATION_TYPES = {
       [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
     },
   },
+  // Referral Campaigns — fires on both a first join and a rejoin (same
+  // type either way, the effective state is identical: now in_progress).
+  referral_campaign_joined: {
+    label: 'Joined a referral campaign',
+    channels: {
+      [NotificationRecipientType.USER]: [
+        'push',
+        'email',
+      ] as NotificationChannel[],
+      [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
+    },
+  },
+  referral_campaign_left: {
+    label: 'Left a referral campaign',
+    channels: {
+      [NotificationRecipientType.USER]: [
+        'push',
+        'email',
+      ] as NotificationChannel[],
+      [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
+    },
+  },
 } as const;
 
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;
@@ -224,6 +246,7 @@ export const NOTIFICATION_SETTING_CATEGORY: Partial<
     | 'inspectionReminders'
     | 'disputeUpdates'
     | 'paymentAndEscrowUpdates'
+    | 'referralAndRewards'
   >
 > = {
   payment_received: 'paymentAndEscrowUpdates',
@@ -242,4 +265,6 @@ export const NOTIFICATION_SETTING_CATEGORY: Partial<
   seller_refunded_report: 'disputeUpdates',
   dispute_raised: 'disputeUpdates',
   seller_response_sla_reminder: 'disputeUpdates',
+  referral_campaign_joined: 'referralAndRewards',
+  referral_campaign_left: 'referralAndRewards',
 };

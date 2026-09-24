@@ -3033,6 +3033,188 @@
       ]
     },
     {
+      "name": "referral-campaigns",
+      "description": "User-facing referral campaign browsing + participation. Admin management lives under admin/referral-campaigns.",
+      "item": [
+        {
+          "name": "List available referral campaigns",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/referral-campaigns?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "referral-campaigns"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Every non-draft campaign (published/scheduled/ended), each with eligibilityStatus (based on eligibility.eligibleUsers vs. the caller's signup age), a computed referralCode (deterministic, not stored — same for this user+campaign every time), and timeLeft (\"18 days left\" / \"24 hours to start\" / \"5 mins left\", null once ended)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get available referral campaign by ID or code",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/referral-campaigns/{{referralCampaignIdOrCode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "referral-campaigns",
+                "{{referralCampaignIdOrCode}}"
+              ]
+            },
+            "description": "One available campaign, resolved by Mongo id or internalCampaignCode. Same shape as one row of the list. Draft campaigns 404 here too."
+          },
+          "response": []
+        },
+        {
+          "name": "List my joined campaigns",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/referral-campaigns/me?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "referral-campaigns",
+                "me"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Every campaign the caller has ever joined — each entry {campaign, participant}. participant.progressPercentage is computed from progress.amountOfReferrals against the campaign's referralRequirement.referralAmount (0% for everyone today — incrementing progress on real events isn't wired up yet)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get my joined campaign by ID or code",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/referral-campaigns/me/{{referralCampaignIdOrCode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "referral-campaigns",
+                "me",
+                "{{referralCampaignIdOrCode}}"
+              ]
+            },
+            "description": "{campaign, participant} for one specific campaign, by id or internalCampaignCode. participant is null if the caller has never actually joined this one (use the bare :idOrCode route above to browse it instead)."
+          },
+          "response": []
+        },
+        {
+          "name": "Join a referral campaign",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/referral-campaigns/{{referralCampaignIdOrCode}}/join",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "referral-campaigns",
+                "{{referralCampaignIdOrCode}}",
+                "join"
+              ]
+            },
+            "description": "No body — eligibility is re-validated server-side regardless of what the list showed. First join creates the Participant (referralCode is computed, not client-supplied); rejoining (from left/expired/disqualified) just flips status back to in_progress and stamps rejoinedAt. 409 if already actively participating, 400 if not eligible or the campaign isn't published/scheduled."
+          },
+          "response": []
+        },
+        {
+          "name": "Leave a referral campaign",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/referral-campaigns/{{referralCampaignIdOrCode}}/leave",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "referral-campaigns",
+                "{{referralCampaignIdOrCode}}",
+                "leave"
+              ]
+            },
+            "description": "Only valid while in_progress. Sets status to left and stamps leftAt (kept permanently, not cleared on a later rejoin)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "admin",
       "description": "",
       "item": [
@@ -8153,6 +8335,11 @@
     },
     {
       "key": "referralCampaignId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "referralCampaignIdOrCode",
       "value": "",
       "type": "string"
     }

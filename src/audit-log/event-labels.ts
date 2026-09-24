@@ -53,6 +53,9 @@ const EVENT_LABELS: Record<string, string> = {
   feedback_note_removed: 'Internal note removed',
   'referral_campaign.created': 'Referral campaign created',
   'referral_campaign.updated': 'Referral campaign updated',
+  'referral_participant.joined': 'Joined referral campaign',
+  'referral_participant.rejoined': 'Rejoined referral campaign',
+  'referral_participant.left': 'Left referral campaign',
   // code_mismatch_max_attempts: 'Marked as disputed after repeated wrong codes',
   // code_mismatch: 'Wrong confirmation code entered',
 };
