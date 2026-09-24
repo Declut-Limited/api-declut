@@ -420,7 +420,7 @@ export class AdminService {
   async reactivateUserOrAdmin(
     idOrSlug: string,
     adminId: string,
-    reactivationReason: string,
+    reactivationReason?: string,
   ) {
     const user = await this.usersService.findByIdOrSlug(idOrSlug);
     if (user) {
@@ -485,7 +485,7 @@ export class AdminService {
   async unsuspendUser(
     userId: string,
     adminId: string,
-    unsuspensionReason: string,
+    unsuspensionReason?: string,
   ) {
     await this.usersService.unsuspend(userId, adminId, unsuspensionReason);
     await this.auditLogService.record({

@@ -275,7 +275,7 @@ export class UsersService {
   async unsuspend(
     userId: string,
     adminId: string,
-    unsuspensionReason: string,
+    unsuspensionReason?: string,
   ): Promise<UserDocument> {
     const user = await this.userModel.findById(userId).exec();
     if (!user) {
@@ -312,7 +312,7 @@ export class UsersService {
   async reactivateFromDeactivation(
     userId: string,
     adminId: string,
-    reactivationReason: string,
+    reactivationReason?: string,
   ): Promise<UserDocument> {
     const user = await this.userModel.findById(userId).exec();
     if (!user) {

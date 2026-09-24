@@ -3489,7 +3489,7 @@
                             "unsuspend"
                           ]
                         },
-                        "description": "User-only — Admin has no suspended state. Only valid while currently suspended. The original suspension reason/durationDays/suspendedBy are never touched (explicit instruction — \"do not remove the predefined reason\"); only suspendedAt is nulled, and unsuspendedAt/unsuspendedBy/unsuspensionReason are stamped (the calling admin’s own stated reason for lifting it). Audit-logged as user.unsuspended. 2026-09-19, explicit instruction.",
+                        "description": "User-only — Admin has no suspended state. Only valid while currently suspended. The original suspension reason/durationDays/suspendedBy are never touched (explicit instruction — \"do not remove the predefined reason\"); only suspendedAt is nulled, and unsuspendedAt/unsuspendedBy are stamped; unsuspensionReason is optional (2026-09-24, explicit instruction) — the calling admin’s own stated reason for lifting it, if given. Audit-logged as user.unsuspended. 2026-09-19, explicit instruction.",
                         "body": {
                           "mode": "raw",
                           "raw": "{\n  \"unsuspensionReason\": \"Appeal reviewed and approved by compliance team.\"\n}",
@@ -3536,7 +3536,7 @@
                             "reactivate"
                           ]
                         },
-                        "description": "Unified (2026-09-19, explicit instruction — \"give me an endpoint to re-activate (whether an admin or a user)\") — {{userId}} can be either a User or an Admin id/slug, resolved the same way GET /admin/users/{{userId}} does. Only valid from deactivated (or, for a User only, banned — goes through the older flat reversal with no field tracking, since no \"unban\" action exists yet); a suspended User 400s pointing to unsuspend instead. The original deactivation reason/comment are never touched (explicit instruction — \"do not remove the predefined reason\"); only deactivatedAt is nulled, and reactivatedAt/reactivatedBy/reactivationReason are stamped (the calling admin’s own stated reason for restoring access). Superseded the separate admin-only PATCH admin/auth/sub-admins/{{subAdminId}}/reactivate, which is now removed. Audit-logged as user.reactivated / admin.reactivated.",
+                        "description": "Unified (2026-09-19, explicit instruction — \"give me an endpoint to re-activate (whether an admin or a user)\") — {{userId}} can be either a User or an Admin id/slug, resolved the same way GET /admin/users/{{userId}} does. Only valid from deactivated (or, for a User only, banned — goes through the older flat reversal with no field tracking, since no \"unban\" action exists yet); a suspended User 400s pointing to unsuspend instead. The original deactivation reason/comment are never touched (explicit instruction — \"do not remove the predefined reason\"); only deactivatedAt is nulled, and reactivatedAt/reactivatedBy are stamped; reactivationReason is optional (2026-09-24, explicit instruction) — the calling admin’s own stated reason for restoring access, if given. Superseded the separate admin-only PATCH admin/auth/sub-admins/{{subAdminId}}/reactivate, which is now removed. Audit-logged as user.reactivated / admin.reactivated.",
                         "body": {
                           "mode": "raw",
                           "raw": "{\n  \"reactivationReason\": \"Verified via support ticket, identity confirmed.\"\n}",
@@ -7795,6 +7795,194 @@
               ]
             }
           ]
+        },
+        {
+          "name": "referral-campaigns",
+          "description": "Referral campaign management — admin end only for now (user-facing referral endpoints are a later, separate build).",
+          "item": [
+            {
+              "name": "Create referral campaign",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/referral-campaigns",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "referral-campaigns"
+                  ]
+                },
+                "description": "Create a referral campaign. internalCampaignCode is admin-supplied, not auto-generated — must be unique (409 on collision). Every field is required regardless of target status (no relaxed validation for status=draft). activationDate/activationTime are required only when status=scheduled. rewardType currently only supports fixed_cash.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"September Refer-a-Friend\",\n  \"description\": \"Referrer earns a fixed cash reward for each qualifying referral who completes a sale or transaction within the qualification window.\",\n  \"internalCampaignCode\": \"REF-SEPT-2026\",\n  \"status\": \"draft\",\n  \"startDate\": \"2026-10-01T00:00:00.000Z\",\n  \"endDate\": \"2026-10-31T23:59:59.000Z\",\n  \"rewardType\": \"fixed_cash\",\n  \"rewardAmount\": 2000,\n  \"maxCampaignBudget\": 500000,\n  \"referralRequirement\": {\n    \"referralAmount\": 1,\n    \"eachReferredTask\": [\n      \"complete_sale\",\n      \"complete_transaction\"\n    ],\n    \"minimumTransactionValueCompletedSale\": 5000,\n    \"minimumTransactionValueCompletedTransaction\": 5000\n  },\n  \"qualificationWindow\": 14,\n  \"eligibility\": {\n    \"eligibleUsers\": \"all_registered_users\",\n    \"eligibleLocation\": \"all_supported_locations\"\n  },\n  \"validationRules\": {\n    \"transactionCompleted\": true,\n    \"escrowReleased\": true,\n    \"notRefunded\": true,\n    \"notDisputed\": true,\n    \"notFlagged\": true,\n    \"meetsMinimumTransactionAmount\": true\n  },\n  \"paymentMethod\": \"bank_transfer\",\n  \"paymentSchedule\": \"weekly_batch\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const data = pm.response.json();",
+                      "if (data && data.data && data.data[\"_id\"]) {",
+                      "    pm.collectionVariables.set(\"referralCampaignId\", data.data[\"_id\"]);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "List referral campaigns",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/referral-campaigns?page=1&limit=20&status=draft&startDate=2026-01-01&endDate=2026-12-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "referral-campaigns"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "disabled": false,
+                      "description": "Page number, >= 1. Default 1."
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "disabled": false,
+                      "description": "Results per page. Default 20."
+                    },
+                    {
+                      "key": "status",
+                      "value": "draft",
+                      "disabled": true,
+                      "description": "Filter by campaign status: draft, published, scheduled, ended."
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-01-01",
+                      "disabled": true,
+                      "description": "Filter by createdAt >= this date (ISO date string)."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-12-31",
+                      "disabled": true,
+                      "description": "Filter by createdAt <= this date, stamped to 23:59:59 UTC. Must not be earlier than startDate."
+                    }
+                  ]
+                },
+                "description": "Paginated list of every referral campaign, newest first."
+              },
+              "response": []
+            },
+            {
+              "name": "{referralCampaignId}",
+              "description": "",
+              "item": [
+                {
+                  "name": "Get referral campaign by ID",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/referral-campaigns/{{referralCampaignId}}",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "referral-campaigns",
+                        "{{referralCampaignId}}"
+                      ]
+                    },
+                    "description": "Literal ObjectId lookup only — no fallback to internalCampaignCode/slug resolution."
+                  },
+                  "response": []
+                },
+                {
+                  "name": "Update referral campaign",
+                  "request": {
+                    "method": "PATCH",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/referral-campaigns/{{referralCampaignId}}",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "referral-campaigns",
+                        "{{referralCampaignId}}"
+                      ]
+                    },
+                    "description": "Only editable while the campaign is draft or scheduled (400 otherwise, e.g. once published or ended). Every field optional (partial update) — nested objects (referralRequirement/eligibility/validationRules) are replaced wholesale when given, not merged field-by-field. updatedBy appends the acting admin id to a running history array.",
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"name\": \"September Refer-a-Friend (Updated)\",\n  \"rewardAmount\": 2500,\n  \"status\": \"scheduled\",\n  \"activationDate\": \"2026-10-01T00:00:00.000Z\",\n  \"activationTime\": \"09:00\"\n}",
+                      "options": {
+                        "raw": {
+                          "language": "json"
+                        }
+                      }
+                    }
+                  },
+                  "response": []
+                }
+              ]
+            }
+          ]
         }
       ]
     }
@@ -7960,6 +8148,11 @@
     },
     {
       "key": "feedbackNoteId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "referralCampaignId",
       "value": "",
       "type": "string"
     }

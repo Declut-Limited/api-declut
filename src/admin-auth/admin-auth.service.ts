@@ -249,7 +249,7 @@ export class AdminAuthService {
   async reactivateFromDeactivation(
     adminId: string,
     byAdminId: string,
-    reactivationReason: string,
+    reactivationReason?: string,
   ): Promise<AdminProfile> {
     const admin = await this.adminModel.findById(adminId).exec();
     if (!admin) {

@@ -11,8 +11,11 @@ import {
   ValidatorConstraintInterface,
 } from 'class-validator';
 
+// Exported (2026-09-24) so other DTOs with their own startDate/endDate pair
+// (e.g. referral campaigns) can reuse it via @Validate() instead of
+// redeclaring the same check.
 @ValidatorConstraint({ name: 'endDateNotBeforeStartDate', async: false })
-class EndDateNotBeforeStartDateConstraint implements ValidatorConstraintInterface {
+export class EndDateNotBeforeStartDateConstraint implements ValidatorConstraintInterface {
   validate(endDate: string, args: ValidationArguments): boolean {
     const { startDate } = args.object as { startDate?: string };
     if (!startDate || !endDate) return true;
