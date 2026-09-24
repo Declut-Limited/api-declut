@@ -79,9 +79,10 @@ export class CreateReferralCampaignDto {
   @Type(() => ReferralRequirementDto)
   referralRequirement: ReferralRequirementDto;
 
+  @IsOptional()
   @IsInt()
   @Min(1)
-  qualificationWindow: number;
+  qualificationWindow?: number;
 
   @IsDefined()
   @ValidateNested()
