@@ -148,7 +148,7 @@ export class ReferralCampaign {
   referralRequirement: ReferralRequirement;
 
   // In days.
-  @Prop({ required: true, min: 1 })
+  @Prop({ required: false, min: 1 })
   qualificationWindow: number;
 
   @Prop({ type: ReferralEligibilitySchema, required: true })
