@@ -367,10 +367,112 @@ export class ReferralsService {
         return 'Scheduled';
       case ReferralCampaignStatus.ENDED:
         return 'Ended';
+      case ReferralCampaignStatus.ARCHIVED:
+        return 'Archived';
       case ReferralCampaignStatus.DRAFT:
       default:
         return 'Draft';
     }
+  }
+
+  // Explicit instruction: "mongodb just attaches a unique id to it but the
+  // data remains the same." Every field is copied verbatim EXCEPT
+  // internalCampaignCode, which has a unique index and can't literally
+  // duplicate — suffixed deterministically (-COPY, then -COPY-2, ... on a
+  // repeat duplicate of the same campaign) rather than left to a random
+  // string, same "no collision-check/retry loop needed at this app's scale"
+  // reasoning Participant.referralCode's own doc comment already uses.
+  // Judgment call, flagged: status is copied as-is (not reset to draft) —
+  // the literal ask was "the data remains the same," not a request to
+  // reset workflow state.
+  async duplicate(
+    id: string,
+    adminId: string,
+  ): Promise<ReferralCampaignDocument> {
+    const original = await this.findByIdOrThrow(id, false);
+    const newCode = await this.resolveDuplicateCode(
+      original.internalCampaignCode,
+    );
+
+    const copy = await this.referralCampaignModel.create({
+      name: original.name,
+      description: original.description,
+      internalCampaignCode: newCode,
+      status: original.status,
+      startDate: original.startDate,
+      endDate: original.endDate,
+      rewardType: original.rewardType,
+      rewardAmount: original.rewardAmount,
+      maxCampaignBudget: original.maxCampaignBudget,
+      referralRequirement: original.referralRequirement,
+      qualificationWindow: original.qualificationWindow,
+      eligibility: original.eligibility,
+      validationRules: original.validationRules,
+      paymentMethod: original.paymentMethod,
+      paymentSchedule: original.paymentSchedule,
+      activationDate: original.activationDate,
+      activationTime: original.activationTime,
+      createdBy: adminId,
+    });
+
+    await this.auditLogService.record({
+      entityType: 'referral_campaign',
+      entityId: copy._id.toString(),
+      event: 'referral_campaign.duplicated',
+      actor: adminId,
+      metadata: { duplicatedFrom: original._id.toString() },
+      newState: copy.status,
+    });
+
+    return copy.populate([
+      { path: 'createdBy', select: ADMIN_POPULATE_FIELDS },
+      { path: 'updatedBy', select: ADMIN_POPULATE_FIELDS },
+    ]);
+  }
+
+  private async resolveDuplicateCode(originalCode: string): Promise<string> {
+    let candidate = `${originalCode}-COPY`;
+    let suffix = 2;
+    while (
+      await this.referralCampaignModel.exists({
+        internalCampaignCode: candidate,
+      })
+    ) {
+      candidate = `${originalCode}-COPY-${suffix}`;
+      suffix += 1;
+    }
+    return candidate;
+  }
+
+  // Soft delete — sets status to ARCHIVED, never a real Mongo delete. Only
+  // guard: can't archive an already-archived campaign. Every other status
+  // (draft/published/scheduled/ended) can be archived — explicit instruction
+  // gave no narrower starting-status restriction.
+  async archive(
+    id: string,
+    adminId: string,
+  ): Promise<ReferralCampaignDocument> {
+    const campaign = await this.findByIdOrThrow(id, false);
+    if (campaign.status === ReferralCampaignStatus.ARCHIVED) {
+      throw new BadRequestException('Campaign is already archived');
+    }
+    const oldStatus = campaign.status;
+    campaign.status = ReferralCampaignStatus.ARCHIVED;
+    await campaign.save();
+
+    await this.auditLogService.record({
+      entityType: 'referral_campaign',
+      entityId: id,
+      event: 'referral_campaign.archived',
+      actor: adminId,
+      oldState: oldStatus,
+      newState: campaign.status,
+    });
+
+    return campaign.populate([
+      { path: 'createdBy', select: ADMIN_POPULATE_FIELDS },
+      { path: 'updatedBy', select: ADMIN_POPULATE_FIELDS },
+    ]);
   }
 
   async findById(id: string): Promise<ReferralCampaignDocument> {
@@ -1428,6 +1530,115 @@ export class ReferralsService {
     return pipeline;
   }
 
+  // Mark-paid — a manual record that a reward's payout has actually
+  // happened outside this app (no live Paystack transfer is wired for
+  // Referral rewards yet). Only valid from pending — an already-paid or
+  // canceled reward is left alone. amountPaid is set to the campaign's own
+  // configured rewardAmount, the same figure this reward's row already
+  // displays while pending (see shapeAdminRewardRow()'s own comment on why
+  // `reward` reads off the campaign, not Reward.amountPaid).
+  async markRewardPaid(
+    id: string,
+    adminId: string,
+  ): Promise<Record<string, unknown>> {
+    if (!isValidObjectId(id)) {
+      throw new NotFoundException('Reward not found');
+    }
+    const reward = await this.rewardModel.findById(id);
+    if (!reward) {
+      throw new NotFoundException('Reward not found');
+    }
+    if (reward.status !== RewardStatus.PENDING) {
+      throw new BadRequestException(
+        `Reward is ${reward.status} — only a pending reward can be marked as paid`,
+      );
+    }
+
+    const campaign = await this.referralCampaignModel
+      .findById(reward.campaign)
+      .select('rewardAmount')
+      .exec();
+    const amountPaid = campaign?.rewardAmount ?? 0;
+
+    reward.status = RewardStatus.PAID;
+    reward.amountPaid = amountPaid;
+    await reward.save();
+
+    await this.auditLogService.record({
+      entityType: 'referral_reward',
+      entityId: reward._id.toString(),
+      event: 'referral_reward.marked_paid',
+      actor: adminId,
+      oldState: RewardStatus.PENDING,
+      newState: RewardStatus.PAID,
+      metadata: { amountPaid },
+    });
+
+    return {
+      id: reward._id.toString(),
+      slug: reward.slug ?? null,
+      status: reward.status,
+      amountPaid: reward.amountPaid,
+    };
+  }
+
+  // Bulk variant — takes an array of reward ids. Anything not found or not
+  // currently pending is skipped and reported back rather than aborting the
+  // whole batch, same per-item skip-and-continue posture
+  // WaitlistBulkInviteProcessor already uses for its own bulk action.
+  // Campaign rewardAmounts are batch-fetched once (not per reward) to avoid
+  // an N+1 query across a potentially large id list.
+  async bulkMarkRewardsPaid(
+    rewardIds: string[],
+    adminId: string,
+  ): Promise<{ markedPaid: number; skippedIds: string[] }> {
+    const rewards = await this.rewardModel.find({
+      _id: { $in: rewardIds.map((id) => new Types.ObjectId(id)) },
+    });
+    const foundIds = new Set(rewards.map((r) => r._id.toString()));
+    const skippedIds = rewardIds.filter((id) => !foundIds.has(id));
+
+    const pendingRewards = rewards.filter(
+      (r) => r.status === RewardStatus.PENDING,
+    );
+    skippedIds.push(
+      ...rewards
+        .filter((r) => r.status !== RewardStatus.PENDING)
+        .map((r) => r._id.toString()),
+    );
+
+    const campaignIds = [
+      ...new Set(pendingRewards.map((r) => r.campaign.toString())),
+    ];
+    const campaigns = await this.referralCampaignModel
+      .find({ _id: { $in: campaignIds } })
+      .select('rewardAmount')
+      .exec();
+    const rewardAmountByCampaign = new Map(
+      campaigns.map((c) => [c._id.toString(), c.rewardAmount]),
+    );
+
+    for (const reward of pendingRewards) {
+      const amountPaid =
+        rewardAmountByCampaign.get(reward.campaign.toString()) ?? 0;
+      reward.status = RewardStatus.PAID;
+      reward.amountPaid = amountPaid;
+      await reward.save();
+
+      await this.auditLogService.record({
+        entityType: 'referral_reward',
+        entityId: reward._id.toString(),
+        event: 'referral_reward.marked_paid',
+        actor: adminId,
+        oldState: RewardStatus.PENDING,
+        newState: RewardStatus.PAID,
+        metadata: { amountPaid },
+      });
+    }
+
+    return { markedPaid: pendingRewards.length, skippedIds };
+  }
+
   private shapeAdminRewardRow(
     row: AdminRewardAggregateRow,
   ): Record<string, unknown> {
@@ -1474,7 +1685,13 @@ export class ReferralsService {
       { user: userId },
     );
     const filter = {
-      status: { $ne: ReferralCampaignStatus.DRAFT },
+      // Archived is this module's soft-delete — hidden from the available
+      // browse list the same way draft is, explicit instruction ("you
+      // cannot show this campaign with archive status to the user as
+      // available campaign").
+      status: {
+        $nin: [ReferralCampaignStatus.DRAFT, ReferralCampaignStatus.ARCHIVED],
+      },
       _id: { $nin: participatedCampaignIds },
     };
 
@@ -1505,6 +1722,15 @@ export class ReferralsService {
     userId: string,
   ): Promise<Record<string, unknown>> {
     const campaign = await this.findVisibleCampaignByIdOrCode(idOrCode);
+    // Archived is hidden from the "available" browse detail too — same
+    // indistinguishable-from-nonexistent posture as the already-participating
+    // check right below. findVisibleCampaignByIdOrCode() itself deliberately
+    // still resolves ARCHIVED (join()/leave()/getMyCampaignDetail() need it
+    // to, same as it already does for ENDED — a campaign someone already has
+    // history with shouldn't 404 just because it's since been archived).
+    if (campaign.status === ReferralCampaignStatus.ARCHIVED) {
+      throw new NotFoundException('Referral campaign not found');
+    }
     const alreadyParticipating = await this.participantModel.exists({
       campaign: campaign._id,
       user: userId,

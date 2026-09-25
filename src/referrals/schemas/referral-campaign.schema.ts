@@ -8,6 +8,11 @@ export enum ReferralCampaignStatus {
   PUBLISHED = 'published',
   SCHEDULED = 'scheduled',
   ENDED = 'ended',
+  // Soft-delete — set only via the admin archive() action. Hidden from every
+  // user-facing "available campaign" browse path (list + direct lookup),
+  // same invisibility posture as draft; admin's own list/detail are
+  // unaffected, same "admin can fetch all" precedent as PAUSED listings.
+  ARCHIVED = 'archived',
 }
 
 // Only one value for now, per the spec — a real enum (not a hardcoded

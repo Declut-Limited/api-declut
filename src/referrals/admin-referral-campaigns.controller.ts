@@ -90,4 +90,22 @@ export class AdminReferralCampaignsController {
   ) {
     return this.referralsService.update(id, dto, admin.sub);
   }
+
+  @Post(':id/duplicate')
+  @RequirePermission('referrals', 'write')
+  duplicate(
+    @Param('id') id: string,
+    @CurrentAdmin() admin: AdminAccessTokenPayload,
+  ) {
+    return this.referralsService.duplicate(id, admin.sub);
+  }
+
+  @Patch(':id/archive')
+  @RequirePermission('referrals', 'write')
+  archive(
+    @Param('id') id: string,
+    @CurrentAdmin() admin: AdminAccessTokenPayload,
+  ) {
+    return this.referralsService.archive(id, admin.sub);
+  }
 }
