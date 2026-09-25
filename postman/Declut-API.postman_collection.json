@@ -8293,6 +8293,60 @@
                     }
                   },
                   "response": []
+                },
+                {
+                  "name": "Duplicate referral campaign",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/referral-campaigns/{{referralCampaignId}}/duplicate",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "referral-campaigns",
+                        "{{referralCampaignId}}",
+                        "duplicate"
+                      ]
+                    },
+                    "description": "No body. Copies every field verbatim except internalCampaignCode (unique — suffixed \"-COPY\", then \"-COPY-2\" on a repeat duplicate) and status, which is kept as-is (not reset to draft). createdBy is the duplicating admin; updatedBy resets to []."
+                  },
+                  "response": []
+                },
+                {
+                  "name": "Archive referral campaign",
+                  "request": {
+                    "method": "PATCH",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/referral-campaigns/{{referralCampaignId}}/archive",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "referral-campaigns",
+                        "{{referralCampaignId}}",
+                        "archive"
+                      ]
+                    },
+                    "description": "Soft delete — sets status to archived (400 if already archived). Hidden from every user-facing \"available campaign\" browse path (list + direct id/code lookup) from that point on; admin's own list/detail still show it. No unarchive endpoint exists."
+                  },
+                  "response": []
                 }
               ]
             }
@@ -8614,7 +8668,74 @@
                     }
                   ]
                 },
-                "description": "Unpaginated CSV, same filters as List referral rewards. Columns: id, slug, participantName, participantEmail, campaignName, reward, amountPaid, qualifiedOn, payment, schedule, createdAt. No ':id' route exists yet on this controller, so no ordering hazard — still placed consistently with every other export in this app."
+                "description": "Unpaginated CSV, same filters as List referral rewards. Columns: id, slug, participantName, participantEmail, campaignName, reward, amountPaid, qualifiedOn, payment, schedule, createdAt. Registered before ':id/mark-paid' below, same static-before-dynamic ordering every other export in this app follows."
+              },
+              "response": []
+            },
+            {
+              "name": "Bulk mark rewards as paid",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/referral-rewards/bulk-mark-paid",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "referral-rewards",
+                    "bulk-mark-paid"
+                  ]
+                },
+                "description": "rewardIds: 1-200 ids. Anything not found or not currently pending is skipped and reported back in skippedIds rather than aborting the batch. amountPaid per reward is set to that reward's own campaign's rewardAmount. Returns {markedPaid, skippedIds}.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"rewardIds\": [\n    \"{{referralRewardId}}\"\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Mark reward as paid",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/referral-rewards/{{referralRewardId}}/mark-paid",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "referral-rewards",
+                    "{{referralRewardId}}",
+                    "mark-paid"
+                  ]
+                },
+                "description": "No body. Only valid from pending (400 otherwise). amountPaid is set to the reward's own campaign's configured rewardAmount — a Reward has no target amount of its own."
               },
               "response": []
             }
@@ -8799,6 +8920,11 @@
     },
     {
       "key": "referralParticipantId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "referralRewardId",
       "value": "",
       "type": "string"
     }

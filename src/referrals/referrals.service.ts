@@ -266,7 +266,7 @@ export class ReferralsService {
         const createdBy = campaign.createdBy as unknown as
           { name?: string } | undefined;
         return {
-          id: campaign._id.toString(),
+          _id: campaign._id.toString(),
           name: campaign.name,
           internalCampaignCode: campaign.internalCampaignCode,
           status: this.describeCampaignStatus(campaign.status),
@@ -284,7 +284,7 @@ export class ReferralsService {
     );
 
     return toCsv(rows, [
-      'id',
+      '_id',
       'name',
       'internalCampaignCode',
       'status',
@@ -326,7 +326,7 @@ export class ReferralsService {
     const createdBy = campaign.createdBy as unknown as
       { name?: string } | undefined;
     return {
-      id: campaign._id.toString(),
+      _id: campaign._id.toString(),
       name: campaign.name,
       reward: campaign.rewardAmount,
       from: campaign.startDate ?? null,
@@ -882,7 +882,7 @@ export class ReferralsService {
             : Math.round((successfulCount / referralCount) * 1000) / 10;
 
         return {
-          id: campaignId.toString(),
+          _id: campaignId.toString(),
           name: campaign.name,
           participants,
           referralCount,
@@ -1031,7 +1031,7 @@ export class ReferralsService {
           )
         : 0;
       return {
-        id: row._id.toString(),
+        _id: row._id.toString(),
         slug: row.slug ?? '',
         participantName: row.userDoc?.name ?? '',
         participantEmail: row.userDoc?.email ?? '',
@@ -1047,7 +1047,7 @@ export class ReferralsService {
     });
 
     return toCsv(csvRows, [
-      'id',
+      '_id',
       'slug',
       'participantName',
       'participantEmail',
@@ -1158,13 +1158,13 @@ export class ReferralsService {
       : (campaignDoc?.endDate ?? null);
 
     return {
-      id: row._id.toString(),
+      _id: row._id.toString(),
       slug: row.slug ?? null,
       participant: row.userDoc
-        ? { id: row.userDoc._id.toString(), name: row.userDoc.name }
+        ? { _id: row.userDoc._id.toString(), name: row.userDoc.name }
         : null,
       campaign: campaignDoc
-        ? { id: campaignDoc._id.toString(), name: campaignDoc.name }
+        ? { _id: campaignDoc._id.toString(), name: campaignDoc.name }
         : null,
       referredUsers: row.referredUsersCount,
       qualified: row.qualifiedCount,
@@ -1277,15 +1277,15 @@ export class ReferralsService {
     ]);
 
     return {
-      id: participant._id.toString(),
+      _id: participant._id.toString(),
       slug: participant.slug ?? null,
       status: participant.status,
       participant: {
-        id: participantUserId.toString(),
+        _id: participantUserId.toString(),
         name: (participant.user as unknown as { name?: string }).name,
         email: (participant.user as unknown as { email?: string }).email,
       },
-      campaign: { id: campaign._id.toString(), name: campaign.name },
+      campaign: { _id: campaign._id.toString(), name: campaign.name },
       joinedAt: participant.joinedAt,
       // The participant's own (the referrer's) most recent real Transaction
       // reference, e.g. "TXN-2026-00044" — null if they've never
@@ -1417,7 +1417,7 @@ export class ReferralsService {
       await this.rewardModel.aggregate<AdminRewardAggregateRow>(pipeline);
 
     const csvRows = rows.map((row) => ({
-      id: row._id.toString(),
+      _id: row._id.toString(),
       slug: row.slug ?? '',
       participantName: row.userDoc?.name ?? '',
       participantEmail: row.userDoc?.email ?? '',
@@ -1431,7 +1431,7 @@ export class ReferralsService {
     }));
 
     return toCsv(csvRows, [
-      'id',
+      '_id',
       'slug',
       'participantName',
       'participantEmail',
@@ -1575,7 +1575,7 @@ export class ReferralsService {
     });
 
     return {
-      id: reward._id.toString(),
+      _id: reward._id.toString(),
       slug: reward.slug ?? null,
       status: reward.status,
       amountPaid: reward.amountPaid,
@@ -1643,13 +1643,13 @@ export class ReferralsService {
     row: AdminRewardAggregateRow,
   ): Record<string, unknown> {
     return {
-      id: row._id.toString(),
+      _id: row._id.toString(),
       slug: row.slug ?? null,
       participant: row.userDoc
-        ? { id: row.userDoc._id.toString(), name: row.userDoc.name }
+        ? { _id: row.userDoc._id.toString(), name: row.userDoc.name }
         : null,
       campaign: row.campaignDoc
-        ? { id: row.campaignDoc._id.toString(), name: row.campaignDoc.name }
+        ? { _id: row.campaignDoc._id.toString(), name: row.campaignDoc.name }
         : null,
       // The campaign's configured flat reward — not Reward.amountPaid,
       // which is 0 until a reward is actually disbursed and would show
