@@ -8093,6 +8093,52 @@
               "response": []
             },
             {
+              "name": "Get referral analytics",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/referral-campaigns/analytics?period=thisMonth&startDate=2026-01-01&endDate=2026-01-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "referral-campaigns",
+                    "analytics"
+                  ],
+                  "query": [
+                    {
+                      "key": "period",
+                      "value": "thisMonth",
+                      "disabled": false,
+                      "description": "One of thisMonth|lastMonth|last3Months|thisYear|lastYear|custom. Default thisMonth."
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-01-01",
+                      "disabled": true,
+                      "description": "Required only when period=custom."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-01-31",
+                      "disabled": true,
+                      "description": "Required only when period=custom."
+                    }
+                  ]
+                },
+                "description": "5 insights, all scoped to one shared period window (same thisMonth/lastMonth/last3Months/thisYear/lastYear/custom shape as GET /admin/feedback/analytics): activeCampaigns (campaigns with status=published, created in the period), participants (distinct users with a status=in_progress Participant doc created in the period — a user is counted once even if they're in-progress across multiple campaigns), successfulReferrals (Referral docs with hasCompletedChallenge=true whose referring participant is currently qualified or paid, created in the period), rewardPaid (Reward docs with status=paid whose participant is also currently paid, created in the period), conversionRate (successfulReferrals / total referrals created in the period, as a percentage string). Every count is scoped by its own collection's createdAt within the window. Gated referrals/view."
+              },
+              "response": []
+            },
+            {
               "name": "{referralCampaignId}",
               "description": "",
               "item": [

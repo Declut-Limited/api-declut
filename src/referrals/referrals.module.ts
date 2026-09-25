@@ -5,6 +5,8 @@ import {
   ReferralCampaignSchema,
 } from './schemas/referral-campaign.schema';
 import { Participant, ParticipantSchema } from './schemas/participant.schema';
+import { Referral, ReferralSchema } from './schemas/referral.schema';
+import { Reward, RewardSchema } from './schemas/reward.schema';
 import { ReferralsService } from './referrals.service';
 import { AdminReferralCampaignsController } from './admin-referral-campaigns.controller';
 import { UserReferralCampaignsController } from './user-referral-campaigns.controller';
@@ -18,6 +20,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
     MongooseModule.forFeature([
       { name: ReferralCampaign.name, schema: ReferralCampaignSchema },
       { name: Participant.name, schema: ParticipantSchema },
+      { name: Referral.name, schema: ReferralSchema },
+      { name: Reward.name, schema: RewardSchema },
       { name: User.name, schema: UserSchema },
     ]),
     AdminAuthModule,

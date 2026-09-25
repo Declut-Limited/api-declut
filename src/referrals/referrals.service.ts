@@ -18,9 +18,12 @@ import {
   ParticipantDocument,
   ParticipantStatus,
 } from './schemas/participant.schema';
+import { Referral, ReferralDocument } from './schemas/referral.schema';
+import { Reward, RewardDocument, RewardStatus } from './schemas/reward.schema';
 import { CreateReferralCampaignDto } from './dto/create-referral-campaign.dto';
 import { UpdateReferralCampaignDto } from './dto/update-referral-campaign.dto';
 import { ListReferralCampaignsDto } from './dto/list-referral-campaigns.dto';
+import { ReferralAnalyticsPeriod } from './dto/referral-analytics.dto';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { buildDateRangeFilter } from '../common/utils/date-range.util';
 import { User, UserDocument } from '../users/schemas/user.schema';
@@ -69,6 +72,10 @@ export class ReferralsService {
     private referralCampaignModel: Model<ReferralCampaignDocument>,
     @InjectModel(Participant.name)
     private participantModel: Model<ParticipantDocument>,
+    @InjectModel(Referral.name)
+    private referralModel: Model<ReferralDocument>,
+    @InjectModel(Reward.name)
+    private rewardModel: Model<RewardDocument>,
     // Direct schema registration (not a UsersModule import) — avoids ever
     // needing to worry about a cycle, same pattern TrustScoreModule/
     // CategoriesService use for this exact kind of lightweight cross-module
@@ -252,6 +259,150 @@ export class ReferralsService {
       throw new NotFoundException('Referral campaign not found');
     }
     return campaign;
+  }
+
+  // Admin dashboard — 5 insights, all scoped to one shared period window
+  // (mirrors FeedbackService.getAnalytics()'s thisMonth/lastMonth/
+  // last3Months/thisYear/lastYear/custom shape, per explicit instruction).
+  // Every count below is scoped to that same window via each collection's
+  // own createdAt — judgment call, flagged: "period" wasn't specified per
+  // insight, so each one is read as "created within the period" (a campaign
+  // published, a participant joined, a referral made, a reward recorded),
+  // not some other date on the document (there's no publishedAt/paidAt
+  // field on any of these anyway).
+  async getAnalytics(
+    period: ReferralAnalyticsPeriod = 'thisMonth',
+    startDate?: string,
+    endDate?: string,
+  ): Promise<{
+    period: ReferralAnalyticsPeriod;
+    since: Date;
+    until: Date;
+    insights: {
+      activeCampaigns: number;
+      participants: number;
+      successfulReferrals: number;
+      rewardPaid: number;
+      conversionRate: string;
+    };
+  }> {
+    const { since, until } = ReferralsService.resolvePeriodRange(
+      period,
+      startDate,
+      endDate,
+    );
+    const periodFilter = { createdAt: { $gte: since, $lt: until } };
+
+    const [
+      activeCampaigns,
+      inProgressUserIds,
+      qualifiedOrPaidParticipantIds,
+      paidParticipantIds,
+      totalReferrals,
+    ] = await Promise.all([
+      this.referralCampaignModel.countDocuments({
+        status: ReferralCampaignStatus.PUBLISHED,
+        ...periodFilter,
+      }),
+      // Distinct by user, not a raw Participant document count — the same
+      // user can hold a separate Participant row per campaign they've
+      // joined, and explicit instruction is that this insight counts each
+      // person once regardless of how many participation rows they have.
+      this.participantModel.distinct('user', {
+        status: ParticipantStatus.IN_PROGRESS,
+        ...periodFilter,
+      }),
+      this.participantModel.distinct('_id', {
+        status: { $in: [ParticipantStatus.QUALIFIED, ParticipantStatus.PAID] },
+      }),
+      this.participantModel.distinct('_id', {
+        status: ParticipantStatus.PAID,
+      }),
+      this.referralModel.countDocuments(periodFilter),
+    ]);
+    const participants = inProgressUserIds.length;
+
+    const [successfulReferrals, rewardPaid] = await Promise.all([
+      // hasCompletedChallenge true AND the referring participant is
+      // currently qualified or paid.
+      this.referralModel.countDocuments({
+        hasCompletedChallenge: true,
+        referrer: { $in: qualifiedOrPaidParticipantIds },
+        ...periodFilter,
+      }),
+      // Reward status paid AND the participant it's owed to is also paid.
+      this.rewardModel.countDocuments({
+        status: RewardStatus.PAID,
+        participant: { $in: paidParticipantIds },
+        ...periodFilter,
+      }),
+    ]);
+
+    // Judgment call, flagged (explicitly left open by the request): read as
+    // the referral funnel's own conversion — of every referral made in the
+    // period, what share actually succeeded. Formatted as a percentage
+    // string, matching this app's existing percentage-field convention
+    // (Waitlist's buyerInterest, Feedback's filterByStatus.percentage).
+    const conversionRate =
+      totalReferrals === 0
+        ? 0
+        : Math.round((successfulReferrals / totalReferrals) * 1000) / 10;
+
+    return {
+      period,
+      since,
+      until,
+      insights: {
+        activeCampaigns,
+        participants,
+        successfulReferrals,
+        rewardPaid,
+        conversionRate: `${conversionRate}%`,
+      },
+    };
+  }
+
+  // Kept as its own local implementation rather than a shared util — same
+  // "no prior-period comparison needed, adds lastYear" reasoning
+  // FeedbackService.resolvePeriodRange() already documents for itself.
+  private static resolvePeriodRange(
+    period: ReferralAnalyticsPeriod,
+    startDate?: string,
+    endDate?: string,
+  ): { since: Date; until: Date } {
+    const now = new Date();
+    switch (period) {
+      case 'lastMonth': {
+        const since = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const until = new Date(now.getFullYear(), now.getMonth(), 1);
+        return { since, until };
+      }
+      case 'last3Months': {
+        const since = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+        return { since, until: now };
+      }
+      case 'thisYear': {
+        const since = new Date(now.getFullYear(), 0, 1);
+        return { since, until: now };
+      }
+      case 'lastYear': {
+        const since = new Date(now.getFullYear() - 1, 0, 1);
+        const until = new Date(now.getFullYear(), 0, 1);
+        return { since, until };
+      }
+      case 'custom': {
+        const since = new Date(startDate!);
+        const until = new Date(
+          new Date(endDate!).getTime() + 24 * 60 * 60 * 1000,
+        );
+        return { since, until };
+      }
+      case 'thisMonth':
+      default: {
+        const since = new Date(now.getFullYear(), now.getMonth(), 1);
+        return { since, until: now };
+      }
+    }
   }
 
   // ---------------------------------------------------------------------

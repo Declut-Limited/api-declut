@@ -12,6 +12,7 @@ import { ReferralsService } from './referrals.service';
 import { CreateReferralCampaignDto } from './dto/create-referral-campaign.dto';
 import { UpdateReferralCampaignDto } from './dto/update-referral-campaign.dto';
 import { ListReferralCampaignsDto } from './dto/list-referral-campaigns.dto';
+import { ReferralAnalyticsDto } from './dto/referral-analytics.dto';
 import { AdminJwtAuthGuard } from '../admin-auth/guards/admin-jwt-auth.guard';
 import { PermissionsGuard } from '../admin-auth/guards/permissions.guard';
 import { RequirePermission } from '../admin-auth/decorators/require-permission.decorator';
@@ -38,9 +39,19 @@ export class AdminReferralCampaignsController {
     return this.referralsService.list(dto);
   }
 
-  // Must come after the bare list route above — no conflict here since
-  // there's no other static segment under this controller, but kept last
-  // for consistency with every other admin resource's route ordering.
+  // Must come before ':id' below — otherwise Nest would match the literal
+  // segment "analytics" as the id param, same hazard documented throughout
+  // this codebase (users/export, listings/by-user, ...).
+  @Get('analytics')
+  @RequirePermission('referrals', 'view')
+  analytics(@Query() dto: ReferralAnalyticsDto) {
+    return this.referralsService.getAnalytics(
+      dto.period ?? 'thisMonth',
+      dto.startDate,
+      dto.endDate,
+    );
+  }
+
   @Get(':id')
   @RequirePermission('referrals', 'view')
   findById(@Param('id') id: string) {
