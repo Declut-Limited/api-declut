@@ -6,8 +6,10 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ReferralsService } from './referrals.service';
 import { CreateReferralCampaignDto } from './dto/create-referral-campaign.dto';
 import { UpdateReferralCampaignDto } from './dto/update-referral-campaign.dto';
@@ -57,7 +59,20 @@ export class AdminReferralCampaignsController {
   @Get('dashboard')
   @RequirePermission('referrals', 'view')
   dashboard(@Query() dto: ReferralDashboardDto) {
-    return this.referralsService.getDashboard(dto.year);
+    return this.referralsService.getDashboard(dto.year, dto.allTime);
+  }
+
+  // Must come before ':id' below, same hazard as 'analytics'/'dashboard'.
+  @Get('export')
+  @RequirePermission('referrals', 'view')
+  async export(@Query() dto: ListReferralCampaignsDto, @Res() res: Response) {
+    const csv = await this.referralsService.exportCampaignsCsv(dto);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="referral-campaigns.csv"',
+    );
+    res.send(csv);
   }
 
   @Get(':id')

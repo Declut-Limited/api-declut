@@ -54,6 +54,14 @@ export class Referral {
   @Prop({ default: false })
   hasCompletedChallenge: boolean;
 
+  // The real Transaction that satisfied this referral's qualifying task
+  // (a completed sale or transaction) — evidence the referred person
+  // actually did something on the marketplace, not just signed up. Only
+  // set once the referral has actually qualified; a still-in-progress
+  // referral has none yet.
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Transaction' })
+  transaction?: Types.ObjectId;
+
   createdAt: Date;
   updatedAt: Date;
 }

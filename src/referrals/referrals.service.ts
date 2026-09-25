@@ -12,6 +12,8 @@ import {
   ReferralCampaignDocument,
   ReferralCampaignStatus,
   EligibleUsers,
+  ReferredTaskType,
+  ReferralRequirement,
 } from './schemas/referral-campaign.schema';
 import {
   Participant,
@@ -37,8 +39,10 @@ import {
   TransactionDocument,
 } from '../transactions/schemas/transaction.schema';
 import { PaginationDto } from '../common/dto/pagination.dto';
+import { CounterService } from '../common/counter/counter.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationRecipientType } from '../notifications/schemas/notification.schema';
+import { toCsv } from '../common/utils/csv.util';
 
 // Computed per-request against the calling user, never stored — see
 // computeEligibilityStatus() below.
@@ -80,10 +84,12 @@ const NEW_USER_WINDOW_DAYS = 30;
 // EscrowService's own shapeEscrowRow() uses for its populated fields.
 interface AdminParticipantAggregateRow {
   _id: Types.ObjectId;
+  slug?: string;
   status: ParticipantStatus;
   joinedAt: Date;
+  referralCode: string;
   progress: { amountOfReferrals: number; amountOfCompletedTransaction: number };
-  userDoc?: { _id: Types.ObjectId; name?: string } | null;
+  userDoc?: { _id: Types.ObjectId; name?: string; email?: string } | null;
   campaignDoc?: {
     _id: Types.ObjectId;
     name: string;
@@ -100,7 +106,9 @@ interface AdminRewardAggregateRow {
   _id: Types.ObjectId;
   slug?: string;
   status: RewardStatus;
-  userDoc?: { _id: Types.ObjectId; name?: string } | null;
+  amountPaid: number;
+  createdAt: Date;
+  userDoc?: { _id: Types.ObjectId; name?: string; email?: string } | null;
   campaignDoc?: {
     _id: Types.ObjectId;
     name: string;
@@ -148,6 +156,7 @@ export class ReferralsService {
     private transactionModel: Model<TransactionDocument>,
     private readonly auditLogService: AuditLogService,
     private readonly notificationsService: NotificationsService,
+    private readonly counterService: CounterService,
   ) {}
 
   async create(
@@ -199,8 +208,13 @@ export class ReferralsService {
     ]);
   }
 
+  // Trimmed to exactly what the campaign-list table needs (name, reward,
+  // date range, requirement, participant/qualified/paid counts, status,
+  // creator) — explicit instruction ("reduce the campaign list data to just
+  // what the table needs"). The full document (every config field) is only
+  // ever returned by findById() below, the detail view.
   async list(dto: ListReferralCampaignsDto): Promise<{
-    results: ReferralCampaignDocument[];
+    results: Record<string, unknown>[];
     total: number;
     page: number;
     limit: number;
@@ -212,11 +226,10 @@ export class ReferralsService {
       ...buildDateRangeFilter(dto),
     };
 
-    const [results, total] = await Promise.all([
+    const [campaigns, total] = await Promise.all([
       this.referralCampaignModel
         .find(filter)
         .populate('createdBy', ADMIN_POPULATE_FIELDS)
-        .populate('updatedBy', ADMIN_POPULATE_FIELDS)
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
@@ -224,7 +237,140 @@ export class ReferralsService {
       this.referralCampaignModel.countDocuments(filter),
     ]);
 
+    const results = await Promise.all(
+      campaigns.map((campaign) => this.shapeAdminCampaignRow(campaign)),
+    );
+
     return { results, total, page, limit };
+  }
+
+  // Unpaginated CSV of the same filtered set — same convention every other
+  // admin export in this app follows. Carries a few extra columns beyond
+  // the trimmed list shape (internalCampaignCode, paymentMethod/schedule,
+  // createdAt) since a CSV export isn't bound by the table's own column
+  // budget.
+  async exportCampaignsCsv(dto: ListReferralCampaignsDto): Promise<string> {
+    const filter: Record<string, unknown> = {
+      ...(dto.status ? { status: dto.status } : {}),
+      ...buildDateRangeFilter(dto),
+    };
+    const campaigns = await this.referralCampaignModel
+      .find(filter)
+      .populate('createdBy', ADMIN_POPULATE_FIELDS)
+      .sort({ createdAt: -1 })
+      .exec();
+
+    const rows = await Promise.all(
+      campaigns.map(async (campaign) => {
+        const counts = await this.computeCampaignCounts(campaign._id);
+        const createdBy = campaign.createdBy as unknown as
+          { name?: string } | undefined;
+        return {
+          id: campaign._id.toString(),
+          name: campaign.name,
+          internalCampaignCode: campaign.internalCampaignCode,
+          status: this.describeCampaignStatus(campaign.status),
+          reward: campaign.rewardAmount,
+          from: campaign.startDate ?? '',
+          to: campaign.endDate,
+          requirement: this.describeRequirement(campaign.referralRequirement),
+          ...counts,
+          paymentMethod: campaign.paymentMethod,
+          paymentSchedule: campaign.paymentSchedule,
+          createdBy: createdBy?.name ?? '',
+          createdAt: campaign.createdAt,
+        };
+      }),
+    );
+
+    return toCsv(rows, [
+      'id',
+      'name',
+      'internalCampaignCode',
+      'status',
+      'reward',
+      'from',
+      'to',
+      'requirement',
+      'participants',
+      'qualified',
+      'paid',
+      'paymentMethod',
+      'paymentSchedule',
+      'createdBy',
+      'createdAt',
+    ]);
+  }
+
+  private async computeCampaignCounts(
+    campaignId: Types.ObjectId,
+  ): Promise<{ participants: number; qualified: number; paid: number }> {
+    const [participants, qualified, paid] = await Promise.all([
+      this.participantModel.countDocuments({ campaign: campaignId }),
+      this.participantModel.countDocuments({
+        campaign: campaignId,
+        status: ParticipantStatus.QUALIFIED,
+      }),
+      this.participantModel.countDocuments({
+        campaign: campaignId,
+        status: ParticipantStatus.PAID,
+      }),
+    ]);
+    return { participants, qualified, paid };
+  }
+
+  private async shapeAdminCampaignRow(
+    campaign: ReferralCampaignDocument,
+  ): Promise<Record<string, unknown>> {
+    const counts = await this.computeCampaignCounts(campaign._id);
+    const createdBy = campaign.createdBy as unknown as
+      { name?: string } | undefined;
+    return {
+      id: campaign._id.toString(),
+      name: campaign.name,
+      reward: campaign.rewardAmount,
+      from: campaign.startDate ?? null,
+      to: campaign.endDate,
+      requirement: this.describeRequirement(campaign.referralRequirement),
+      ...counts,
+      status: this.describeCampaignStatus(campaign.status),
+      createdBy: createdBy?.name ?? null,
+    };
+  }
+
+  // e.g. "2 successful referrals" (both task types enabled), "3 completed
+  // sales" (complete_sale only), "2 completed transactions"
+  // (complete_transaction only) — matches the design's Requirement column.
+  private describeRequirement(requirement: ReferralRequirement): string {
+    const n = requirement.referralAmount;
+    const hasSale = requirement.eachReferredTask.includes(
+      ReferredTaskType.COMPLETE_SALE,
+    );
+    const hasTransaction = requirement.eachReferredTask.includes(
+      ReferredTaskType.COMPLETE_TRANSACTION,
+    );
+    const noun =
+      hasSale && hasTransaction
+        ? 'successful referral'
+        : hasSale
+          ? 'completed sale'
+          : 'completed transaction';
+    return `${n} ${noun}${n === 1 ? '' : 's'}`;
+  }
+
+  // published -> "Active" — matches the design's Status column wording.
+  private describeCampaignStatus(status: ReferralCampaignStatus): string {
+    switch (status) {
+      case ReferralCampaignStatus.PUBLISHED:
+        return 'Active';
+      case ReferralCampaignStatus.SCHEDULED:
+        return 'Scheduled';
+      case ReferralCampaignStatus.ENDED:
+        return 'Ended';
+      case ReferralCampaignStatus.DRAFT:
+      default:
+        return 'Draft';
+    }
   }
 
   async findById(id: string): Promise<ReferralCampaignDocument> {
@@ -475,7 +621,10 @@ export class ReferralsService {
   // to be year-scoped — the other 3 sections are scoped to the same year
   // for consistency with how getAnalytics() itself scopes every insight to
   // one shared window, not because each was individually asked to be.
-  async getDashboard(year?: number): Promise<{
+  async getDashboard(
+    year?: number,
+    allTime?: boolean,
+  ): Promise<{
     year: number;
     rewardSpent: {
       chart: { month: string; amountSpent: number }[];
@@ -489,7 +638,14 @@ export class ReferralsService {
     const targetYear = year ?? new Date().getFullYear();
     const since = new Date(targetYear, 0, 1);
     const until = new Date(targetYear + 1, 0, 1);
-    const yearFilter = { createdAt: { $gte: since, $lt: until } };
+    // rewardSpent's 12-month chart always needs one specific year regardless
+    // of allTime — a Jan-Dec chart has no sensible "all time" reading. The
+    // other 3 sections widen to every document ever when allTime is true —
+    // explicit instruction ("this should really be year scoped, they can be
+    // all time").
+    const scopeFilter = allTime
+      ? {}
+      : { createdAt: { $gte: since, $lt: until } };
 
     const [
       rewardSpent,
@@ -498,9 +654,9 @@ export class ReferralsService {
       qualificationStatus,
     ] = await Promise.all([
       this.computeRewardSpent(since, until),
-      this.computeCampaignPerformance(yearFilter),
-      this.computeTopReferrals(yearFilter),
-      this.computeQualificationStatus(yearFilter),
+      this.computeCampaignPerformance(scopeFilter),
+      this.computeTopReferrals(scopeFilter),
+      this.computeQualificationStatus(scopeFilter),
     ]);
 
     return {
@@ -565,13 +721,14 @@ export class ReferralsService {
     };
   }
 
-  // The 3 most recently created campaigns within the year, each with its
+  // The 3 most recently created campaigns within scopeFilter (either one
+  // year's window or {} for all-time — see getDashboard()), each with its
   // own performance figures scoped to that same window.
-  private async computeCampaignPerformance(yearFilter: {
-    createdAt: { $gte: Date; $lt: Date };
-  }): Promise<Record<string, unknown>[]> {
+  private async computeCampaignPerformance(
+    scopeFilter: Record<string, unknown>,
+  ): Promise<Record<string, unknown>[]> {
     const campaigns = await this.referralCampaignModel
-      .find(yearFilter)
+      .find(scopeFilter)
       .sort({ createdAt: -1 })
       .limit(3)
       .exec();
@@ -589,28 +746,28 @@ export class ReferralsService {
           this.participantModel.countDocuments({
             campaign: campaignId,
             status: ParticipantStatus.IN_PROGRESS,
-            ...yearFilter,
+            ...scopeFilter,
           }),
           this.participantModel.countDocuments({
             campaign: campaignId,
             status: ParticipantStatus.QUALIFIED,
-            ...yearFilter,
+            ...scopeFilter,
           }),
           this.referralModel.countDocuments({
             campaign: campaignId,
-            ...yearFilter,
+            ...scopeFilter,
           }),
           this.referralModel.countDocuments({
             campaign: campaignId,
             hasCompletedChallenge: true,
-            ...yearFilter,
+            ...scopeFilter,
           }),
           this.rewardModel.aggregate<{ total: number }>([
             {
               $match: {
                 campaign: campaignId,
                 status: RewardStatus.PAID,
-                ...yearFilter,
+                ...scopeFilter,
               },
             },
             { $group: { _id: null, total: { $sum: '$amountPaid' } } },
@@ -637,18 +794,19 @@ export class ReferralsService {
   }
 
   // Top 3 participants ranked by successful referrals (hasCompletedChallenge
-  // true) made within the year. transactionsGenerated reads from
+  // true) within scopeFilter (one year's window or {} for all-time).
+  // transactionsGenerated reads from
   // Participant.progress.amountOfCompletedTransaction — the field this app
   // already reserved for exactly this, still always 0 today since nothing
   // increments it yet (see the Participant schema's own comment).
-  private async computeTopReferrals(yearFilter: {
-    createdAt: { $gte: Date; $lt: Date };
-  }): Promise<Record<string, unknown>[]> {
+  private async computeTopReferrals(
+    scopeFilter: Record<string, unknown>,
+  ): Promise<Record<string, unknown>[]> {
     const ranked = await this.referralModel.aggregate<{
       _id: Types.ObjectId;
       successfulReferrals: number;
     }>([
-      { $match: { hasCompletedChallenge: true, ...yearFilter } },
+      { $match: { hasCompletedChallenge: true, ...scopeFilter } },
       { $group: { _id: '$referrer', successfulReferrals: { $sum: 1 } } },
       { $sort: { successfulReferrals: -1 } },
       { $limit: 3 },
@@ -664,7 +822,7 @@ export class ReferralsService {
           this.referralModel.countDocuments({
             referrer: row._id,
             qualifiedAt: { $ne: null },
-            ...yearFilter,
+            ...scopeFilter,
           }),
         ]);
         const userDoc = participant?.user as unknown as
@@ -682,15 +840,16 @@ export class ReferralsService {
     );
   }
 
-  // Current status distribution of participants who joined within the year.
-  private async computeQualificationStatus(yearFilter: {
-    createdAt: { $gte: Date; $lt: Date };
-  }): Promise<Record<string, number>> {
+  // Current status distribution of participants who joined within
+  // scopeFilter (one year's window or {} for all-time).
+  private async computeQualificationStatus(
+    scopeFilter: Record<string, unknown>,
+  ): Promise<Record<string, number>> {
     const rows = await this.participantModel.aggregate<{
       _id: ParticipantStatus;
       count: number;
     }>([
-      { $match: yearFilter },
+      { $match: scopeFilter },
       { $group: { _id: '$status', count: { $sum: 1 } } },
     ]);
     const counts = new Map(rows.map((r) => [r._id, r.count]));
@@ -721,7 +880,89 @@ export class ReferralsService {
   }> {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
+    const pipeline = this.buildParticipantAggregationPipeline(dto);
+    pipeline.push(
+      { $sort: { createdAt: -1 } },
+      {
+        $facet: {
+          data: [{ $skip: (page - 1) * limit }, { $limit: limit }],
+          totalCount: [{ $count: 'count' }],
+        },
+      },
+    );
 
+    const [agg] = await this.participantModel.aggregate<{
+      data: AdminParticipantAggregateRow[];
+      totalCount: { count: number }[];
+    }>(pipeline);
+
+    const total = agg?.totalCount[0]?.count ?? 0;
+    const results = (agg?.data ?? []).map((row) =>
+      this.shapeAdminParticipantRow(row),
+    );
+
+    return { results, total, page, limit };
+  }
+
+  // Unpaginated CSV of the same filtered set — shares the exact same
+  // $match/$lookup stages listParticipantsAdmin() uses (built once, so a fix
+  // to one doesn't need repeating in the other), just without the $facet.
+  async exportParticipantsCsv(
+    dto: ListReferralParticipantsDto,
+  ): Promise<string> {
+    const pipeline = this.buildParticipantAggregationPipeline(dto);
+    pipeline.push({ $sort: { createdAt: -1 } });
+
+    const rows =
+      await this.participantModel.aggregate<AdminParticipantAggregateRow>(
+        pipeline,
+      );
+
+    const csvRows = rows.map((row) => {
+      const campaignDoc = row.campaignDoc;
+      const referralAmount =
+        campaignDoc?.referralRequirement?.referralAmount ?? 0;
+      const progressPercentage = referralAmount
+        ? Math.min(
+            100,
+            Math.round((row.progress.amountOfReferrals / referralAmount) * 100),
+          )
+        : 0;
+      return {
+        id: row._id.toString(),
+        slug: row.slug ?? '',
+        participantName: row.userDoc?.name ?? '',
+        participantEmail: row.userDoc?.email ?? '',
+        campaignName: campaignDoc?.name ?? '',
+        referralCode: row.referralCode,
+        status: row.status,
+        referredUsers: row.referredUsersCount,
+        qualified: row.qualifiedCount,
+        progressPercentage,
+        reward: campaignDoc?.rewardAmount ?? '',
+        joinedAt: row.joinedAt,
+      };
+    });
+
+    return toCsv(csvRows, [
+      'id',
+      'slug',
+      'participantName',
+      'participantEmail',
+      'campaignName',
+      'referralCode',
+      'status',
+      'referredUsers',
+      'qualified',
+      'progressPercentage',
+      'reward',
+      'joinedAt',
+    ]);
+  }
+
+  private buildParticipantAggregationPipeline(
+    dto: ListReferralParticipantsDto,
+  ): PipelineStage[] {
     const match: Record<string, unknown> = {
       ...(dto.status ? { status: dto.status } : {}),
       ...(dto.campaignId
@@ -782,26 +1023,9 @@ export class ReferralsService {
           },
         },
       },
-      { $sort: { createdAt: -1 } },
-      {
-        $facet: {
-          data: [{ $skip: (page - 1) * limit }, { $limit: limit }],
-          totalCount: [{ $count: 'count' }],
-        },
-      },
     );
 
-    const [agg] = await this.participantModel.aggregate<{
-      data: AdminParticipantAggregateRow[];
-      totalCount: { count: number }[];
-    }>(pipeline);
-
-    const total = agg?.totalCount[0]?.count ?? 0;
-    const results = (agg?.data ?? []).map((row) =>
-      this.shapeAdminParticipantRow(row),
-    );
-
-    return { results, total, page, limit };
+    return pipeline;
   }
 
   // deadline reads as the participant's own personal deadline (joinedAt +
@@ -833,6 +1057,7 @@ export class ReferralsService {
 
     return {
       id: row._id.toString(),
+      slug: row.slug ?? null,
       participant: row.userDoc
         ? { id: row.userDoc._id.toString(), name: row.userDoc.name }
         : null,
@@ -841,7 +1066,6 @@ export class ReferralsService {
         : null,
       referredUsers: row.referredUsersCount,
       qualified: row.qualifiedCount,
-      ownTransactions: `${row.progress.amountOfCompletedTransaction}/${referralAmount}`,
       progressPercentage,
       deadline,
       reward: campaignDoc?.rewardAmount ?? null,
@@ -870,7 +1094,9 @@ export class ReferralsService {
 
     const campaign =
       participant.campaign as unknown as ReferralCampaignDocument;
-    const referralAmount = campaign.referralRequirement.referralAmount;
+    const participantUserId = (
+      participant.user as unknown as { _id: Types.ObjectId }
+    )._id;
 
     const referralsPage = dto.referralsPage ?? 1;
     const referralsLimit = dto.referralsLimit ?? 10;
@@ -885,6 +1111,7 @@ export class ReferralsService {
       referralsTotal,
       referredUserIds,
       recentAuditLogs,
+      ownMostRecentTransaction,
     ] = await Promise.all([
       this.referralModel.countDocuments({ referrer: participant._id }),
       this.referralModel.countDocuments({
@@ -898,6 +1125,7 @@ export class ReferralsService {
       this.referralModel
         .find({ referrer: participant._id })
         .populate('referred', 'name email')
+        .populate('transaction', 'reference amount status')
         .sort({ createdAt: -1 })
         .skip((referralsPage - 1) * referralsLimit)
         .limit(referralsLimit)
@@ -909,6 +1137,18 @@ export class ReferralsService {
         participant._id.toString(),
         3,
       ),
+      // The detail header's own transaction reference — the participant's
+      // (the referrer's own) most recent real Transaction as buyer or
+      // seller, per explicit instruction ("use the referral guy's id to get
+      // all his transaction"). Distinct from the transactions sub-table
+      // below, which is about their *referred* users' own transactions.
+      this.transactionModel
+        .findOne({
+          $or: [{ buyer: participantUserId }, { seller: participantUserId }],
+        })
+        .select('reference')
+        .sort({ createdAt: -1 })
+        .exec(),
     ]);
 
     const [transactionDocs, transactionsTotal] = await Promise.all([
@@ -936,21 +1176,23 @@ export class ReferralsService {
 
     return {
       id: participant._id.toString(),
+      slug: participant.slug ?? null,
       status: participant.status,
       participant: {
-        id: (
-          participant.user as unknown as { _id: Types.ObjectId }
-        )._id.toString(),
+        id: participantUserId.toString(),
         name: (participant.user as unknown as { name?: string }).name,
         email: (participant.user as unknown as { email?: string }).email,
       },
       campaign: { id: campaign._id.toString(), name: campaign.name },
       joinedAt: participant.joinedAt,
+      // The participant's own (the referrer's) most recent real Transaction
+      // reference, e.g. "TXN-2026-00044" — null if they've never
+      // transacted on the marketplace themselves.
+      transactionReference: ownMostRecentTransaction?.reference ?? null,
       insights: {
         potentialReward: campaign.rewardAmount,
         referredUsers: referredUsersCount,
         qualifiedReferrals: qualifiedCount,
-        ownTransactions: `${participant.progress.amountOfCompletedTransaction}/${referralAmount}`,
         rewardAmountPaid: rewardPaidAgg[0]?.total ?? 0,
       },
       referredUsers: {
@@ -978,6 +1220,14 @@ export class ReferralsService {
   ): Record<string, unknown> {
     const referredUser = referral.referred as unknown as
       { _id: Types.ObjectId; name?: string; email?: string } | undefined;
+    const transaction = referral.transaction as unknown as
+      | {
+          _id: Types.ObjectId;
+          reference?: string;
+          amount?: number;
+          status?: string;
+        }
+      | undefined;
     return {
       id: referral._id.toString(),
       slug: referral.slug ?? null,
@@ -987,6 +1237,16 @@ export class ReferralsService {
       referredAt: referral.referredAt,
       qualifiedAt: referral.qualifiedAt,
       hasCompletedChallenge: referral.hasCompletedChallenge,
+      // The real Transaction that satisfied this referral's qualifying
+      // task — null while still in progress / never qualified.
+      transaction: transaction
+        ? {
+            id: transaction._id.toString(),
+            reference: transaction.reference,
+            amount: transaction.amount,
+            status: transaction.status,
+          }
+        : null,
     };
   }
 
@@ -1021,7 +1281,71 @@ export class ReferralsService {
   }> {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
+    const pipeline = this.buildRewardAggregationPipeline(dto);
+    pipeline.push(
+      { $sort: { createdAt: -1 } },
+      {
+        $facet: {
+          data: [{ $skip: (page - 1) * limit }, { $limit: limit }],
+          totalCount: [{ $count: 'count' }],
+        },
+      },
+    );
 
+    const [agg] = await this.rewardModel.aggregate<{
+      data: AdminRewardAggregateRow[];
+      totalCount: { count: number }[];
+    }>(pipeline);
+
+    const total = agg?.totalCount[0]?.count ?? 0;
+    const results = (agg?.data ?? []).map((row) =>
+      this.shapeAdminRewardRow(row),
+    );
+
+    return { results, total, page, limit };
+  }
+
+  // Unpaginated CSV of the same filtered set — shares the exact same
+  // $match/$lookup stages listRewardsAdmin() uses, just without the $facet.
+  async exportRewardsCsv(dto: ListReferralRewardsDto): Promise<string> {
+    const pipeline = this.buildRewardAggregationPipeline(dto);
+    pipeline.push({ $sort: { createdAt: -1 } });
+
+    const rows =
+      await this.rewardModel.aggregate<AdminRewardAggregateRow>(pipeline);
+
+    const csvRows = rows.map((row) => ({
+      id: row._id.toString(),
+      slug: row.slug ?? '',
+      participantName: row.userDoc?.name ?? '',
+      participantEmail: row.userDoc?.email ?? '',
+      campaignName: row.campaignDoc?.name ?? '',
+      reward: row.campaignDoc?.rewardAmount ?? '',
+      amountPaid: row.amountPaid,
+      qualifiedOn: row.referralDoc?.qualifiedAt ?? '',
+      payment: row.status,
+      schedule: row.campaignDoc?.paymentSchedule ?? '',
+      createdAt: row.createdAt,
+    }));
+
+    return toCsv(csvRows, [
+      'id',
+      'slug',
+      'participantName',
+      'participantEmail',
+      'campaignName',
+      'reward',
+      'amountPaid',
+      'qualifiedOn',
+      'payment',
+      'schedule',
+      'createdAt',
+    ]);
+  }
+
+  private buildRewardAggregationPipeline(
+    dto: ListReferralRewardsDto,
+  ): PipelineStage[] {
     const match: Record<string, unknown> = {
       ...(dto.status ? { status: dto.status } : {}),
       ...(dto.campaignId
@@ -1099,26 +1423,9 @@ export class ReferralsService {
         },
       },
       { $unwind: { path: '$referralDoc', preserveNullAndEmptyArrays: true } },
-      { $sort: { createdAt: -1 } },
-      {
-        $facet: {
-          data: [{ $skip: (page - 1) * limit }, { $limit: limit }],
-          totalCount: [{ $count: 'count' }],
-        },
-      },
     );
 
-    const [agg] = await this.rewardModel.aggregate<{
-      data: AdminRewardAggregateRow[];
-      totalCount: { count: number }[];
-    }>(pipeline);
-
-    const total = agg?.totalCount[0]?.count ?? 0;
-    const results = (agg?.data ?? []).map((row) =>
-      this.shapeAdminRewardRow(row),
-    );
-
-    return { results, total, page, limit };
+    return pipeline;
   }
 
   private shapeAdminRewardRow(
@@ -1364,12 +1671,16 @@ export class ReferralsService {
       user,
       campaign.internalCampaignCode,
     );
+    // PAT-#### — generated once, at the true first join, never touched
+    // again (a rejoin above reuses the existing document/slug entirely).
+    const slug = await this.counterService.nextSlug('participant', 'PAT', 4);
 
     let participant: ParticipantDocument;
     try {
       participant = await this.participantModel.create({
         campaign: campaign._id,
         user: userId,
+        slug,
         referralCode,
         status: ParticipantStatus.IN_PROGRESS,
         joinedAt: new Date(),

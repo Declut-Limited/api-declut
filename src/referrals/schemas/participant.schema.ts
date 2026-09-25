@@ -30,6 +30,14 @@ export const ParticipantProgressSchema =
 
 @Schema({ timestamps: true })
 export class Participant {
+  // PAT-#### via CounterService, generated once at the participant's true
+  // first join (never touched again, including on a rejoin) — same
+  // sequential-not-random slug convention every other entity in this app
+  // uses. Optional/sparse since it's a schema addition — pre-existing
+  // documents from before this field was added have none, no backfill.
+  @Prop({ unique: true, sparse: true })
+  slug?: string;
+
   @Prop({
     type: MongooseSchema.Types.ObjectId,
     ref: 'ReferralCampaign',

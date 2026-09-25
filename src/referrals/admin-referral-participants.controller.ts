@@ -1,4 +1,5 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, Res, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
 import { ReferralsService } from './referrals.service';
 import { ListReferralParticipantsDto } from './dto/list-referral-participants.dto';
 import { ReferralParticipantDetailDto } from './dto/referral-participant-detail.dto';
@@ -17,6 +18,23 @@ export class AdminReferralParticipantsController {
   @RequirePermission('referrals', 'view')
   list(@Query() dto: ListReferralParticipantsDto) {
     return this.referralsService.listParticipantsAdmin(dto);
+  }
+
+  // Must come before ':id' below — otherwise Nest matches "export" as the
+  // id, same hazard documented throughout this codebase.
+  @Get('export')
+  @RequirePermission('referrals', 'view')
+  async export(
+    @Query() dto: ListReferralParticipantsDto,
+    @Res() res: Response,
+  ) {
+    const csv = await this.referralsService.exportParticipantsCsv(dto);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="referral-participants.csv"',
+    );
+    res.send(csv);
   }
 
   @Get(':id')

@@ -20,6 +20,7 @@ import {
   TransactionSchema,
 } from '../transactions/schemas/transaction.schema';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { CounterModule } from '../common/counter/counter.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     AdminAuthModule,
     AuditLogModule,
     NotificationsModule,
+    CounterModule,
   ],
   controllers: [
     AdminReferralCampaignsController,

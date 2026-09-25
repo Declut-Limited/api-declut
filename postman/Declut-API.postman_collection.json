@@ -8088,7 +8088,7 @@
                     }
                   ]
                 },
-                "description": "Paginated list of every referral campaign, newest first."
+                "description": "Paginated list of every referral campaign, newest first — trimmed to exactly what the campaign table needs: id, name, reward (rewardAmount), from/to (startDate/endDate), requirement (a human string derived from referralRequirement, e.g. \"2 successful referrals\"/\"3 completed sales\"/\"2 completed transactions\"), participants/qualified/paid (live Participant counts for that campaign), status (a display label — Active/Scheduled/Ended/Draft, not the raw enum), createdBy (the admin's name). The full raw document (every config field) is only ever returned by Get referral campaign by ID below."
               },
               "response": []
             },
@@ -8150,7 +8150,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/admin/referral-campaigns/dashboard?year=2026",
+                  "raw": "{{baseUrl}}/admin/referral-campaigns/dashboard?year=2026&allTime=false",
                   "host": [
                     "{{baseUrl}}"
                   ],
@@ -8165,10 +8165,62 @@
                       "value": "2026",
                       "disabled": true,
                       "description": "Calendar year to scope every section to. Default: the current year."
+                    },
+                    {
+                      "key": "allTime",
+                      "value": "false",
+                      "disabled": true,
+                      "description": "When true, widens campaignPerformance/topReferrals/qualificationStatus to every document ever, ignoring year entirely. rewardSpent's 12-month chart always stays locked to one specific year regardless (a Jan-Dec chart has no sensible \"all time\" reading)."
                     }
                   ]
                 },
-                "description": "4 more dashboard sections beyond analytics, all scoped to one shared calendar year (default: current year): rewardSpent ({chart: 12 zero-filled Jan-Dec buckets of {month, amountSpent} for paid Reward.amountPaid, bestMonth: the month with the most recipients paid e.g. \"July - 50 users\", totalSpent: the year's total}), campaignPerformance (the 3 most recently created campaigns in the year, each with participants/referralCount/successfulCount/conversionRate/qualified/rewardSpent), topReferrals (top 3 participants by successful referrals in the year, with name/successfulReferrals/qualified/transactionsGenerated — the last reads from Participant.progress.amountOfCompletedTransaction, which is 0 for everyone until that counter is wired up), qualificationStatus (participant counts per status, for participants who joined in the year). Gated referrals/view."
+                "description": "4 more dashboard sections beyond analytics: rewardSpent ({chart: 12 zero-filled Jan-Dec buckets of {month, amountSpent} for paid Reward.amountPaid, bestMonth: the month with the most recipients paid e.g. \"July - 50 users\", totalSpent: the year's total} — always scoped to the one calendar year, never affected by allTime), campaignPerformance (the 3 most recently created campaigns within scope, each with participants/referralCount/successfulCount/conversionRate/qualified/rewardSpent), topReferrals (top 3 participants by successful referrals within scope, with name/successfulReferrals/qualified/transactionsGenerated — the last reads from Participant.progress.amountOfCompletedTransaction, which is 0 for everyone until that counter is wired up), qualificationStatus (participant counts per status within scope). \"Within scope\" is the one calendar year (default) or every document ever (allTime=true). Gated referrals/view."
+              },
+              "response": []
+            },
+            {
+              "name": "Export referral campaigns (CSV)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/referral-campaigns/export?status=published&startDate=2026-01-01&endDate=2026-12-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "referral-campaigns",
+                    "export"
+                  ],
+                  "query": [
+                    {
+                      "key": "status",
+                      "value": "published",
+                      "disabled": true,
+                      "description": "Filter by campaign status: draft, published, scheduled, ended."
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-01-01",
+                      "disabled": true,
+                      "description": "Filter by createdAt >= this date (ISO date string)."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-12-31",
+                      "disabled": true,
+                      "description": "Filter by createdAt <= this date, stamped to 23:59:59 UTC. Must not be earlier than startDate."
+                    }
+                  ]
+                },
+                "description": "Unpaginated CSV, same filters as List referral campaigns. Carries a few extra columns beyond the trimmed list shape (internalCampaignCode, paymentMethod, paymentSchedule, createdAt) since a CSV isn't bound by the table's own column budget. Must come before ':id' below — otherwise Nest matches \"export\" as the id, same hazard as every other export in this app."
               },
               "response": []
             },
@@ -8314,7 +8366,65 @@
                     }
                   ]
                 },
-                "description": "Paginated, searchable, filterable list of every Participant across every campaign — participant name, campaign name, referredUsers (total referrals made), qualified (referrals with qualifiedAt set), ownTransactions (\"completed/target\" against the campaign's own referralAmount), progressPercentage, deadline (joinedAt + the campaign's qualificationWindow, falling back to the campaign's endDate if none is set), reward (the campaign's configured rewardAmount, not a real Reward row's amountPaid), and status (raw ParticipantStatus value)."
+                "description": "Paginated, searchable, filterable list of every Participant across every campaign — id, slug (PAT-####, generated at first join; null for a pre-existing participant that predates this field), participant name, campaign name, referredUsers (total referrals made), qualified (referrals with qualifiedAt set), progressPercentage, deadline (joinedAt + the campaign's qualificationWindow, falling back to the campaign's endDate if none is set), reward (the campaign's configured rewardAmount, not a real Reward row's amountPaid), and status (raw ParticipantStatus value)."
+              },
+              "response": []
+            },
+            {
+              "name": "Export referral participants (CSV)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/referral-participants/export?status=in_progress&campaignId={{referralCampaignId}}&search=amara&startDate=2026-01-01&endDate=2026-12-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "referral-participants",
+                    "export"
+                  ],
+                  "query": [
+                    {
+                      "key": "status",
+                      "value": "in_progress",
+                      "disabled": true,
+                      "description": "Filter by participation status: in_progress, qualified, paid, disqualified, expired, left."
+                    },
+                    {
+                      "key": "campaignId",
+                      "value": "{{referralCampaignId}}",
+                      "disabled": true,
+                      "description": "Filter to one campaign."
+                    },
+                    {
+                      "key": "search",
+                      "value": "amara",
+                      "disabled": true,
+                      "description": "Case-insensitive substring match against the participant's own name or their campaign's name."
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-01-01",
+                      "disabled": true,
+                      "description": "Filter by createdAt >= this date (ISO date string)."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-12-31",
+                      "disabled": true,
+                      "description": "Filter by createdAt <= this date, stamped to 23:59:59 UTC. Must not be earlier than startDate."
+                    }
+                  ]
+                },
+                "description": "Unpaginated CSV, same filters as List referral participants. Columns: id, slug, participantName, participantEmail, campaignName, referralCode, status, referredUsers, qualified, progressPercentage, reward, joinedAt. Must come before ':id' below — otherwise Nest matches \"export\" as the id."
               },
               "response": []
             },
@@ -8370,7 +8480,7 @@
                         }
                       ]
                     },
-                    "description": "insights ({potentialReward: the campaign's rewardAmount, referredUsers, qualifiedReferrals, ownTransactions, rewardAmountPaid: summed paid Reward.amountPaid for this participant}), referredUsers (paginated — this participant's own Referral docs, each with the referred user's id/name, referredAt, qualifiedAt, hasCompletedChallenge), transactions (paginated — real marketplace Transaction docs where any of this participant's referred users is the buyer or seller, with productName/amount/date/buyer/seller/status; empty if none of their referred users has transacted), and timeline (the 3 most recent AuditLog entries for this participant — join/rejoin/leave events)."
+                    "description": "slug (PAT-####), transactionReference (this participant's own — the referrer's own — most recent real Transaction reference as buyer or seller, e.g. \"TXN-2026-00044\"; null if they've never transacted themselves — distinct from the transactions sub-table below, which is about their *referred* users' own transactions), insights ({potentialReward: the campaign's rewardAmount, referredUsers, qualifiedReferrals, rewardAmountPaid: summed paid Reward.amountPaid for this participant}), referredUsers (paginated — this participant's own Referral docs, each with the referred user's id/name, referredAt, qualifiedAt, hasCompletedChallenge, and transaction: {id, reference, amount, status} — the real Transaction that satisfied a qualifying referral, null while still in progress), transactions (paginated — real marketplace Transaction docs where any of this participant's referred users is the buyer or seller, with productName/amount/date/buyer/seller/status; empty if none of their referred users has transacted), and timeline (the 3 most recent AuditLog entries for this participant — join/rejoin/leave events)."
                   },
                   "response": []
                 }
@@ -8447,6 +8557,64 @@
                   ]
                 },
                 "description": "Paginated, searchable, filterable list of every Reward — participant name, campaign name, reward (the campaign's configured rewardAmount, shown even while pending — Reward.amountPaid itself is 0 until actually disbursed), qualifiedOn (the matching Referral's qualifiedAt, resolved by the shared (campaign, participant, referred) triple), payment (raw Reward status: pending/paid/canceled), schedule (the campaign's paymentSchedule)."
+              },
+              "response": []
+            },
+            {
+              "name": "Export referral rewards (CSV)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/referral-rewards/export?status=pending&campaignId={{referralCampaignId}}&search=amara&startDate=2026-01-01&endDate=2026-12-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "referral-rewards",
+                    "export"
+                  ],
+                  "query": [
+                    {
+                      "key": "status",
+                      "value": "pending",
+                      "disabled": true,
+                      "description": "Filter by Reward status: pending, paid, canceled."
+                    },
+                    {
+                      "key": "campaignId",
+                      "value": "{{referralCampaignId}}",
+                      "disabled": true,
+                      "description": "Filter to one campaign."
+                    },
+                    {
+                      "key": "search",
+                      "value": "amara",
+                      "disabled": true,
+                      "description": "Case-insensitive substring match against the participant's own name or their campaign's name."
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-01-01",
+                      "disabled": true,
+                      "description": "Filter by createdAt >= this date (ISO date string)."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-12-31",
+                      "disabled": true,
+                      "description": "Filter by createdAt <= this date, stamped to 23:59:59 UTC. Must not be earlier than startDate."
+                    }
+                  ]
+                },
+                "description": "Unpaginated CSV, same filters as List referral rewards. Columns: id, slug, participantName, participantEmail, campaignName, reward, amountPaid, qualifiedOn, payment, schedule, createdAt. No ':id' route exists yet on this controller, so no ordering hazard — still placed consistently with every other export in this app."
               },
               "response": []
             }
