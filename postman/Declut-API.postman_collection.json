@@ -3068,7 +3068,7 @@
                 }
               ]
             },
-            "description": "Every non-draft campaign (published/scheduled/ended), each with eligibilityStatus (based on eligibility.eligibleUsers vs. the caller's signup age), a computed referralCode (deterministic, not stored — same for this user+campaign every time), and timeLeft (\"18 days left\" / \"24 hours to start\" / \"5 mins left\", null once ended)."
+            "description": "Every non-draft campaign (published/scheduled/ended), each with eligibilityStatus (based on eligibility.eligibleUsers vs. the caller's signup age), a computed referralCode (deterministic, not stored — same for this user+campaign every time), and timeLeft (\"18 days left\" / \"24 hours to start\" / \"5 mins left\", null once ended). Also excludes any campaign the caller already has a Participant record for (any status) — that campaign belongs under GET /referral-campaigns/me instead."
           },
           "response": []
         },
@@ -3093,7 +3093,7 @@
                 "{{referralCampaignIdOrCode}}"
               ]
             },
-            "description": "One available campaign, resolved by Mongo id or internalCampaignCode. Same shape as one row of the list. Draft campaigns 404 here too."
+            "description": "One available campaign, resolved by Mongo id or internalCampaignCode. Same shape as one row of the list. Draft campaigns 404 here too. Also 404s (indistinguishable from draft/nonexistent) if the caller already has a Participant record for it — use GET /referral-campaigns/me/{idOrCode} for that."
           },
           "response": []
         },

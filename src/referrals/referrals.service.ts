@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, isValidObjectId } from 'mongoose';
+import { createHash } from 'crypto';
 import {
   ReferralCampaign,
   ReferralCampaignDocument,
@@ -258,7 +259,9 @@ export class ReferralsService {
   // ---------------------------------------------------------------------
 
   // Every non-draft campaign is visible to users — published/scheduled/
-  // ended, not just currently-joinable ones.
+  // ended, not just currently-joinable ones — EXCEPT one the caller already
+  // has a Participant record for (any status, not just active) — that
+  // belongs under GET /referral-campaigns/me instead, not here.
   async listAvailableForUser(
     userId: string,
     dto: PaginationDto,
@@ -270,7 +273,14 @@ export class ReferralsService {
   }> {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
-    const filter = { status: { $ne: ReferralCampaignStatus.DRAFT } };
+    const participatedCampaignIds = await this.participantModel.distinct(
+      'campaign',
+      { user: userId },
+    );
+    const filter = {
+      status: { $ne: ReferralCampaignStatus.DRAFT },
+      _id: { $nin: participatedCampaignIds },
+    };
 
     const [campaigns, total, user] = await Promise.all([
       this.referralCampaignModel
@@ -290,12 +300,22 @@ export class ReferralsService {
     return { results, total, page, limit };
   }
 
-  // A single available campaign, by Mongo id or internalCampaignCode.
+  // A single available campaign, by Mongo id or internalCampaignCode — 404s
+  // (same as a draft or a nonexistent one, deliberately indistinguishable)
+  // if the caller already has a Participant record for it; use
+  // GET /referral-campaigns/me/:idOrCode for that instead.
   async getAvailableCampaignDetail(
     idOrCode: string,
     userId: string,
   ): Promise<Record<string, unknown>> {
     const campaign = await this.findVisibleCampaignByIdOrCode(idOrCode);
+    const alreadyParticipating = await this.participantModel.exists({
+      campaign: campaign._id,
+      user: userId,
+    });
+    if (alreadyParticipating) {
+      throw new NotFoundException('Referral campaign not found');
+    }
     const user = await this.userModel
       .findById(userId)
       .select('name createdAt')
@@ -697,9 +717,11 @@ export class ReferralsService {
   // produces the same code, so it can be shown on a campaign a user hasn't
   // even joined yet (explicit instruction: attach it to every campaign
   // fetch, joined or not, computed at response time, never stored on the
-  // campaign itself). Uniqueness comes from the trailing user-id fragment
-  // (ObjectIds are unique) rather than a collision-retry loop — e.g.
-  // "DAMOLA-REFSEPT2026-A05F".
+  // campaign itself). Capped at 10 chars total (explicit instruction) — 4
+  // chars of the user's name + a 6-char base36 hash of (userId, campaignCode)
+  // for uniqueness, e.g. "IDOWO3F9A2". 36^6 (~2.2 billion) possible hash
+  // suffixes makes a collision practically impossible at this app's scale;
+  // the schema's `unique: true` index is still the real backstop.
   private computeReferralCode(
     user: Pick<UserDocument, 'name' | '_id'>,
     campaignCode: string,
@@ -708,12 +730,15 @@ export class ReferralsService {
       user.name
         .replace(/[^a-zA-Z0-9]/g, '')
         .toUpperCase()
-        .slice(0, 6) || 'USER';
-    const campaignPart = campaignCode
-      .replace(/[^a-zA-Z0-9]/g, '')
+        .slice(0, 4) || 'USER';
+    const hash = createHash('sha256')
+      .update(`${user._id.toString()}:${campaignCode}`)
+      .digest('hex');
+    const hashPart = BigInt(`0x${hash.slice(0, 12)}`)
+      .toString(36)
       .toUpperCase()
-      .slice(0, 10);
-    const userIdFragment = user._id.toString().slice(-6).toUpperCase();
-    return `${namePart}-${campaignPart}-${userIdFragment}`;
+      .padStart(6, '0')
+      .slice(0, 6);
+    return `${namePart}${hashPart}`;
   }
 }
