@@ -14,6 +14,11 @@ export enum RewardStatus {
 // soon") — this pass is the schema + the admin analytics reads over it.
 @Schema({ timestamps: true })
 export class Reward {
+  // RWD-#### — same "added now, generated once a create flow exists" note
+  // as Referral.slug above.
+  @Prop({ unique: true, sparse: true })
+  slug?: string;
+
   @Prop({
     type: MongooseSchema.Types.ObjectId,
     ref: 'ReferralCampaign',

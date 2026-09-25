@@ -10,9 +10,15 @@ import { Reward, RewardSchema } from './schemas/reward.schema';
 import { ReferralsService } from './referrals.service';
 import { AdminReferralCampaignsController } from './admin-referral-campaigns.controller';
 import { UserReferralCampaignsController } from './user-referral-campaigns.controller';
+import { AdminReferralParticipantsController } from './admin-referral-participants.controller';
+import { AdminReferralRewardsController } from './admin-referral-rewards.controller';
 import { AdminAuthModule } from '../admin-auth/admin-auth.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { User, UserSchema } from '../users/schemas/user.schema';
+import {
+  Transaction,
+  TransactionSchema,
+} from '../transactions/schemas/transaction.schema';
 import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
@@ -23,6 +29,11 @@ import { NotificationsModule } from '../notifications/notifications.module';
       { name: Referral.name, schema: ReferralSchema },
       { name: Reward.name, schema: RewardSchema },
       { name: User.name, schema: UserSchema },
+      // Registered directly (not a TransactionsModule import, to avoid ever
+      // risking a cycle) — read-only, backs the participant detail's
+      // "referred users' own real transactions" sub-table. Same workaround
+      // Listings/Users/BankAccounts already use for this exact pair.
+      { name: Transaction.name, schema: TransactionSchema },
     ]),
     AdminAuthModule,
     AuditLogModule,
@@ -31,6 +42,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
   controllers: [
     AdminReferralCampaignsController,
     UserReferralCampaignsController,
+    AdminReferralParticipantsController,
+    AdminReferralRewardsController,
   ],
   providers: [ReferralsService],
   exports: [ReferralsService],

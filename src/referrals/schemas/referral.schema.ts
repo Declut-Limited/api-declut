@@ -10,6 +10,13 @@ export type ReferralDocument = HydratedDocument<Referral>;
 // soon") — this pass is the schema + the admin analytics reads over it.
 @Schema({ timestamps: true })
 export class Referral {
+  // REF-#### — matches this app's per-entity slug convention and the
+  // dashboard design's own displayed ids. No creation endpoint exists for
+  // Referral yet, so nothing generates this today; added now so the field
+  // is ready once one does.
+  @Prop({ unique: true, sparse: true })
+  slug?: string;
+
   @Prop({
     type: MongooseSchema.Types.ObjectId,
     ref: 'ReferralCampaign',

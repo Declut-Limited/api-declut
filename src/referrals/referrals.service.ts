@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types, isValidObjectId } from 'mongoose';
+import { Model, PipelineStage, Types, isValidObjectId } from 'mongoose';
 import { createHash } from 'crypto';
 import {
   ReferralCampaign,
@@ -24,9 +24,18 @@ import { CreateReferralCampaignDto } from './dto/create-referral-campaign.dto';
 import { UpdateReferralCampaignDto } from './dto/update-referral-campaign.dto';
 import { ListReferralCampaignsDto } from './dto/list-referral-campaigns.dto';
 import { ReferralAnalyticsPeriod } from './dto/referral-analytics.dto';
+import { ListReferralParticipantsDto } from './dto/list-referral-participants.dto';
+import { ReferralParticipantDetailDto } from './dto/referral-participant-detail.dto';
+import { ListReferralRewardsDto } from './dto/list-referral-rewards.dto';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { describeEvent } from '../audit-log/event-labels';
 import { buildDateRangeFilter } from '../common/utils/date-range.util';
+import { escapeRegex } from '../common/utils/regex.util';
 import { User, UserDocument } from '../users/schemas/user.schema';
+import {
+  Transaction,
+  TransactionDocument,
+} from '../transactions/schemas/transaction.schema';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationRecipientType } from '../notifications/schemas/notification.schema';
@@ -65,6 +74,57 @@ const ADMIN_POPULATE_FIELDS = 'name email slug';
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const NEW_USER_WINDOW_DAYS = 30;
 
+// Shapes of the aggregation pipeline rows built in listParticipantsAdmin()/
+// listRewardsAdmin() below — an explicit interface (not Record<string,
+// any>) so the row-shaping methods stay type-safe, same convention
+// EscrowService's own shapeEscrowRow() uses for its populated fields.
+interface AdminParticipantAggregateRow {
+  _id: Types.ObjectId;
+  status: ParticipantStatus;
+  joinedAt: Date;
+  progress: { amountOfReferrals: number; amountOfCompletedTransaction: number };
+  userDoc?: { _id: Types.ObjectId; name?: string } | null;
+  campaignDoc?: {
+    _id: Types.ObjectId;
+    name: string;
+    rewardAmount: number;
+    endDate: Date;
+    qualificationWindow?: number;
+    referralRequirement: { referralAmount: number };
+  } | null;
+  referredUsersCount: number;
+  qualifiedCount: number;
+}
+
+interface AdminRewardAggregateRow {
+  _id: Types.ObjectId;
+  slug?: string;
+  status: RewardStatus;
+  userDoc?: { _id: Types.ObjectId; name?: string } | null;
+  campaignDoc?: {
+    _id: Types.ObjectId;
+    name: string;
+    rewardAmount: number;
+    paymentSchedule: string;
+  } | null;
+  referralDoc?: { qualifiedAt?: Date | null } | null;
+}
+
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
 @Injectable()
 export class ReferralsService {
   constructor(
@@ -82,6 +142,10 @@ export class ReferralsService {
     // field read (here: a user's name + signup date).
     @InjectModel(User.name)
     private userModel: Model<UserDocument>,
+    // Read-only — backs the participant detail's "referred users' own
+    // transactions" sub-table (see getParticipantDetailAdmin() below).
+    @InjectModel(Transaction.name)
+    private transactionModel: Model<TransactionDocument>,
     private readonly auditLogService: AuditLogService,
     private readonly notificationsService: NotificationsService,
   ) {}
@@ -403,6 +467,680 @@ export class ReferralsService {
         return { since, until: now };
       }
     }
+  }
+
+  // Admin dashboard — 4 more sections beyond getAnalytics() above, all
+  // scoped to one shared calendar-year filter (default: the current year).
+  // Judgment call, flagged: only rewardSpent's chart was explicitly required
+  // to be year-scoped — the other 3 sections are scoped to the same year
+  // for consistency with how getAnalytics() itself scopes every insight to
+  // one shared window, not because each was individually asked to be.
+  async getDashboard(year?: number): Promise<{
+    year: number;
+    rewardSpent: {
+      chart: { month: string; amountSpent: number }[];
+      bestMonth: string | null;
+      totalSpent: number;
+    };
+    campaignPerformance: Record<string, unknown>[];
+    topReferrals: Record<string, unknown>[];
+    qualificationStatus: Record<string, number>;
+  }> {
+    const targetYear = year ?? new Date().getFullYear();
+    const since = new Date(targetYear, 0, 1);
+    const until = new Date(targetYear + 1, 0, 1);
+    const yearFilter = { createdAt: { $gte: since, $lt: until } };
+
+    const [
+      rewardSpent,
+      campaignPerformance,
+      topReferrals,
+      qualificationStatus,
+    ] = await Promise.all([
+      this.computeRewardSpent(since, until),
+      this.computeCampaignPerformance(yearFilter),
+      this.computeTopReferrals(yearFilter),
+      this.computeQualificationStatus(yearFilter),
+    ]);
+
+    return {
+      year: targetYear,
+      rewardSpent,
+      campaignPerformance,
+      topReferrals,
+      qualificationStatus,
+    };
+  }
+
+  // Chart is always Jan-Dec of the target year, zero-filled — same
+  // always-12-buckets convention as revenue-trends. No dedicated paidAt
+  // field exists on Reward, so this buckets by createdAt (same proxy
+  // reasoning revenue-trends already documents for itself). bestMonth reads
+  // as the month with the most *recipients* paid, not the highest amount —
+  // a deliberately different, complementary metric to the money chart and
+  // totalSpent right next to it.
+  private async computeRewardSpent(
+    since: Date,
+    until: Date,
+  ): Promise<{
+    chart: { month: string; amountSpent: number }[];
+    bestMonth: string | null;
+    totalSpent: number;
+  }> {
+    const paidRewards = await this.rewardModel
+      .find({
+        status: RewardStatus.PAID,
+        createdAt: { $gte: since, $lt: until },
+      })
+      .select('amountPaid createdAt')
+      .exec();
+
+    const monthly = MONTH_NAMES.map((month) => ({
+      month,
+      amountSpent: 0,
+      count: 0,
+    }));
+
+    for (const reward of paidRewards) {
+      const bucket = monthly[reward.createdAt.getMonth()];
+      bucket.amountSpent += reward.amountPaid;
+      bucket.count += 1;
+    }
+
+    const totalSpent = monthly.reduce((sum, m) => sum + m.amountSpent, 0);
+
+    const bestIndex = monthly.reduce(
+      (best, m, i) => (m.count > monthly[best].count ? i : best),
+      0,
+    );
+    const bestMonth =
+      monthly[bestIndex].count > 0
+        ? `${monthly[bestIndex].month} - ${monthly[bestIndex].count} users`
+        : null;
+
+    return {
+      chart: monthly.map(({ month, amountSpent }) => ({ month, amountSpent })),
+      bestMonth,
+      totalSpent,
+    };
+  }
+
+  // The 3 most recently created campaigns within the year, each with its
+  // own performance figures scoped to that same window.
+  private async computeCampaignPerformance(yearFilter: {
+    createdAt: { $gte: Date; $lt: Date };
+  }): Promise<Record<string, unknown>[]> {
+    const campaigns = await this.referralCampaignModel
+      .find(yearFilter)
+      .sort({ createdAt: -1 })
+      .limit(3)
+      .exec();
+
+    return Promise.all(
+      campaigns.map(async (campaign) => {
+        const campaignId = campaign._id;
+        const [
+          participants,
+          qualified,
+          referralCount,
+          successfulCount,
+          rewardAgg,
+        ] = await Promise.all([
+          this.participantModel.countDocuments({
+            campaign: campaignId,
+            status: ParticipantStatus.IN_PROGRESS,
+            ...yearFilter,
+          }),
+          this.participantModel.countDocuments({
+            campaign: campaignId,
+            status: ParticipantStatus.QUALIFIED,
+            ...yearFilter,
+          }),
+          this.referralModel.countDocuments({
+            campaign: campaignId,
+            ...yearFilter,
+          }),
+          this.referralModel.countDocuments({
+            campaign: campaignId,
+            hasCompletedChallenge: true,
+            ...yearFilter,
+          }),
+          this.rewardModel.aggregate<{ total: number }>([
+            {
+              $match: {
+                campaign: campaignId,
+                status: RewardStatus.PAID,
+                ...yearFilter,
+              },
+            },
+            { $group: { _id: null, total: { $sum: '$amountPaid' } } },
+          ]),
+        ]);
+
+        const conversionRate =
+          referralCount === 0
+            ? 0
+            : Math.round((successfulCount / referralCount) * 1000) / 10;
+
+        return {
+          id: campaignId.toString(),
+          name: campaign.name,
+          participants,
+          referralCount,
+          successfulCount,
+          conversionRate: `${conversionRate}%`,
+          qualified,
+          rewardSpent: rewardAgg[0]?.total ?? 0,
+        };
+      }),
+    );
+  }
+
+  // Top 3 participants ranked by successful referrals (hasCompletedChallenge
+  // true) made within the year. transactionsGenerated reads from
+  // Participant.progress.amountOfCompletedTransaction — the field this app
+  // already reserved for exactly this, still always 0 today since nothing
+  // increments it yet (see the Participant schema's own comment).
+  private async computeTopReferrals(yearFilter: {
+    createdAt: { $gte: Date; $lt: Date };
+  }): Promise<Record<string, unknown>[]> {
+    const ranked = await this.referralModel.aggregate<{
+      _id: Types.ObjectId;
+      successfulReferrals: number;
+    }>([
+      { $match: { hasCompletedChallenge: true, ...yearFilter } },
+      { $group: { _id: '$referrer', successfulReferrals: { $sum: 1 } } },
+      { $sort: { successfulReferrals: -1 } },
+      { $limit: 3 },
+    ]);
+
+    return Promise.all(
+      ranked.map(async (row) => {
+        const [participant, qualified] = await Promise.all([
+          this.participantModel
+            .findById(row._id)
+            .populate('user', 'name')
+            .exec(),
+          this.referralModel.countDocuments({
+            referrer: row._id,
+            qualifiedAt: { $ne: null },
+            ...yearFilter,
+          }),
+        ]);
+        const userDoc = participant?.user as unknown as
+          { name?: string } | undefined;
+
+        return {
+          participantId: row._id.toString(),
+          name: userDoc?.name ?? null,
+          successfulReferrals: row.successfulReferrals,
+          qualified,
+          transactionsGenerated:
+            participant?.progress.amountOfCompletedTransaction ?? 0,
+        };
+      }),
+    );
+  }
+
+  // Current status distribution of participants who joined within the year.
+  private async computeQualificationStatus(yearFilter: {
+    createdAt: { $gte: Date; $lt: Date };
+  }): Promise<Record<string, number>> {
+    const rows = await this.participantModel.aggregate<{
+      _id: ParticipantStatus;
+      count: number;
+    }>([
+      { $match: yearFilter },
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+    ]);
+    const counts = new Map(rows.map((r) => [r._id, r.count]));
+
+    return {
+      inProgress: counts.get(ParticipantStatus.IN_PROGRESS) ?? 0,
+      qualified: counts.get(ParticipantStatus.QUALIFIED) ?? 0,
+      paid: counts.get(ParticipantStatus.PAID) ?? 0,
+      disqualified: counts.get(ParticipantStatus.DISQUALIFIED) ?? 0,
+      expired: counts.get(ParticipantStatus.EXPIRED) ?? 0,
+      left: counts.get(ParticipantStatus.LEFT) ?? 0,
+    };
+  }
+
+  // ---------------------------------------------------------------------
+  // Admin — Participants (list + detail).
+  // ---------------------------------------------------------------------
+
+  // Paginated, searchable, filterable — mirrors every other admin list in
+  // this app. Built as an aggregation (not find()+populate()+N per-row
+  // counts) specifically to avoid an N+1 query per row, same reasoning this
+  // app already applies to every other list endpoint.
+  async listParticipantsAdmin(dto: ListReferralParticipantsDto): Promise<{
+    results: Record<string, unknown>[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const page = dto.page ?? 1;
+    const limit = dto.limit ?? 20;
+
+    const match: Record<string, unknown> = {
+      ...(dto.status ? { status: dto.status } : {}),
+      ...(dto.campaignId
+        ? { campaign: new Types.ObjectId(dto.campaignId) }
+        : {}),
+      ...buildDateRangeFilter(dto),
+    };
+
+    const pipeline: PipelineStage[] = [
+      { $match: match },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'user',
+          foreignField: '_id',
+          as: 'userDoc',
+        },
+      },
+      { $unwind: { path: '$userDoc', preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: 'referralcampaigns',
+          localField: 'campaign',
+          foreignField: '_id',
+          as: 'campaignDoc',
+        },
+      },
+      { $unwind: { path: '$campaignDoc', preserveNullAndEmptyArrays: true } },
+    ];
+
+    if (dto.search) {
+      const re = new RegExp(escapeRegex(dto.search), 'i');
+      pipeline.push({
+        $match: { $or: [{ 'userDoc.name': re }, { 'campaignDoc.name': re }] },
+      });
+    }
+
+    pipeline.push(
+      {
+        $lookup: {
+          from: 'referrals',
+          localField: '_id',
+          foreignField: 'referrer',
+          as: 'referralDocs',
+        },
+      },
+      {
+        $addFields: {
+          referredUsersCount: { $size: '$referralDocs' },
+          qualifiedCount: {
+            $size: {
+              $filter: {
+                input: '$referralDocs',
+                as: 'r',
+                cond: { $ne: ['$$r.qualifiedAt', null] },
+              },
+            },
+          },
+        },
+      },
+      { $sort: { createdAt: -1 } },
+      {
+        $facet: {
+          data: [{ $skip: (page - 1) * limit }, { $limit: limit }],
+          totalCount: [{ $count: 'count' }],
+        },
+      },
+    );
+
+    const [agg] = await this.participantModel.aggregate<{
+      data: AdminParticipantAggregateRow[];
+      totalCount: { count: number }[];
+    }>(pipeline);
+
+    const total = agg?.totalCount[0]?.count ?? 0;
+    const results = (agg?.data ?? []).map((row) =>
+      this.shapeAdminParticipantRow(row),
+    );
+
+    return { results, total, page, limit };
+  }
+
+  // deadline reads as the participant's own personal deadline (joinedAt +
+  // the campaign's qualificationWindow), falling back to the campaign's own
+  // endDate when no qualificationWindow is set — judgment call, flagged:
+  // qualificationWindow exists specifically to describe "how long a
+  // referrer has after joining," which reads as the more literal "deadline"
+  // than the campaign's own overall end date. reward is the campaign's
+  // configured rewardAmount (the "up to" figure), not a real Reward row's
+  // amountPaid — a participant may not have a Reward document yet at all.
+  private shapeAdminParticipantRow(
+    row: AdminParticipantAggregateRow,
+  ): Record<string, unknown> {
+    const campaignDoc = row.campaignDoc;
+    const referralAmount: number =
+      campaignDoc?.referralRequirement?.referralAmount ?? 0;
+    const progressPercentage = referralAmount
+      ? Math.min(
+          100,
+          Math.round((row.progress.amountOfReferrals / referralAmount) * 100),
+        )
+      : 0;
+    const deadline = campaignDoc?.qualificationWindow
+      ? new Date(
+          new Date(row.joinedAt).getTime() +
+            campaignDoc.qualificationWindow * MS_PER_DAY,
+        )
+      : (campaignDoc?.endDate ?? null);
+
+    return {
+      id: row._id.toString(),
+      participant: row.userDoc
+        ? { id: row.userDoc._id.toString(), name: row.userDoc.name }
+        : null,
+      campaign: campaignDoc
+        ? { id: campaignDoc._id.toString(), name: campaignDoc.name }
+        : null,
+      referredUsers: row.referredUsersCount,
+      qualified: row.qualifiedCount,
+      ownTransactions: `${row.progress.amountOfCompletedTransaction}/${referralAmount}`,
+      progressPercentage,
+      deadline,
+      reward: campaignDoc?.rewardAmount ?? null,
+      status: row.status,
+    };
+  }
+
+  // Rich single-participant admin detail view: insights, this participant's
+  // own referrals (paginated), the referred users' real marketplace
+  // transactions (paginated), and a 3-entry recent timeline.
+  async getParticipantDetailAdmin(
+    id: string,
+    dto: ReferralParticipantDetailDto,
+  ): Promise<Record<string, unknown>> {
+    if (!isValidObjectId(id)) {
+      throw new NotFoundException('Participant not found');
+    }
+    const participant = await this.participantModel
+      .findById(id)
+      .populate('user', 'name email')
+      .populate('campaign')
+      .exec();
+    if (!participant) {
+      throw new NotFoundException('Participant not found');
+    }
+
+    const campaign =
+      participant.campaign as unknown as ReferralCampaignDocument;
+    const referralAmount = campaign.referralRequirement.referralAmount;
+
+    const referralsPage = dto.referralsPage ?? 1;
+    const referralsLimit = dto.referralsLimit ?? 10;
+    const transactionsPage = dto.transactionsPage ?? 1;
+    const transactionsLimit = dto.transactionsLimit ?? 10;
+
+    const [
+      referredUsersCount,
+      qualifiedCount,
+      rewardPaidAgg,
+      referralDocs,
+      referralsTotal,
+      referredUserIds,
+      recentAuditLogs,
+    ] = await Promise.all([
+      this.referralModel.countDocuments({ referrer: participant._id }),
+      this.referralModel.countDocuments({
+        referrer: participant._id,
+        qualifiedAt: { $ne: null },
+      }),
+      this.rewardModel.aggregate<{ total: number }>([
+        { $match: { participant: participant._id, status: RewardStatus.PAID } },
+        { $group: { _id: null, total: { $sum: '$amountPaid' } } },
+      ]),
+      this.referralModel
+        .find({ referrer: participant._id })
+        .populate('referred', 'name email')
+        .sort({ createdAt: -1 })
+        .skip((referralsPage - 1) * referralsLimit)
+        .limit(referralsLimit)
+        .exec(),
+      this.referralModel.countDocuments({ referrer: participant._id }),
+      this.referralModel.distinct('referred', { referrer: participant._id }),
+      this.auditLogService.findForEntity(
+        'referral_participant',
+        participant._id.toString(),
+        3,
+      ),
+    ]);
+
+    const [transactionDocs, transactionsTotal] = await Promise.all([
+      this.transactionModel
+        .find({
+          $or: [
+            { buyer: { $in: referredUserIds } },
+            { seller: { $in: referredUserIds } },
+          ],
+        })
+        .populate('listing', 'title')
+        .populate('buyer', 'name')
+        .populate('seller', 'name')
+        .sort({ createdAt: -1 })
+        .skip((transactionsPage - 1) * transactionsLimit)
+        .limit(transactionsLimit)
+        .exec(),
+      this.transactionModel.countDocuments({
+        $or: [
+          { buyer: { $in: referredUserIds } },
+          { seller: { $in: referredUserIds } },
+        ],
+      }),
+    ]);
+
+    return {
+      id: participant._id.toString(),
+      status: participant.status,
+      participant: {
+        id: (
+          participant.user as unknown as { _id: Types.ObjectId }
+        )._id.toString(),
+        name: (participant.user as unknown as { name?: string }).name,
+        email: (participant.user as unknown as { email?: string }).email,
+      },
+      campaign: { id: campaign._id.toString(), name: campaign.name },
+      joinedAt: participant.joinedAt,
+      insights: {
+        potentialReward: campaign.rewardAmount,
+        referredUsers: referredUsersCount,
+        qualifiedReferrals: qualifiedCount,
+        ownTransactions: `${participant.progress.amountOfCompletedTransaction}/${referralAmount}`,
+        rewardAmountPaid: rewardPaidAgg[0]?.total ?? 0,
+      },
+      referredUsers: {
+        results: referralDocs.map((r) => this.shapeAdminReferralRow(r)),
+        total: referralsTotal,
+        page: referralsPage,
+        limit: referralsLimit,
+      },
+      transactions: {
+        results: transactionDocs.map((t) => this.shapeAdminTransactionRow(t)),
+        total: transactionsTotal,
+        page: transactionsPage,
+        limit: transactionsLimit,
+      },
+      timeline: recentAuditLogs.map((log) => ({
+        event: log.event,
+        label: describeEvent(log.event),
+        createdAt: log.createdAt,
+      })),
+    };
+  }
+
+  private shapeAdminReferralRow(
+    referral: ReferralDocument,
+  ): Record<string, unknown> {
+    const referredUser = referral.referred as unknown as
+      { _id: Types.ObjectId; name?: string; email?: string } | undefined;
+    return {
+      id: referral._id.toString(),
+      slug: referral.slug ?? null,
+      referredUser: referredUser
+        ? { id: referredUser._id.toString(), name: referredUser.name }
+        : null,
+      referredAt: referral.referredAt,
+      qualifiedAt: referral.qualifiedAt,
+      hasCompletedChallenge: referral.hasCompletedChallenge,
+    };
+  }
+
+  private shapeAdminTransactionRow(
+    transaction: TransactionDocument,
+  ): Record<string, unknown> {
+    const listing = transaction.listing as unknown as
+      { title?: string } | undefined;
+    const buyer = transaction.buyer as unknown as { name?: string } | undefined;
+    const seller = transaction.seller as unknown as
+      { name?: string } | undefined;
+    return {
+      id: transaction._id.toString(),
+      productName: listing?.title ?? null,
+      amount: transaction.amount,
+      date: transaction.createdAt,
+      buyer: buyer?.name ?? null,
+      seller: seller?.name ?? null,
+      status: transaction.status,
+    };
+  }
+
+  // ---------------------------------------------------------------------
+  // Admin — Rewards (list).
+  // ---------------------------------------------------------------------
+
+  async listRewardsAdmin(dto: ListReferralRewardsDto): Promise<{
+    results: Record<string, unknown>[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const page = dto.page ?? 1;
+    const limit = dto.limit ?? 20;
+
+    const match: Record<string, unknown> = {
+      ...(dto.status ? { status: dto.status } : {}),
+      ...(dto.campaignId
+        ? { campaign: new Types.ObjectId(dto.campaignId) }
+        : {}),
+      ...buildDateRangeFilter(dto),
+    };
+
+    const pipeline: PipelineStage[] = [
+      { $match: match },
+      {
+        $lookup: {
+          from: 'participants',
+          localField: 'participant',
+          foreignField: '_id',
+          as: 'participantDoc',
+        },
+      },
+      {
+        $unwind: { path: '$participantDoc', preserveNullAndEmptyArrays: true },
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'participantDoc.user',
+          foreignField: '_id',
+          as: 'userDoc',
+        },
+      },
+      { $unwind: { path: '$userDoc', preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: 'referralcampaigns',
+          localField: 'campaign',
+          foreignField: '_id',
+          as: 'campaignDoc',
+        },
+      },
+      { $unwind: { path: '$campaignDoc', preserveNullAndEmptyArrays: true } },
+    ];
+
+    if (dto.search) {
+      const re = new RegExp(escapeRegex(dto.search), 'i');
+      pipeline.push({
+        $match: { $or: [{ 'userDoc.name': re }, { 'campaignDoc.name': re }] },
+      });
+    }
+
+    // The Referral this Reward corresponds to — same (campaign, referrer,
+    // referred) triple identifies it — resolved for qualifiedOn only.
+    pipeline.push(
+      {
+        $lookup: {
+          from: 'referrals',
+          let: {
+            campaign: '$campaign',
+            referrer: '$participant',
+            referred: '$referred',
+          },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$campaign', '$$campaign'] },
+                    { $eq: ['$referrer', '$$referrer'] },
+                    { $eq: ['$referred', '$$referred'] },
+                  ],
+                },
+              },
+            },
+            { $project: { qualifiedAt: 1 } },
+          ],
+          as: 'referralDoc',
+        },
+      },
+      { $unwind: { path: '$referralDoc', preserveNullAndEmptyArrays: true } },
+      { $sort: { createdAt: -1 } },
+      {
+        $facet: {
+          data: [{ $skip: (page - 1) * limit }, { $limit: limit }],
+          totalCount: [{ $count: 'count' }],
+        },
+      },
+    );
+
+    const [agg] = await this.rewardModel.aggregate<{
+      data: AdminRewardAggregateRow[];
+      totalCount: { count: number }[];
+    }>(pipeline);
+
+    const total = agg?.totalCount[0]?.count ?? 0;
+    const results = (agg?.data ?? []).map((row) =>
+      this.shapeAdminRewardRow(row),
+    );
+
+    return { results, total, page, limit };
+  }
+
+  private shapeAdminRewardRow(
+    row: AdminRewardAggregateRow,
+  ): Record<string, unknown> {
+    return {
+      id: row._id.toString(),
+      slug: row.slug ?? null,
+      participant: row.userDoc
+        ? { id: row.userDoc._id.toString(), name: row.userDoc.name }
+        : null,
+      campaign: row.campaignDoc
+        ? { id: row.campaignDoc._id.toString(), name: row.campaignDoc.name }
+        : null,
+      // The campaign's configured flat reward — not Reward.amountPaid,
+      // which is 0 until a reward is actually disbursed and would show
+      // ₦0 for every still-pending row otherwise.
+      reward: row.campaignDoc?.rewardAmount ?? null,
+      qualifiedOn: row.referralDoc?.qualifiedAt ?? null,
+      payment: row.status,
+      schedule: row.campaignDoc?.paymentSchedule ?? null,
+    };
   }
 
   // ---------------------------------------------------------------------

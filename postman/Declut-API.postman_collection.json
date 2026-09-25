@@ -8139,6 +8139,40 @@
               "response": []
             },
             {
+              "name": "Get referral dashboard",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/referral-campaigns/dashboard?year=2026",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "referral-campaigns",
+                    "dashboard"
+                  ],
+                  "query": [
+                    {
+                      "key": "year",
+                      "value": "2026",
+                      "disabled": true,
+                      "description": "Calendar year to scope every section to. Default: the current year."
+                    }
+                  ]
+                },
+                "description": "4 more dashboard sections beyond analytics, all scoped to one shared calendar year (default: current year): rewardSpent ({chart: 12 zero-filled Jan-Dec buckets of {month, amountSpent} for paid Reward.amountPaid, bestMonth: the month with the most recipients paid e.g. \"July - 50 users\", totalSpent: the year's total}), campaignPerformance (the 3 most recently created campaigns in the year, each with participants/referralCount/successfulCount/conversionRate/qualified/rewardSpent), topReferrals (top 3 participants by successful referrals in the year, with name/successfulReferrals/qualified/transactionsGenerated — the last reads from Participant.progress.amountOfCompletedTransaction, which is 0 for everyone until that counter is wired up), qualificationStatus (participant counts per status, for participants who joined in the year). Gated referrals/view."
+              },
+              "response": []
+            },
+            {
               "name": "{referralCampaignId}",
               "description": "",
               "item": [
@@ -8209,6 +8243,212 @@
                   "response": []
                 }
               ]
+            }
+          ]
+        },
+        {
+          "name": "referral-participants",
+          "item": [
+            {
+              "name": "List referral participants",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/referral-participants?page=1&limit=20&status=in_progress&campaignId={{referralCampaignId}}&search=amara&startDate=2026-01-01&endDate=2026-12-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "referral-participants"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "disabled": false,
+                      "description": "Page number, >= 1. Default 1."
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "disabled": false,
+                      "description": "Results per page. Default 20."
+                    },
+                    {
+                      "key": "status",
+                      "value": "in_progress",
+                      "disabled": true,
+                      "description": "Filter by participation status: in_progress, qualified, paid, disqualified, expired, left."
+                    },
+                    {
+                      "key": "campaignId",
+                      "value": "{{referralCampaignId}}",
+                      "disabled": true,
+                      "description": "Filter to one campaign."
+                    },
+                    {
+                      "key": "search",
+                      "value": "amara",
+                      "disabled": true,
+                      "description": "Case-insensitive substring match against the participant's own name or their campaign's name."
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-01-01",
+                      "disabled": true,
+                      "description": "Filter by createdAt >= this date (ISO date string)."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-12-31",
+                      "disabled": true,
+                      "description": "Filter by createdAt <= this date, stamped to 23:59:59 UTC. Must not be earlier than startDate."
+                    }
+                  ]
+                },
+                "description": "Paginated, searchable, filterable list of every Participant across every campaign — participant name, campaign name, referredUsers (total referrals made), qualified (referrals with qualifiedAt set), ownTransactions (\"completed/target\" against the campaign's own referralAmount), progressPercentage, deadline (joinedAt + the campaign's qualificationWindow, falling back to the campaign's endDate if none is set), reward (the campaign's configured rewardAmount, not a real Reward row's amountPaid), and status (raw ParticipantStatus value)."
+              },
+              "response": []
+            },
+            {
+              "name": "{referralParticipantId}",
+              "description": "",
+              "item": [
+                {
+                  "name": "Get referral participant detail",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminAccessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/admin/referral-participants/{{referralParticipantId}}?referralsPage=1&referralsLimit=10&transactionsPage=1&transactionsLimit=10",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "admin",
+                        "referral-participants",
+                        "{{referralParticipantId}}"
+                      ],
+                      "query": [
+                        {
+                          "key": "referralsPage",
+                          "value": "1",
+                          "disabled": true,
+                          "description": "Pagination for the participant's own referrals sub-list. Default 1."
+                        },
+                        {
+                          "key": "referralsLimit",
+                          "value": "10",
+                          "disabled": true,
+                          "description": "Default 10."
+                        },
+                        {
+                          "key": "transactionsPage",
+                          "value": "1",
+                          "disabled": true,
+                          "description": "Pagination for the referred users' own transactions sub-list. Default 1."
+                        },
+                        {
+                          "key": "transactionsLimit",
+                          "value": "10",
+                          "disabled": true,
+                          "description": "Default 10."
+                        }
+                      ]
+                    },
+                    "description": "insights ({potentialReward: the campaign's rewardAmount, referredUsers, qualifiedReferrals, ownTransactions, rewardAmountPaid: summed paid Reward.amountPaid for this participant}), referredUsers (paginated — this participant's own Referral docs, each with the referred user's id/name, referredAt, qualifiedAt, hasCompletedChallenge), transactions (paginated — real marketplace Transaction docs where any of this participant's referred users is the buyer or seller, with productName/amount/date/buyer/seller/status; empty if none of their referred users has transacted), and timeline (the 3 most recent AuditLog entries for this participant — join/rejoin/leave events)."
+                  },
+                  "response": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "referral-rewards",
+          "item": [
+            {
+              "name": "List referral rewards",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAccessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/referral-rewards?page=1&limit=20&status=pending&campaignId={{referralCampaignId}}&search=amara&startDate=2026-01-01&endDate=2026-12-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "referral-rewards"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "disabled": false,
+                      "description": "Page number, >= 1. Default 1."
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "disabled": false,
+                      "description": "Results per page. Default 20."
+                    },
+                    {
+                      "key": "status",
+                      "value": "pending",
+                      "disabled": true,
+                      "description": "Filter by Reward status: pending, paid, canceled."
+                    },
+                    {
+                      "key": "campaignId",
+                      "value": "{{referralCampaignId}}",
+                      "disabled": true,
+                      "description": "Filter to one campaign."
+                    },
+                    {
+                      "key": "search",
+                      "value": "amara",
+                      "disabled": true,
+                      "description": "Case-insensitive substring match against the participant's own name or their campaign's name."
+                    },
+                    {
+                      "key": "startDate",
+                      "value": "2026-01-01",
+                      "disabled": true,
+                      "description": "Filter by createdAt >= this date (ISO date string)."
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2026-12-31",
+                      "disabled": true,
+                      "description": "Filter by createdAt <= this date, stamped to 23:59:59 UTC. Must not be earlier than startDate."
+                    }
+                  ]
+                },
+                "description": "Paginated, searchable, filterable list of every Reward — participant name, campaign name, reward (the campaign's configured rewardAmount, shown even while pending — Reward.amountPaid itself is 0 until actually disbursed), qualifiedOn (the matching Referral's qualifiedAt, resolved by the shared (campaign, participant, referred) triple), payment (raw Reward status: pending/paid/canceled), schedule (the campaign's paymentSchedule)."
+              },
+              "response": []
             }
           ]
         }
@@ -8386,6 +8626,11 @@
     },
     {
       "key": "referralCampaignIdOrCode",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "referralParticipantId",
       "value": "",
       "type": "string"
     }

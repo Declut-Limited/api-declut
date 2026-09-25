@@ -13,6 +13,7 @@ import { CreateReferralCampaignDto } from './dto/create-referral-campaign.dto';
 import { UpdateReferralCampaignDto } from './dto/update-referral-campaign.dto';
 import { ListReferralCampaignsDto } from './dto/list-referral-campaigns.dto';
 import { ReferralAnalyticsDto } from './dto/referral-analytics.dto';
+import { ReferralDashboardDto } from './dto/referral-dashboard.dto';
 import { AdminJwtAuthGuard } from '../admin-auth/guards/admin-jwt-auth.guard';
 import { PermissionsGuard } from '../admin-auth/guards/permissions.guard';
 import { RequirePermission } from '../admin-auth/decorators/require-permission.decorator';
@@ -50,6 +51,13 @@ export class AdminReferralCampaignsController {
       dto.startDate,
       dto.endDate,
     );
+  }
+
+  // Must come before ':id' below, same hazard as 'analytics' above.
+  @Get('dashboard')
+  @RequirePermission('referrals', 'view')
+  dashboard(@Query() dto: ReferralDashboardDto) {
+    return this.referralsService.getDashboard(dto.year);
   }
 
   @Get(':id')
