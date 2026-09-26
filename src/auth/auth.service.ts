@@ -35,6 +35,7 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { GoogleAuthDto } from './dto/google-auth.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { LoginWithBiometricDto } from './dto/login-with-biometric.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResendOtpDto } from './dto/resend-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
@@ -90,9 +91,10 @@ export class AuthService {
     });
 
     if (dto.pushToken) {
-      await this.usersService.addDeviceTokens(user._id.toString(), [
+      await this.usersService.setDeviceToken(
+        user._id.toString(),
         dto.pushToken,
-      ]);
+      );
     }
 
     // A waitlist side effect must never fail a real registration.
@@ -185,9 +187,10 @@ export class AuthService {
     this.assertAccountIsUsable(user);
 
     if (dto.pushToken) {
-      await this.usersService.addDeviceTokens(user._id.toString(), [
+      await this.usersService.setDeviceToken(
+        user._id.toString(),
         dto.pushToken,
-      ]);
+      );
     }
 
     return this.issueTokens(user);
@@ -265,11 +268,17 @@ export class AuthService {
   // re-checked server-side, so switching it off from another device/session
   // actually revokes biometric login here — a stale value cached on-device
   // can't bypass that. Otherwise identical to refresh() (same rotation).
-  async loginWithBiometric(dto: RefreshTokenDto): Promise<TokenPair> {
+  async loginWithBiometric(dto: LoginWithBiometricDto): Promise<TokenPair> {
     const user = await this.verifyAndLoadRefreshUser(dto.refreshToken);
     if (!user.loginWithFingerprintOrFaceid) {
       throw new UnauthorizedException(
         'Biometric login is not enabled for this account',
+      );
+    }
+    if (dto.pushToken) {
+      await this.usersService.setDeviceToken(
+        user._id.toString(),
+        dto.pushToken,
       );
     }
     return this.issueTokens(user);

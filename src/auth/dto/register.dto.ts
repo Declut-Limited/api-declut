@@ -35,7 +35,7 @@ export class RegisterDto {
   })
   password: string;
 
-  // FCM device token — registered into deviceTokens if present, same as POST /notifications/register-token.
+  // Push token — overwrites User.deviceToken if present, same as POST /notifications/register-token.
   @IsOptional()
   @IsString()
   @MinLength(10)

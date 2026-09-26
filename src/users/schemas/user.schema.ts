@@ -198,8 +198,11 @@ export class User {
   @Prop({ type: KycInfo, default: () => ({}) })
   kyc: KycInfo;
 
-  @Prop({ type: [String], default: [] })
-  deviceTokens: string[];
+  // Only one active push token at a time, by design — logging in on a new
+  // device overwrites this rather than accumulating an array. Set from
+  // register/login/login-with-biometric's own pushToken body field.
+  @Prop()
+  deviceToken?: string;
 
   @Prop({ type: RefreshTokenInfo, select: false })
   refreshToken?: RefreshTokenInfo;

@@ -59,7 +59,7 @@
                     "register"
                   ]
                 },
-                "description": "Sends a 6-digit email verification OTP. Response includes emailVerified and kycStatus. pushToken is optional — if present, added to deviceTokens (deduped, same as POST /notifications/register-token).",
+                "description": "Sends a 6-digit email verification OTP. Response includes emailVerified and kycStatus. pushToken is optional — if present, overwrites User.deviceToken (single-token model), same as POST /notifications/register-token.",
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"email\": \"damolaidowudavid+2@gmail.com\",\n  \"name\": \"Damola Idowu\",\n  \"password\": \"Password123@\",\n  \"phone\": \"08012345678\",\n  \"pushToken\": \"ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]\"\n}",
@@ -117,7 +117,7 @@
                     "login"
                   ]
                 },
-                "description": "identifier is email or phone. Logging in elsewhere invalidates the previous refresh token (one active session at a time). pushToken is optional — if present, added to deviceTokens (deduped, same as POST /notifications/register-token).",
+                "description": "identifier is email or phone. Logging in elsewhere invalidates the previous refresh token (one active session at a time). pushToken is optional — if present, overwrites User.deviceToken (single-token model), same as POST /notifications/register-token.",
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"identifier\": \"damolaidowudavid@gmail.com\",\n  \"password\": \"Password123@\",\n  \"pushToken\": \"ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]\"\n}",
@@ -397,10 +397,10 @@
                     "login-with-biometric"
                   ]
                 },
-                "description": "Client-side Face ID/fingerprint check (expo-local-authentication) already passed before this is called — the app then pulls its stored refreshToken out of secure storage and sends it here. Same rotation as /auth/refresh, but also re-checks the user's loginWithFingerprintOrFaceid preference server-side, so disabling it elsewhere actually revokes biometric login even with a valid stored token. 401s with \"Biometric login is not enabled for this account\" if the preference is off.",
+                "description": "Client-side Face ID/fingerprint check (expo-local-authentication) already passed before this is called — the app then pulls its stored refreshToken out of secure storage and sends it here. Same rotation as /auth/refresh, but also re-checks the user's loginWithFingerprintOrFaceid preference server-side, so disabling it elsewhere actually revokes biometric login even with a valid stored token. 401s with \"Biometric login is not enabled for this account\" if the preference is off. pushToken is optional — if present, overwrites User.deviceToken, same as register/login.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+                  "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\",\n  \"pushToken\": \"ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -2672,7 +2672,7 @@
           "description": "",
           "item": [
             {
-              "name": "Register device token(s)",
+              "name": "Register device token",
               "request": {
                 "method": "POST",
                 "header": [
@@ -2697,10 +2697,10 @@
                     "register-token"
                   ]
                 },
-                "description": "Array of 1-10 token strings.",
+                "description": "Single token string — User.deviceToken holds only one at a time, overwritten (not appended) on every call.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"tokens\": [\n    \"<fcm-device-token-from-mobile-app>\"\n  ]\n}",
+                  "raw": "{\n  \"token\": \"<push-token-from-mobile-app>\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -2709,44 +2709,6 @@
                 }
               },
               "response": []
-            }
-          ]
-        },
-        {
-          "name": "token",
-          "description": "",
-          "item": [
-            {
-              "name": "{deviceToken}",
-              "description": "",
-              "item": [
-                {
-                  "name": "Unregister device token",
-                  "request": {
-                    "method": "DELETE",
-                    "header": [
-                      {
-                        "key": "Authorization",
-                        "value": "Bearer {{accessToken}}",
-                        "type": "text"
-                      }
-                    ],
-                    "url": {
-                      "raw": "{{baseUrl}}/notifications/token/{{deviceToken}}",
-                      "host": [
-                        "{{baseUrl}}"
-                      ],
-                      "path": [
-                        "notifications",
-                        "token",
-                        "{{deviceToken}}"
-                      ]
-                    },
-                    "description": ""
-                  },
-                  "response": []
-                }
-              ]
             }
           ]
         },
@@ -8923,11 +8885,6 @@
     },
     {
       "key": "reviewId",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "deviceToken",
       "value": "",
       "type": "string"
     },

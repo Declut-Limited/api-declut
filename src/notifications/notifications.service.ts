@@ -53,7 +53,7 @@ interface ChannelOutcome {
 interface RecipientInfo {
   email?: string;
   name?: string;
-  deviceTokens?: string[];
+  deviceToken?: string;
 }
 
 @Injectable()
@@ -80,12 +80,8 @@ export class NotificationsService {
     private readonly auditLogService: AuditLogService,
   ) {}
 
-  async registerTokens(userId: string, tokens: string[]): Promise<void> {
-    await this.usersService.addDeviceTokens(userId, tokens);
-  }
-
-  async unregisterToken(userId: string, token: string): Promise<void> {
-    await this.usersService.removeDeviceToken(userId, token);
+  async registerToken(userId: string, token: string): Promise<void> {
+    await this.usersService.setDeviceToken(userId, token);
   }
 
   // Pre-existing push-only path, left untouched — Transactions/KYC/Reviews still call this for their existing event set; migrating those onto Notification is a later pass. Never throws.
@@ -95,17 +91,17 @@ export class NotificationsService {
   ): Promise<void> {
     try {
       const user = await this.usersService.findById(userId);
-      if (!user || user.deviceTokens.length === 0) {
+      if (!user?.deviceToken) {
         return;
       }
 
       const { invalidTokens } = await this.fcmService.sendToTokens(
-        user.deviceTokens,
+        [user.deviceToken],
         payload,
       );
 
       if (invalidTokens.length > 0) {
-        await this.usersService.removeDeviceTokens(invalidTokens);
+        await this.usersService.clearInvalidDeviceTokens(invalidTokens);
       }
     } catch (err) {
       this.logger.error(`notifyUser failed for user ${userId}`, err as Error);
@@ -488,21 +484,20 @@ export class NotificationsService {
     recipientInfo?: RecipientInfo;
   }): Promise<ChannelOutcome> {
     try {
-      const tokens =
-        params.recipientInfo?.deviceTokens ??
-        (await this.usersService.findById(params.recipientId))?.deviceTokens ??
-        [];
-      if (tokens.length === 0) {
+      const token =
+        params.recipientInfo?.deviceToken ??
+        (await this.usersService.findById(params.recipientId))?.deviceToken;
+      if (!token) {
         return { status: NotificationChannelStatus.SKIPPED };
       }
 
-      const { invalidTokens } = await this.fcmService.sendToTokens(tokens, {
+      const { invalidTokens } = await this.fcmService.sendToTokens([token], {
         title: params.title,
         body: params.body,
         data: params.data,
       });
       if (invalidTokens.length > 0) {
-        await this.usersService.removeDeviceTokens(invalidTokens);
+        await this.usersService.clearInvalidDeviceTokens(invalidTokens);
       }
       return { status: NotificationChannelStatus.SENT };
     } catch (err) {

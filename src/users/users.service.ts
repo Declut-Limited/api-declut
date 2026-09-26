@@ -474,24 +474,21 @@ export class UsersService {
       .exec();
   }
 
-  async addDeviceTokens(userId: string, tokens: string[]): Promise<void> {
+  // Overwrites, never accumulates — only one device token at a time.
+  async setDeviceToken(userId: string, token: string): Promise<void> {
     await this.userModel
-      .updateOne(
-        { _id: userId },
-        { $addToSet: { deviceTokens: { $each: tokens } } },
+      .updateOne({ _id: userId }, { $set: { deviceToken: token } })
+      .exec();
+  }
+
+  // Bulk cleanup for FCM-reported invalid/unregistered tokens — clears
+  // whichever user currently holds one of them, wherever that is.
+  async clearInvalidDeviceTokens(tokens: string[]): Promise<void> {
+    await this.userModel
+      .updateMany(
+        { deviceToken: { $in: tokens } },
+        { $unset: { deviceToken: 1 } },
       )
-      .exec();
-  }
-
-  async removeDeviceToken(userId: string, token: string): Promise<void> {
-    await this.userModel
-      .updateOne({ _id: userId }, { $pull: { deviceTokens: token } })
-      .exec();
-  }
-
-  async removeDeviceTokens(tokens: string[]): Promise<void> {
-    await this.userModel
-      .updateMany({}, { $pullAll: { deviceTokens: tokens } })
       .exec();
   }
 

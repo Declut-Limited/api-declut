@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
   Param,
   Patch,
@@ -27,17 +26,8 @@ export class NotificationsController {
     @CurrentUser() user: AccessTokenPayload,
     @Body() dto: RegisterDeviceTokenDto,
   ) {
-    await this.notificationsService.registerTokens(user.sub, dto.tokens);
-    return { registered: dto.tokens.length };
-  }
-
-  @Delete('token/:token')
-  async unregisterToken(
-    @CurrentUser() user: AccessTokenPayload,
-    @Param('token') token: string,
-  ) {
-    await this.notificationsService.unregisterToken(user.sub, token);
-    return { unregistered: true };
+    await this.notificationsService.registerToken(user.sub, dto.token);
+    return { registered: true };
   }
 
   @Get()

@@ -29,7 +29,7 @@ export class NotificationBroadcastProcessor extends WorkerHost {
 
     try {
       const userCursor = this.userModel
-        .find({}, 'email name deviceTokens')
+        .find({}, 'email name deviceToken')
         .lean()
         .cursor();
       for await (const user of userCursor) {
@@ -43,7 +43,7 @@ export class NotificationBroadcastProcessor extends WorkerHost {
           recipientInfo: {
             email: user.email,
             name: user.name,
-            deviceTokens: user.deviceTokens,
+            deviceToken: user.deviceToken,
           },
         });
       }

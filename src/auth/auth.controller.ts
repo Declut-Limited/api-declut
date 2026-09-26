@@ -14,6 +14,7 @@ import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { GetBiometricLoginPreferenceDto } from './dto/get-biometric-login-preference.dto';
+import { LoginWithBiometricDto } from './dto/login-with-biometric.dto';
 import { GoogleAuthDto } from './dto/google-auth.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
@@ -72,7 +73,7 @@ export class AuthController {
   @Throttle(AUTH_THROTTLE)
   @HttpCode(HttpStatus.OK)
   @Post('login-with-biometric')
-  loginWithBiometric(@Body() dto: RefreshTokenDto) {
+  loginWithBiometric(@Body() dto: LoginWithBiometricDto) {
     return this.authService.loginWithBiometric(dto);
   }
 
