@@ -1,4 +1,4 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { ReportsService } from './reports.service';
 import { CreateReportDto } from './dto/create-report.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -18,5 +18,21 @@ export class UserReportsController {
     @Body() dto: CreateReportDto,
   ) {
     return this.reportsService.create(user.sub, dto);
+  }
+
+  @Get('by-listing/:listingId')
+  findByListing(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param('listingId') listingId: string,
+  ) {
+    return this.reportsService.findByListingForCaller(listingId, user.sub);
+  }
+
+  @Get(':idOrSlug')
+  findOne(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param('idOrSlug') idOrSlug: string,
+  ) {
+    return this.reportsService.findByIdOrSlugForCaller(idOrSlug, user.sub);
   }
 }

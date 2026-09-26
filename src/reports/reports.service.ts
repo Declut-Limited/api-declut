@@ -240,6 +240,59 @@ export class ReportsService {
     return this.shapeReport(report);
   }
 
+  // User-facing detail view — same shape the admin gets (shapeReport()
+  // reused as-is, sellerDispute evidence included), scoped to whichever of
+  // the two involved parties is asking. Checked against the raw unpopulated
+  // refs first, never a populated sub-document's own `.toString()` —
+  // comparing a populated party object that way produces a false negative
+  // (the exact bug this app hit once already on Listing.seller ownership
+  // checks).
+  async findByIdOrSlugForCaller(
+    idOrSlug: string,
+    callerId: string,
+  ): Promise<Record<string, unknown>> {
+    const filter = isValidObjectId(idOrSlug)
+      ? { _id: idOrSlug }
+      : { slug: idOrSlug };
+    const raw = await this.reportModel
+      .findOne(filter)
+      .select('reporter accusedUser')
+      .exec();
+    if (!raw) {
+      throw new NotFoundException('Report not found');
+    }
+    const isReporter = raw.reporter?.toString() === callerId;
+    const isAccused = raw.accusedUser?.toString() === callerId;
+    if (!isReporter && !isAccused) {
+      throw new ForbiddenException('You do not have access to this report');
+    }
+    return this.findByIdOrSlug(idOrSlug);
+  }
+
+  // By listing — a listing can be reported more than once over its
+  // lifetime, so "the" report for this caller on a given listing is read as
+  // the latest one they're actually party to (as reporter or accused).
+  async findByListingForCaller(
+    listingId: string,
+    callerId: string,
+  ): Promise<Record<string, unknown>> {
+    if (!isValidObjectId(listingId)) {
+      throw new NotFoundException('Report not found');
+    }
+    const raw = await this.reportModel
+      .findOne({
+        listing: listingId,
+        $or: [{ reporter: callerId }, { accusedUser: callerId }],
+      })
+      .sort({ createdAt: -1 })
+      .select('_id')
+      .exec();
+    if (!raw) {
+      throw new NotFoundException('Report not found');
+    }
+    return this.findByIdOrSlug(raw._id.toString());
+  }
+
   async updateStatus(
     id: string,
     adminId: string,

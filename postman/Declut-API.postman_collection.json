@@ -2647,6 +2647,57 @@
               }
             }
           ]
+        },
+        {
+          "name": "Get report by ID or slug",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reports/{{reportId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "{{reportId}}"
+              ]
+            },
+            "description": "User-facing — accepts a raw id or an RPT-#### slug. Scoped to whichever of the two involved parties is asking (the reporter or the accused user) — 403 if the caller is neither, 404 if the report genuinely doesn't exist. Same full shape the admin detail view returns (listing/accusedUser/reporter/sellerDispute/attendingAdmin all populated)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get report by listing ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reports/by-listing/{{listingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "by-listing",
+                "{{listingId}}"
+              ]
+            },
+            "description": "The caller's own most recent report involving that listing (as reporter or accused seller) — a listing can be reported more than once over its lifetime, so this always resolves to the latest one the caller is actually party to. 404 if none exists for this caller."
+          },
+          "response": []
         }
       ]
     },
