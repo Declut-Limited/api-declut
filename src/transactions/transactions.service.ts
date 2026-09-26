@@ -46,6 +46,8 @@ import { PurchaseStatusFilter } from './dto/list-purchases.dto';
 import { ListingsService } from '../listings/listings.service';
 import { ListingStatus } from '../listings/schemas/listing.schema';
 import { UsersService } from '../users/users.service';
+import { KycStatus } from '../users/schemas/user.schema';
+import { ReferralsService } from '../referrals/referrals.service';
 import { PaystackService } from '../payments/paystack.service';
 import { TrustScoreService } from '../trust-score/trust-score.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -72,7 +74,13 @@ import { toCsv } from '../common/utils/csv.util';
 
 interface PaystackWebhookPayload {
   event: string;
-  data?: { reference?: string };
+  // transfer_code/id are only present on transfer.*/refund.* events
+  // respectively — HONESTY FLAG: field names match Paystack's documented
+  // shape for those events but aren't independently confirmed against a
+  // real delivered webhook in this environment, same "structurally
+  // reasonable, not vendor-verified" posture as QoreID's placeholder paths
+  // elsewhere in this app.
+  data?: { reference?: string; transfer_code?: string; id?: number | string };
 }
 
 const PARTY_POPULATE_FIELDS = 'name email accountStatus slug company';
@@ -149,6 +157,7 @@ export class TransactionsService {
     private readonly auditLogService: AuditLogService,
     private readonly counterService: CounterService,
     private readonly bankAccountsService: BankAccountsService,
+    private readonly referralsService: ReferralsService,
   ) {}
 
   async create(buyerId: string, dto: CreateTransactionDto) {
@@ -296,10 +305,31 @@ export class TransactionsService {
     this.logger.log(
       `[webhook] event=${payload.event} reference=${payload.data?.reference ?? '(none)'}`,
     );
+
+    // Real-time payout/refund confirmation — added alongside the 5-minute
+    // reconciliation sweep, not instead of it. Neither branch trusts the
+    // webhook's own event name as ground truth; both just wake up the exact
+    // same server-to-server check the sweep already does, on the one
+    // specific row, right now instead of waiting for the next sweep. A
+    // webhook Paystack never manages to deliver still gets caught by the
+    // sweep within 5 minutes either way.
+    if (
+      payload.event === 'transfer.success' ||
+      payload.event === 'transfer.failed' ||
+      payload.event === 'transfer.reversed'
+    ) {
+      await this.handleTransferWebhookEvent(payload);
+      return;
+    }
+    if (
+      payload.event === 'refund.processed' ||
+      payload.event === 'refund.failed'
+    ) {
+      await this.handleRefundWebhookEvent(payload);
+      return;
+    }
     if (payload.event !== 'charge.success') {
-      this.logger.log(
-        `[webhook] ignoring non-charge.success event: ${payload.event}`,
-      );
+      this.logger.log(`[webhook] ignoring unhandled event: ${payload.event}`);
       return;
     }
 
@@ -504,6 +534,19 @@ export class TransactionsService {
       );
     }
 
+    // KYC gate, explicit instruction (2026-09-26): the buyer's very first
+    // purchase is allowed to be PAID FOR with no KYC required, but can't be
+    // CONFIRMED (this action, releasing the seller's funds) until the
+    // buyer's own KYC is verified — gates the tail end of their first
+    // transaction, not the payment itself. Checked before the seller's own
+    // gate below so a buyer sees their own blocker first.
+    const buyer = await this.usersService.findById(buyerId);
+    if (buyer?.kycStatus !== KycStatus.VERIFIED) {
+      throw new BadRequestException(
+        'Please complete KYC verification before confirming this purchase',
+      );
+    }
+
     const seller = await this.usersService.findById(
       transaction.seller.toString(),
     );
@@ -511,6 +554,18 @@ export class TransactionsService {
       // Shouldn't happen (create() already required this), but a money-movement step should never assume — always re-check.
       throw new InternalServerErrorException(
         'Seller payout details are missing',
+      );
+    }
+    // Seller-side KYC gate, explicit instruction: checkout/escrow are
+    // untouched by this — only the actual release-to-seller step is
+    // blocked, so a paid transaction just sits in escrow (frozen, not
+    // refunded) until the seller completes KYC. By the time release is even
+    // reachable, a listing + payout details already exist by construction,
+    // so checking KYC right here already scopes correctly to sellers who've
+    // crossed that "first listing + payout details" threshold.
+    if (seller.kycStatus !== KycStatus.VERIFIED) {
+      throw new BadRequestException(
+        "This seller hasn't completed KYC verification yet — funds will stay in escrow until they do",
       );
     }
     const bankAccount = await this.bankAccountsService.findRawByUser(
@@ -607,7 +662,39 @@ export class TransactionsService {
       data: { transactionId },
     });
 
+    // Either party could be the "referred" one on this transaction (a
+    // referral qualifies via a completed sale OR a completed transaction,
+    // depending on the campaign) — a referral-progress hiccup must never
+    // undo an already-completed money release, same posture as the
+    // signup-time hook.
+    await this.evaluateReferralProgressSafely(transaction);
+
     return { status: 'completed' };
+  }
+
+  // Shared by confirmReceipt()/adminRelease() — checks both parties, since
+  // either could be the referred person depending on the campaign's
+  // eachReferredTask. Never throws.
+  private async evaluateReferralProgressSafely(
+    transaction: TransactionDocument,
+  ): Promise<void> {
+    try {
+      await Promise.all([
+        this.referralsService.evaluateReferralProgress(
+          transaction.buyer.toString(),
+          transaction,
+        ),
+        this.referralsService.evaluateReferralProgress(
+          transaction.seller.toString(),
+          transaction,
+        ),
+      ]);
+    } catch (err) {
+      this.logger.error(
+        `Failed to evaluate referral progress for transaction=${transaction._id.toString()}`,
+        err as Error,
+      );
+    }
   }
 
   // Buyer-initiated, self-serve, one-time. Must be requested WHILE the
@@ -2466,8 +2553,11 @@ export class TransactionsService {
   // was built from). Checks every still-pending Payout/Refund row directly
   // against Paystack and corrects its status once Paystack has a final
   // answer. A row that's still pending on Paystack's side is left alone and
-  // picked up again on the next run.
-  @Cron('*/15 * * * *')
+  // picked up again on the next run. Tightened 15min -> 5min, explicit
+  // instruction, to shrink the "money moved but we don't know it yet" window
+  // — this is still a poll, not a webhook; see the chat discussion on why
+  // that's an accepted trade-off for now.
+  @Cron('*/5 * * * *')
   async reconcilePendingPayoutsAndRefunds(): Promise<void> {
     await Promise.all([
       this.reconcilePendingPayouts(),
@@ -2480,43 +2570,86 @@ export class TransactionsService {
       status: PayoutStatus.PENDING,
     });
     for (const payout of pending) {
-      try {
-        const result = await this.paystackService.getTransferStatus(
-          payout.transferCode || payout.reference,
+      await this.reconcileOnePayout(payout);
+    }
+  }
+
+  // Shared by the cron sweep above and the transfer.* webhook handler below
+  // — one place that actually talks to Paystack and writes the result,
+  // regardless of what triggered the check. A row already past PENDING
+  // (resolved by the other trigger path first, or a replayed webhook) is
+  // simply not queried into here in the first place by either caller.
+  private async reconcileOnePayout(payout: PayoutDocument): Promise<void> {
+    try {
+      const result = await this.paystackService.getTransferStatus(
+        payout.transferCode || payout.reference,
+      );
+      if (result.status === 'success') {
+        payout.status = PayoutStatus.SUCCESS;
+        payout.completedAt = new Date();
+        await payout.save();
+        await this.audit(
+          payout.transaction.toString(),
+          'payout_reconciled_success',
+          'system',
+          PayoutStatus.PENDING,
+          PayoutStatus.SUCCESS,
         );
-        if (result.status === 'success') {
-          payout.status = PayoutStatus.SUCCESS;
-          payout.completedAt = new Date();
-          await payout.save();
-          await this.audit(
-            payout.transaction.toString(),
-            'payout_reconciled_success',
-            'system',
-            PayoutStatus.PENDING,
-            PayoutStatus.SUCCESS,
-          );
-        } else if (result.status === 'failed' || result.status === 'reversed') {
-          payout.status = PayoutStatus.FAILED;
-          await payout.save();
-          this.logger.error(
-            `[reconcile] payout=${payout._id.toString()} transaction=${payout.transaction.toString()} FAILED on Paystack's side — needs admin attention`,
-          );
-          await this.audit(
-            payout.transaction.toString(),
-            'payout_reconciled_failed',
-            'system',
-            PayoutStatus.PENDING,
-            PayoutStatus.FAILED,
-          );
-        }
-        // Anything else (still 'pending'/'otp' on Paystack's side) — leave as-is, retry next sweep.
-      } catch (err) {
+      } else if (result.status === 'failed' || result.status === 'reversed') {
+        payout.status = PayoutStatus.FAILED;
+        await payout.save();
         this.logger.error(
-          `[reconcile] failed to check payout=${payout._id.toString()} — will retry next sweep`,
-          err as Error,
+          `[reconcile] payout=${payout._id.toString()} transaction=${payout.transaction.toString()} FAILED on Paystack's side — needs admin attention`,
+        );
+        await this.audit(
+          payout.transaction.toString(),
+          'payout_reconciled_failed',
+          'system',
+          PayoutStatus.PENDING,
+          PayoutStatus.FAILED,
         );
       }
+      // Anything else (still 'pending'/'otp' on Paystack's side) — leave as-is, retry next sweep.
+    } catch (err) {
+      this.logger.error(
+        `[reconcile] failed to check payout=${payout._id.toString()} — will retry next sweep`,
+        err as Error,
+      );
     }
+  }
+
+  // HONESTY FLAG: transfer_code/reference field names match Paystack's
+  // documented transfer-webhook shape, not independently confirmed against
+  // a real delivered webhook in this environment.
+  private async handleTransferWebhookEvent(
+    payload: PaystackWebhookPayload,
+  ): Promise<void> {
+    const transferCode = payload.data?.transfer_code;
+    const reference = payload.data?.reference;
+    if (!transferCode && !reference) {
+      this.logger.warn(
+        `[webhook] ${payload.event} payload missing transfer_code and reference — ignoring`,
+      );
+      return;
+    }
+    const payout = await this.payoutModel.findOne({
+      status: PayoutStatus.PENDING,
+      $or: [
+        ...(transferCode ? [{ transferCode }] : []),
+        ...(reference ? [{ reference }] : []),
+      ],
+    });
+    if (!payout) {
+      // Already resolved (idempotent replay) or genuinely not ours — either way, nothing to do.
+      this.logger.log(
+        `[webhook] ${payload.event} — no matching PENDING payout for transferCode=${transferCode} reference=${reference}`,
+      );
+      return;
+    }
+    this.logger.log(
+      `[webhook] ${payload.event} matched payout=${payout._id.toString()} — triggering an immediate reconcile check`,
+    );
+    await this.reconcileOnePayout(payout);
   }
 
   private async reconcilePendingRefunds(): Promise<void> {
@@ -2524,46 +2657,88 @@ export class TransactionsService {
       status: RefundStatus.PENDING,
     });
     for (const refund of pending) {
-      try {
-        const result = await this.paystackService.getRefundStatus(
-          refund.refundCode || refund.reference,
+      await this.reconcileOneRefund(refund);
+    }
+  }
+
+  // Shared by the cron sweep above and the refund.* webhook handler below —
+  // same "one place that actually talks to Paystack" reasoning as
+  // reconcileOnePayout().
+  private async reconcileOneRefund(refund: RefundDocument): Promise<void> {
+    try {
+      const result = await this.paystackService.getRefundStatus(
+        refund.refundCode || refund.reference,
+      );
+      if (result.status === 'processed') {
+        refund.status = RefundStatus.PROCESSED;
+        refund.refundedAt = new Date();
+        await refund.save();
+        await this.audit(
+          refund.transaction.toString(),
+          'refund_reconciled_processed',
+          'system',
+          RefundStatus.PENDING,
+          RefundStatus.PROCESSED,
         );
-        if (result.status === 'processed') {
-          refund.status = RefundStatus.PROCESSED;
-          refund.refundedAt = new Date();
-          await refund.save();
-          await this.audit(
-            refund.transaction.toString(),
-            'refund_reconciled_processed',
-            'system',
-            RefundStatus.PENDING,
-            RefundStatus.PROCESSED,
-          );
-        } else if (
-          result.status === 'failed' ||
-          result.status === 'declined' ||
-          result.status === 'reversed'
-        ) {
-          refund.status = RefundStatus.FAILED;
-          await refund.save();
-          this.logger.error(
-            `[reconcile] refund=${refund._id.toString()} transaction=${refund.transaction.toString()} FAILED on Paystack's side — needs admin attention`,
-          );
-          await this.audit(
-            refund.transaction.toString(),
-            'refund_reconciled_failed',
-            'system',
-            RefundStatus.PENDING,
-            RefundStatus.FAILED,
-          );
-        }
-      } catch (err) {
+      } else if (
+        result.status === 'failed' ||
+        result.status === 'declined' ||
+        result.status === 'reversed'
+      ) {
+        refund.status = RefundStatus.FAILED;
+        await refund.save();
         this.logger.error(
-          `[reconcile] failed to check refund=${refund._id.toString()} — will retry next sweep`,
-          err as Error,
+          `[reconcile] refund=${refund._id.toString()} transaction=${refund.transaction.toString()} FAILED on Paystack's side — needs admin attention`,
+        );
+        await this.audit(
+          refund.transaction.toString(),
+          'refund_reconciled_failed',
+          'system',
+          RefundStatus.PENDING,
+          RefundStatus.FAILED,
         );
       }
+    } catch (err) {
+      this.logger.error(
+        `[reconcile] failed to check refund=${refund._id.toString()} — will retry next sweep`,
+        err as Error,
+      );
     }
+  }
+
+  // HONESTY FLAG: id/reference field names match Paystack's documented
+  // refund-webhook shape, not independently confirmed against a real
+  // delivered webhook in this environment. `id` is numeric on Paystack's
+  // side — String()'d to match how refundCode is stored (see refund()).
+  private async handleRefundWebhookEvent(
+    payload: PaystackWebhookPayload,
+  ): Promise<void> {
+    const refundCode =
+      payload.data?.id !== undefined ? String(payload.data.id) : undefined;
+    const reference = payload.data?.reference;
+    if (!refundCode && !reference) {
+      this.logger.warn(
+        `[webhook] ${payload.event} payload missing id and reference — ignoring`,
+      );
+      return;
+    }
+    const refund = await this.refundModel.findOne({
+      status: RefundStatus.PENDING,
+      $or: [
+        ...(refundCode ? [{ refundCode }] : []),
+        ...(reference ? [{ reference }] : []),
+      ],
+    });
+    if (!refund) {
+      this.logger.log(
+        `[webhook] ${payload.event} — no matching PENDING refund for id=${refundCode} reference=${reference}`,
+      );
+      return;
+    }
+    this.logger.log(
+      `[webhook] ${payload.event} matched refund=${refund._id.toString()} — triggering an immediate reconcile check`,
+    );
+    await this.reconcileOneRefund(refund);
   }
 
   // Used by the admin Users detail view's "Insights" panel.
@@ -2686,6 +2861,16 @@ export class TransactionsService {
         'Seller payout details are missing',
       );
     }
+    // Seller-side KYC gate, explicit instruction — same check confirmReceipt()
+    // applies, since real money is about to move to this seller here too.
+    // No buyer-side gate on this path: this is an admin's own action, not
+    // the buyer's, so the "buyer must be verified to confirm their first
+    // purchase" rule doesn't apply here.
+    if (seller.kycStatus !== KycStatus.VERIFIED) {
+      throw new BadRequestException(
+        "This seller hasn't completed KYC verification yet — release is blocked until they do",
+      );
+    }
     const bankAccount = await this.bankAccountsService.findRawByUser(
       transaction.seller.toString(),
     );
@@ -2773,6 +2958,10 @@ export class TransactionsService {
       body: 'An admin reviewed your transaction and released funds to the seller.',
       data: { transactionId },
     });
+
+    // Must run before the populate() below — evaluateReferralProgress()
+    // reads transaction.buyer/.seller as raw ObjectIds via .toString().
+    await this.evaluateReferralProgressSafely(transaction);
 
     await transaction.populate([
       { path: 'buyer', select: PARTY_POPULATE_FIELDS },

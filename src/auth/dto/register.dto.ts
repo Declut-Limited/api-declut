@@ -40,4 +40,10 @@ export class RegisterDto {
   @IsString()
   @MinLength(10)
   pushToken?: string;
+
+  // Optional referral code (Participant.referralCode) — an unknown/invalid
+  // code is silently ignored, never blocks registration.
+  @IsOptional()
+  @IsString()
+  referralCode?: string;
 }

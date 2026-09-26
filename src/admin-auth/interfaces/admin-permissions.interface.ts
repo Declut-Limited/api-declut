@@ -24,6 +24,14 @@ export const ADMIN_PERMISSION_MODULES = [
   'waitlist',
   'referrals',
   'feedback',
+  // Added 2026-09-26 — KYC override used to be gated under 'users'/write on
+  // the operational AdminController; it now has its own dedicated module
+  // (src/kyc/admin-kyc.controller.ts) and its own bucket, deliberately not
+  // backfilled onto existing Roles (unlike waitlist's own bucket addition,
+  // which explicitly preserved existing de-facto access) — this is a real,
+  // intentional narrowing: an admin who could override KYC via users/write
+  // before this now needs kyc/write granted explicitly.
+  'kyc',
 ] as const;
 
 export type AdminPermissionModule = (typeof ADMIN_PERMISSION_MODULES)[number];

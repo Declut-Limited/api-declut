@@ -4,6 +4,7 @@ import { UsersModule } from '../users/users.module';
 import { GoogleModule } from '../google/google.module';
 import { EmailModule } from '../email/email.module';
 import { WaitlistModule } from '../waitlist/waitlist.module';
+import { ReferralsModule } from '../referrals/referrals.module';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 
@@ -15,6 +16,7 @@ import { AuthController } from './auth.controller';
     GoogleModule,
     EmailModule,
     WaitlistModule,
+    ReferralsModule,
   ],
   controllers: [AuthController],
   providers: [AuthService],

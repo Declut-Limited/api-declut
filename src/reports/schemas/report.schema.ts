@@ -95,11 +95,20 @@ export class Report {
   reminderSentAt?: Date;
 
   // True once the seller's response window is over — the seller responded
-  // (refund or dispute). No auto-escalation on plain deadline expiry exists
-  // (explicit instruction — that feature was dropped, not built), so this
-  // never flips true on its own just because time ran out.
+  // (refund or dispute). Does NOT flip true on its own when the deadline
+  // simply lapses with no response — that's what escalatedAt below is for.
   @Prop({ type: Boolean, default: false })
   slaPeriodEnded: boolean;
+
+  // Re-added 2026-09-26, explicit instruction (a prior pass had dropped
+  // auto-escalation from scope entirely — "we do not need it yet" — this
+  // reverses that). Set once, the instant ReportsService.sweepSlaEscalations()
+  // finds the deadline has passed with slaPeriodEnded still false — never
+  // touched again, so a report can only ever escalate once. Deliberately
+  // doesn't reassign/clear attendingAdmin — escalation raises visibility
+  // (notifies every admin), it doesn't reopen an already-claimed case.
+  @Prop({ type: Date })
+  escalatedAt?: Date;
 
   createdAt: Date;
   updatedAt: Date;

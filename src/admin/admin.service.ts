@@ -13,7 +13,7 @@ import { ReviewsService } from '../reviews/reviews.service';
 import { ReviewStatus } from '../reviews/schemas/review.schema';
 import { TrustScoreService } from '../trust-score/trust-score.service';
 import { KycService } from '../kyc/kyc.service';
-import { AccountStatus, KycStatus } from '../users/schemas/user.schema';
+import { AccountStatus } from '../users/schemas/user.schema';
 import { SettingsService } from '../settings/settings.service';
 import { UpdateGeneralSettingsDto } from '../settings/dto/update-general-settings.dto';
 import { UpdatePaymentSettingsDto } from '../settings/dto/update-payment-settings.dto';
@@ -497,14 +497,6 @@ export class AdminService {
       newState: AccountStatus.ACTIVE,
       metadata: { unsuspensionReason },
     });
-    return this.usersService.getPrivateProfile(userId);
-  }
-
-  async overrideKycStatus(userId: string, status: KycStatus) {
-    await this.usersService.setKycStatus(userId, status);
-    if (status === KycStatus.VERIFIED) {
-      await this.trustScoreService.recalculate(userId);
-    }
     return this.usersService.getPrivateProfile(userId);
   }
 

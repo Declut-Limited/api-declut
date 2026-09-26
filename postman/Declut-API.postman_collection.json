@@ -144,6 +144,31 @@
                   }
                 }
               ]
+            },
+            {
+              "name": "Get biometric login preference",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/auth/login-with-fingerprint-or-faceid?email=damolaidowudavid@gmail.com",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "login-with-fingerprint-or-faceid"
+                  ],
+                  "query": [
+                    {
+                      "key": "email",
+                      "value": "damolaidowudavid@gmail.com"
+                    }
+                  ]
+                },
+                "description": "Unauthenticated — checked by email before the password field renders, to decide whether to offer a biometric prompt instead. Response is just {loginWithFingerprintOrFaceid: boolean}. An unknown email reads false, never 404s (anti-enumeration, same posture as forgot-password)."
+              },
+              "response": []
             }
           ]
         },
@@ -665,7 +690,7 @@
                     "me"
                   ]
                 },
-                "description": "hasPayoutDetails is true once POST /bank-accounts succeeds (see the bank-accounts folder) — bank details themselves live on BankAccount, not here. Also returns listingCount/soldCount/purchaseCount/totalAmountInEscrow (computed fresh, not cached) and profileImageUrl (set via PATCH, Cloudinary URL)."
+                "description": "hasPayoutDetails is true once POST /bank-accounts succeeds (see the bank-accounts folder) — bank details themselves live on BankAccount, not here. Also returns listingCount/soldCount/purchaseCount/totalAmountInEscrow (computed fresh, not cached), profileImageUrl (set via PATCH, Cloudinary URL), and loginWithFingerprintOrFaceid (biometric-login preference, default false)."
               },
               "response": []
             },
@@ -695,10 +720,10 @@
                     "me"
                   ]
                 },
-                "description": "name and profileImage (a Cloudinary URL from GET /media/upload-signature) are updatable here — bank/payout details moved to their own BankAccount document, see POST/PATCH /bank-accounts.",
+                "description": "name, profileImage (a Cloudinary URL from GET /media/upload-signature), and loginWithFingerprintOrFaceid (biometric-login preference, default false) are updatable here — bank/payout details moved to their own BankAccount document, see POST/PATCH /bank-accounts.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"name\": \"Damola Idowu\",\n  \"profileImage\": \"https://res.cloudinary.com/declut/image/upload/v1/avatars/damola.jpg\"\n}",
+                  "raw": "{\n  \"name\": \"Damola Idowu\",\n  \"profileImage\": \"https://res.cloudinary.com/declut/image/upload/v1/avatars/damola.jpg\",\n  \"loginWithFingerprintOrFaceid\": true\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -2701,10 +2726,41 @@
                   "value": "20",
                   "disabled": false,
                   "description": "Results per page, 1-100. Default 20."
+                },
+                {
+                  "key": "read",
+                  "value": "false",
+                  "disabled": true,
+                  "description": "Optional. true = read only, false = unread only. Omit for both."
                 }
               ]
             },
-            "description": "Paginated (page/limit query params). Returns { results, total, unreadCount, page, limit }."
+            "description": "Paginated (page/limit query params). Returns { results, total, unreadCount, page, limit }. read=true/false narrows results/total; unreadCount is always the true unread total regardless of the filter."
+          },
+          "response": []
+        },
+        {
+          "name": "Get unread notification count",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/count",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "count"
+              ]
+            },
+            "description": "Lightweight badge count — no rows fetched. Returns { unreadCount }."
           },
           "response": []
         },

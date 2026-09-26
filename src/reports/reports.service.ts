@@ -441,6 +441,54 @@ export class ReportsService {
     }
   }
 
+  // Auto-escalation, re-added 2026-09-26 (explicit instruction — reversing
+  // the earlier "we do not need it yet" drop). Gated by both settings
+  // toggles, same pair sweepSlaReminders() checks. Fires once a report's
+  // deadline has genuinely passed with the seller never having responded at
+  // all (slaPeriodEnded still false) — raises visibility (every admin gets a
+  // bell notification) rather than reassigning attendingAdmin or changing
+  // the report's own status; an admin still has to act on it manually.
+  @Cron(CronExpression.EVERY_HOUR)
+  async sweepSlaEscalations(): Promise<void> {
+    const settings = await this.settingsService.get();
+    if (!settings.enableSellerSLA || !settings.autoEscalateSlaOnExpiry) {
+      return;
+    }
+
+    const reports = await this.reportModel
+      .find({
+        status: ReportStatus.INVESTIGATING,
+        slaPeriodEnded: false,
+        escalatedAt: { $exists: false },
+        sellerResponseDeadlineAt: { $exists: true, $lt: new Date() },
+      })
+      .exec();
+
+    if (reports.length === 0) {
+      return;
+    }
+
+    const adminIds = await this.notificationsService.getAllAdminIds();
+
+    for (const report of reports) {
+      report.escalatedAt = new Date();
+      await report.save();
+
+      await Promise.all(
+        adminIds.map((adminId) =>
+          this.notificationsService.notify({
+            recipientType: NotificationRecipientType.ADMIN,
+            recipientId: adminId,
+            type: 'report_sla_escalated_admin',
+            title: 'Report SLA breached',
+            body: `Report ${report.slug}'s seller-response deadline passed with no response — needs attention.`,
+            data: { reportId: report._id.toString() },
+          }),
+        ),
+      );
+    }
+  }
+
   // Requires listing/accusedUser/reporter already populated on the query that fetched `report`.
   private shapeReport(report: ReportDocument): Record<string, unknown> {
     const obj = report.toObject() as unknown as Record<string, unknown>;

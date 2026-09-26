@@ -23,6 +23,7 @@ import { AuditLogModule } from '../audit-log/audit-log.module';
 import { CounterModule } from '../common/counter/counter.module';
 import { EscrowModule } from '../escrow/escrow.module';
 import { BankAccountsModule } from '../bank-accounts/bank-accounts.module';
+import { ReferralsModule } from '../referrals/referrals.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { BankAccountsModule } from '../bank-accounts/bank-accounts.module';
     CounterModule,
     EscrowModule,
     BankAccountsModule,
+    ReferralsModule,
   ],
   controllers: [TransactionsController],
   providers: [TransactionsService],

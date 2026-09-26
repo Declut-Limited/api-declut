@@ -187,6 +187,18 @@ export const NOTIFICATION_TYPES = {
       [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
     },
   },
+  // Every admin, bell-channel only, same shape as dispute_raised_admin —
+  // fired once a report's sellerResponseDeadlineAt has passed with no
+  // seller response at all (slaPeriodEnded still false) and
+  // autoEscalateSlaOnExpiry is on. See ReportsService.sweepSlaEscalations().
+  // 2026-09-26.
+  report_sla_escalated_admin: {
+    label: 'Report SLA breached',
+    channels: {
+      [NotificationRecipientType.USER]: [] as NotificationChannel[],
+      [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
+    },
+  },
   // Pre-deadline nudge to the accused user (the "seller") before their
   // sellerResponseDeadlineAt lapses — see ReportsService.sweepSlaReminders().
   // 2026-09-19.

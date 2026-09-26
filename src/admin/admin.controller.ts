@@ -19,7 +19,6 @@ import {
   AdminListUsersDto,
   PageDto,
 } from './dto/admin-list.dto';
-import { SetKycStatusDto } from './dto/set-kyc-status.dto';
 import { SuspendUserDto } from './dto/suspend-user.dto';
 import { BanUserDto } from './dto/ban-user.dto';
 import { ReactivateAccountDto } from './dto/reactivate-account.dto';
@@ -180,12 +179,6 @@ export class AdminController {
       admin.sub,
       dto.unsuspensionReason,
     );
-  }
-
-  @Patch('users/:id/kyc')
-  @RequirePermission('users', 'write')
-  overrideKycStatus(@Param('id') id: string, @Body() dto: SetKycStatusDto) {
-    return this.adminService.overrideKycStatus(id, dto.status);
   }
 
   @Get('listings')
