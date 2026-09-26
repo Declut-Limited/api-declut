@@ -30,6 +30,7 @@ import {
 } from './refresh-token-hash.util';
 import { EmailService, buildOtpEmailBody } from '../email/email.service';
 import { WaitlistService } from '../waitlist/waitlist.service';
+import { ReferralsService } from '../referrals/referrals.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { GoogleAuthDto } from './dto/google-auth.dto';
@@ -66,6 +67,7 @@ export class AuthService {
     private readonly passwordResetTokens: PasswordResetTokenService,
     private readonly emailService: EmailService,
     private readonly waitlistService: WaitlistService,
+    private readonly referralsService: ReferralsService,
   ) {}
 
   async register(dto: RegisterDto): Promise<RegisterResult> {
@@ -103,6 +105,19 @@ export class AuthService {
       );
     }
 
+    // Same posture — a referral-code hiccup must never fail registration.
+    try {
+      await this.referralsService.recordSignupReferral(
+        user._id.toString(),
+        dto.referralCode,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to record signup referral for ${user.email}`,
+        err as Error,
+      );
+    }
+
     const tokens = await this.issueTokens(user);
     const { otp, otpToken } = await this.issueEmailVerificationOtp(
       user._id.toString(),
@@ -131,6 +146,18 @@ export class AuthService {
       message:
         'Registration successful. Check your email for a verification code.',
     };
+  }
+
+  // Pre-login lookup — the mobile app checks this by email, before the
+  // password field even renders, to decide whether to offer a biometric
+  // prompt instead. Anti-enumeration: an unknown email just reads false,
+  // same posture as forgot-password/resend-otp elsewhere in this file.
+  async getBiometricLoginPreference(
+    email: string,
+  ): Promise<{ loginWithFingerprintOrFaceid: boolean }> {
+    const loginWithFingerprintOrFaceid =
+      await this.usersService.getLoginWithFingerprintOrFaceidByEmail(email);
+    return { loginWithFingerprintOrFaceid };
   }
 
   async login(dto: LoginDto): Promise<TokenPair> {
@@ -200,6 +227,18 @@ export class AuthService {
       } catch (err) {
         this.logger.error(
           `Failed to mark waitlist entry joined for ${user.email}`,
+          err as Error,
+        );
+      }
+
+      try {
+        await this.referralsService.recordSignupReferral(
+          user._id.toString(),
+          dto.referralCode,
+        );
+      } catch (err) {
+        this.logger.error(
+          `Failed to record signup referral for ${user.email}`,
           err as Error,
         );
       }
