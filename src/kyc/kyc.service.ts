@@ -75,6 +75,14 @@ export class KycService {
       .exec();
   }
 
+  // Collapsed boolean, same convention UsersService.toPublicProfile()'s
+  // `verified` field already uses — pending/rejected/unverified all read
+  // false, only a real `verified` status reads true.
+  async getStatus(userId: string): Promise<{ kycStatus: boolean }> {
+    const user = await this.usersService.findById(userId);
+    return { kycStatus: user?.kycStatus === KycStatus.VERIFIED };
+  }
+
   private async requireEmailVerified(userId: string): Promise<UserDocument> {
     const user = await this.usersService.findById(userId);
     if (!user) {

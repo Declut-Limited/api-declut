@@ -1755,6 +1755,37 @@
               "response": []
             }
           ]
+        },
+        {
+          "name": "status",
+          "description": "",
+          "item": [
+            {
+              "name": "My KYC status",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/kyc/status",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "kyc",
+                    "status"
+                  ]
+                },
+                "description": "Collapsed boolean, not the raw 4-value kycStatus enum — true only once both the NIN and liveness checks have passed (User.kycStatus === verified), false for unverified/pending/rejected."
+              },
+              "response": []
+            }
+          ]
         }
       ]
     },

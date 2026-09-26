@@ -34,4 +34,9 @@ export class KycController {
   history(@CurrentUser() user: AccessTokenPayload) {
     return this.kycService.history(user.sub);
   }
+
+  @Get('status')
+  status(@CurrentUser() user: AccessTokenPayload) {
+    return this.kycService.getStatus(user.sub);
+  }
 }

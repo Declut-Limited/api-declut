@@ -10,3 +10,5 @@ scripts/*
 postman/*
 test/*
 test-realtime/
+review.md
+user-flow.md
