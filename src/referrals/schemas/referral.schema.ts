@@ -1,7 +1,33 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
+import { ReferredTaskType } from './referral-campaign.schema';
 
 export type ReferralDocument = HydratedDocument<Referral>;
+
+// One entry per task TYPE the referred person has completed — added
+// 2026-09-26, explicit instruction: a campaign's eachReferredTask can list
+// BOTH complete_sale and complete_transaction, and when it does, the
+// referred person must complete EACH one (not just one of them) before the
+// referral counts. A single hasCompletedChallenge boolean can't represent
+// "completed one of two required types," so this array tracks partial
+// progress per type; hasCompletedChallenge/qualifiedAt/transaction below
+// only flip once this array covers every type the campaign requires.
+@Schema({ _id: false })
+export class CompletedTask {
+  @Prop({ type: String, enum: ReferredTaskType, required: true })
+  taskType: ReferredTaskType;
+
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'Transaction',
+    required: true,
+  })
+  transaction: Types.ObjectId;
+
+  @Prop({ type: Date, required: true, default: Date.now })
+  completedAt: Date;
+}
+export const CompletedTaskSchema = SchemaFactory.createForClass(CompletedTask);
 
 // One document per person a participant has referred within a campaign.
 // This is the mechanism that actually records "who referred whom" —
@@ -36,11 +62,14 @@ export class Referral {
   })
   referrer: Types.ObjectId;
 
+  // unique — a person can only ever be "the referred one" once, since this
+  // is only ever created at their own signup (a one-time event). See
+  // ReferralsService.recordSignupReferral().
   @Prop({
     type: MongooseSchema.Types.ObjectId,
     ref: 'User',
     required: true,
-    index: true,
+    unique: true,
   })
   referred: Types.ObjectId;
 
@@ -54,13 +83,17 @@ export class Referral {
   @Prop({ default: false })
   hasCompletedChallenge: boolean;
 
-  // The real Transaction that satisfied this referral's qualifying task
-  // (a completed sale or transaction) — evidence the referred person
-  // actually did something on the marketplace, not just signed up. Only
-  // set once the referral has actually qualified; a still-in-progress
-  // referral has none yet.
+  // The real Transaction that satisfied the LAST required task type for
+  // this referral (the one that sealed hasCompletedChallenge) — evidence
+  // the referred person actually did something on the marketplace, not
+  // just signed up. Only set once the referral has fully qualified; the
+  // full history of which task(s) completed when lives in completedTasks
+  // below. Still absent for a still-in-progress referral.
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Transaction' })
   transaction?: Types.ObjectId;
+
+  @Prop({ type: [CompletedTaskSchema], default: [] })
+  completedTasks: CompletedTask[];
 
   createdAt: Date;
   updatedAt: Date;

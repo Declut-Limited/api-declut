@@ -37,7 +37,13 @@ import { User, UserDocument } from '../users/schemas/user.schema';
 import {
   Transaction,
   TransactionDocument,
+  TransactionStatus,
 } from '../transactions/schemas/transaction.schema';
+import {
+  Listing,
+  ListingDocument,
+  ListingStatus,
+} from '../listings/schemas/listing.schema';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { CounterService } from '../common/counter/counter.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -154,6 +160,10 @@ export class ReferralsService {
     // transactions" sub-table (see getParticipantDetailAdmin() below).
     @InjectModel(Transaction.name)
     private transactionModel: Model<TransactionDocument>,
+    // Read-only — backs evaluateReferralProgress()'s validationRules.notFlagged
+    // check.
+    @InjectModel(Listing.name)
+    private listingModel: Model<ListingDocument>,
     private readonly auditLogService: AuditLogService,
     private readonly notificationsService: NotificationsService,
     private readonly counterService: CounterService,
@@ -1563,6 +1573,7 @@ export class ReferralsService {
     reward.status = RewardStatus.PAID;
     reward.amountPaid = amountPaid;
     await reward.save();
+    await this.flipParticipantToPaid(reward.participant.toString(), adminId);
 
     await this.auditLogService.record({
       entityType: 'referral_reward',
@@ -1580,6 +1591,31 @@ export class ReferralsService {
       status: reward.status,
       amountPaid: reward.amountPaid,
     };
+  }
+
+  // "Paid is triggered by the endpoint to mark as paid" — explicit
+  // instruction: marking the Reward paid is also what closes out the
+  // Participant's own lifecycle, qualified -> paid. Guarded to QUALIFIED so
+  // this is a no-op (not an error) if the participant is somehow already
+  // past that state.
+  private async flipParticipantToPaid(
+    participantId: string,
+    adminId: string,
+  ): Promise<void> {
+    const result = await this.participantModel.updateOne(
+      { _id: participantId, status: ParticipantStatus.QUALIFIED },
+      { $set: { status: ParticipantStatus.PAID } },
+    );
+    if (result.modifiedCount > 0) {
+      await this.auditLogService.record({
+        entityType: 'referral_participant',
+        entityId: participantId,
+        event: 'referral_participant.paid',
+        actor: adminId,
+        oldState: ParticipantStatus.QUALIFIED,
+        newState: ParticipantStatus.PAID,
+      });
+    }
   }
 
   // Bulk variant — takes an array of reward ids. Anything not found or not
@@ -1624,6 +1660,7 @@ export class ReferralsService {
       reward.status = RewardStatus.PAID;
       reward.amountPaid = amountPaid;
       await reward.save();
+      await this.flipParticipantToPaid(reward.participant.toString(), adminId);
 
       await this.auditLogService.record({
         entityType: 'referral_reward',
@@ -1973,6 +2010,210 @@ export class ReferralsService {
     await this.notifyJoinedOrLeft(userId, campaign, participant, 'left');
 
     return participant;
+  }
+
+  // ---------------------------------------------------------------------
+  // Referral infusion — signup-time linking + purchase-completion progress.
+  // ---------------------------------------------------------------------
+
+  // Called from AuthService at signup (both the email/password and Google
+  // paths, mirroring WaitlistService.markJoinedIfInvited()'s own call
+  // shape) — never blocks signup on any failure, same posture as that
+  // hook. A referralCode is optional; an unknown/invalid one is silently
+  // ignored rather than erroring, since the caller (a brand-new account)
+  // has no way to fix a typo'd code at that point anyway. Recorded
+  // unconditionally regardless of the campaign's current status — "is the
+  // campaign still published" is only checked later, at the purchase-
+  // completion step, per explicit instruction.
+  async recordSignupReferral(
+    newUserId: string,
+    referralCode?: string,
+  ): Promise<void> {
+    if (!referralCode) {
+      return;
+    }
+    try {
+      const referrer = await this.participantModel.findOne({ referralCode });
+      if (!referrer || referrer.user.toString() === newUserId) {
+        return;
+      }
+      await this.referralModel.create({
+        campaign: referrer.campaign,
+        referrer: referrer._id,
+        referred: newUserId,
+      });
+    } catch {
+      // A duplicate-key race (this user somehow already has a Referral row)
+      // or any other hiccup — never fail signup over this.
+    }
+  }
+
+  // Called from TransactionsService for BOTH parties (buyer and seller)
+  // whenever a transaction reaches COMPLETED (confirmReceipt()/
+  // adminRelease()) — a referred person can satisfy either task type
+  // depending on which role they played on this specific transaction.
+  // No-op for a user with no un-qualified Referral row, which is the
+  // overwhelmingly common case, so this stays cheap on the hot path.
+  async evaluateReferralProgress(
+    userId: string,
+    transaction: TransactionDocument,
+  ): Promise<void> {
+    const referral = await this.referralModel.findOne({
+      referred: userId,
+      hasCompletedChallenge: false,
+    });
+    if (!referral) {
+      return;
+    }
+
+    const campaign = await this.referralCampaignModel.findById(
+      referral.campaign,
+    );
+    // Explicit instruction: the campaign must still be published for a
+    // purchase to count toward it — an ended/archived/draft/scheduled
+    // campaign no longer accrues progress, even for an already-linked
+    // referral.
+    if (!campaign || campaign.status !== ReferralCampaignStatus.PUBLISHED) {
+      return;
+    }
+
+    const rules = campaign.validationRules;
+    if (rules.notDisputed && transaction.disputeStatus) {
+      return;
+    }
+    if (
+      (rules.notRefunded || rules.transactionCompleted) &&
+      transaction.status !== TransactionStatus.COMPLETED
+    ) {
+      return;
+    }
+    // escrowReleased is implied by reaching COMPLETED at all — both call
+    // sites only ever flip status to COMPLETED once escrow has actually
+    // released, so no separate check is needed for it.
+    if (rules.notFlagged) {
+      const listing = await this.listingModel
+        .findById(transaction.listing)
+        .select('status')
+        .exec();
+      if (listing?.status === ListingStatus.REPORTED) {
+        return;
+      }
+    }
+
+    const requirement = campaign.referralRequirement;
+    const isSeller = transaction.seller.toString() === userId;
+    const isBuyer = transaction.buyer.toString() === userId;
+
+    let taskType: ReferredTaskType | null = null;
+    if (
+      isSeller &&
+      requirement.eachReferredTask.includes(ReferredTaskType.COMPLETE_SALE) &&
+      (!rules.meetsMinimumTransactionAmount ||
+        transaction.amount >= requirement.minimumTransactionValueCompletedSale)
+    ) {
+      taskType = ReferredTaskType.COMPLETE_SALE;
+    } else if (
+      isBuyer &&
+      requirement.eachReferredTask.includes(
+        ReferredTaskType.COMPLETE_TRANSACTION,
+      ) &&
+      (!rules.meetsMinimumTransactionAmount ||
+        transaction.amount >=
+          requirement.minimumTransactionValueCompletedTransaction)
+    ) {
+      taskType = ReferredTaskType.COMPLETE_TRANSACTION;
+    }
+    if (!taskType) {
+      // This transaction doesn't satisfy any task type the campaign cares
+      // about for the role this user played on it.
+      return;
+    }
+    if (referral.completedTasks.some((t) => t.taskType === taskType)) {
+      // Already satisfied this task type via an earlier transaction —
+      // eachReferredTask only ever needs each type completed once.
+      return;
+    }
+
+    referral.completedTasks.push({
+      taskType,
+      transaction: transaction._id,
+      completedAt: new Date(),
+    });
+
+    // Per-task-type progress — increments the moment THIS type first
+    // completes for this referral, independent of whether every required
+    // type is done yet.
+    const progressField =
+      taskType === ReferredTaskType.COMPLETE_SALE
+        ? 'progress.amountOfCompletedSales'
+        : 'progress.amountOfCompletedTransaction';
+    await this.participantModel.updateOne(
+      { _id: referral.referrer },
+      { $inc: { [progressField]: 1 } },
+    );
+
+    const completedTypes = new Set(
+      referral.completedTasks.map((t) => t.taskType),
+    );
+    const fullyQualified = requirement.eachReferredTask.every((t) =>
+      completedTypes.has(t),
+    );
+
+    if (fullyQualified) {
+      referral.hasCompletedChallenge = true;
+      referral.qualifiedAt = new Date();
+      referral.transaction = transaction._id;
+    }
+    await referral.save();
+
+    if (!fullyQualified) {
+      return;
+    }
+
+    // amountOfReferrals only ever counts FULLY qualifying referrals (every
+    // required task type done) — confirmed explicitly; this is what
+    // referralRequirement.referralAmount and progressPercentage measure
+    // against, not raw referred-signup count.
+    const participant = await this.participantModel.findOneAndUpdate(
+      { _id: referral.referrer },
+      { $inc: { 'progress.amountOfReferrals': 1 } },
+      { new: true },
+    );
+    if (!participant) {
+      return;
+    }
+
+    // "Qualified" means qualified FOR PAYMENT, not just "hit the referral
+    // count" in isolation — explicit instruction: reaching the target both
+    // flips status and creates the actual Reward (pending) in the same
+    // moment, since tracking progress with no reward ever generated was the
+    // exact gap this whole feature exists to close. Guarded to IN_PROGRESS
+    // so this can only ever fire once per participant.
+    if (
+      participant.status === ParticipantStatus.IN_PROGRESS &&
+      participant.progress.amountOfReferrals >= requirement.referralAmount
+    ) {
+      const oldStatus = participant.status;
+      participant.status = ParticipantStatus.QUALIFIED;
+      await participant.save();
+
+      await this.rewardModel.create({
+        campaign: campaign._id,
+        participant: participant._id,
+        referred: userId,
+        status: RewardStatus.PENDING,
+        amountPaid: 0,
+      });
+
+      await this.auditLogService.record({
+        entityType: 'referral_participant',
+        entityId: participant._id.toString(),
+        event: 'referral_participant.qualified',
+        actor: 'system',
+        oldState: oldStatus,
+        newState: participant.status,
+      });
+    }
   }
 
   // Shared by every join/rejoin/leave path — a push+email confirmation of

@@ -19,6 +19,7 @@ import {
   Transaction,
   TransactionSchema,
 } from '../transactions/schemas/transaction.schema';
+import { Listing, ListingSchema } from '../listings/schemas/listing.schema';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { CounterModule } from '../common/counter/counter.module';
 
@@ -35,6 +36,10 @@ import { CounterModule } from '../common/counter/counter.module';
       // "referred users' own real transactions" sub-table. Same workaround
       // Listings/Users/BankAccounts already use for this exact pair.
       { name: Transaction.name, schema: TransactionSchema },
+      // Read-only — backs evaluateReferralProgress()'s validationRules.notFlagged
+      // check (was the referred user's listing ever reported). Same
+      // avoid-a-cycle workaround as Transaction/User above.
+      { name: Listing.name, schema: ListingSchema },
     ]),
     AdminAuthModule,
     AuditLogModule,
