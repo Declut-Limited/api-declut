@@ -50,7 +50,17 @@ export class NotificationsController {
       user.sub,
       dto.page ?? 1,
       dto.limit ?? 20,
+      dto.read,
     );
+  }
+
+  @Get('count')
+  async getUnreadCount(@CurrentUser() user: AccessTokenPayload) {
+    const unreadCount = await this.notificationsService.getUnreadCount(
+      NotificationRecipientType.USER,
+      user.sub,
+    );
+    return { unreadCount };
   }
 
   @Patch(':id/read')

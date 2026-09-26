@@ -211,12 +211,16 @@ export class NotificationsService {
       .exec();
   }
 
-  // GET /notifications and GET /admin/notifications both call this — same shape either way.
+  // GET /notifications and GET /admin/notifications both call this — same
+  // shape either way. `read` narrows results/total to read-only or
+  // unread-only when given; unreadCount always reflects the true unread
+  // total regardless (badge semantics, not "unread within this filter").
   async listForRecipient(
     recipientType: NotificationRecipientType,
     recipientId: string,
     page: number,
     limit: number,
+    read?: boolean,
   ): Promise<{
     results: NotificationDocument[];
     total: number;
@@ -224,21 +228,35 @@ export class NotificationsService {
     page: number;
     limit: number;
   }> {
-    const filter = {
+    const baseFilter = {
       recipientType,
       recipient: new Types.ObjectId(recipientId),
     };
+    const listFilter =
+      read === undefined ? baseFilter : { ...baseFilter, read };
     const [results, total, unreadCount] = await Promise.all([
       this.notificationModel
-        .find(filter)
+        .find(listFilter)
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
         .exec(),
-      this.notificationModel.countDocuments(filter),
-      this.notificationModel.countDocuments({ ...filter, read: false }),
+      this.notificationModel.countDocuments(listFilter),
+      this.notificationModel.countDocuments({ ...baseFilter, read: false }),
     ]);
     return { results, total, unreadCount, page, limit };
+  }
+
+  // Lightweight badge count — no rows fetched, just the number.
+  async getUnreadCount(
+    recipientType: NotificationRecipientType,
+    recipientId: string,
+  ): Promise<number> {
+    return this.notificationModel.countDocuments({
+      recipientType,
+      recipient: new Types.ObjectId(recipientId),
+      read: false,
+    });
   }
 
   // Scoped to the caller — same object-level ownership rule every mutating endpoint in this app follows.
