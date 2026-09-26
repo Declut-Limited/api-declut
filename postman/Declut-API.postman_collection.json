@@ -373,6 +373,61 @@
           ]
         },
         {
+          "name": "login-with-biometric",
+          "description": "",
+          "item": [
+            {
+              "name": "Login with biometric",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/auth/login-with-biometric",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "login-with-biometric"
+                  ]
+                },
+                "description": "Client-side Face ID/fingerprint check (expo-local-authentication) already passed before this is called — the app then pulls its stored refreshToken out of secure storage and sends it here. Same rotation as /auth/refresh, but also re-checks the user's loginWithFingerprintOrFaceid preference server-side, so disabling it elsewhere actually revokes biometric login even with a valid stored token. 401s with \"Biometric login is not enabled for this account\" if the preference is off.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const data = pm.response.json();",
+                      "if (data && data.data && data.data.accessToken) {",
+                      "    pm.collectionVariables.set(\"accessToken\", data.data.accessToken);",
+                      "    pm.collectionVariables.set(\"refreshToken\", data.data.refreshToken);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
           "name": "logout",
           "description": "",
           "item": [

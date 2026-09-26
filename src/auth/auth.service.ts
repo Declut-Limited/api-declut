@@ -253,18 +253,42 @@ export class AuthService {
   }
 
   async refresh(dto: RefreshTokenDto): Promise<TokenPair> {
-    const payload = await this.verifyRefreshToken(dto.refreshToken);
+    const user = await this.verifyAndLoadRefreshUser(dto.refreshToken);
+    return this.issueTokens(user);
+  }
+
+  // Device-side biometric check already happened (expo-local-authentication)
+  // before this is ever called — the app pulled its stored refresh token out
+  // of secure storage (Keychain/Keystore) only because Face ID/fingerprint
+  // passed. This endpoint exists as a distinct call from plain refresh()
+  // for one reason: the user's loginWithFingerprintOrFaceid preference is
+  // re-checked server-side, so switching it off from another device/session
+  // actually revokes biometric login here — a stale value cached on-device
+  // can't bypass that. Otherwise identical to refresh() (same rotation).
+  async loginWithBiometric(dto: RefreshTokenDto): Promise<TokenPair> {
+    const user = await this.verifyAndLoadRefreshUser(dto.refreshToken);
+    if (!user.loginWithFingerprintOrFaceid) {
+      throw new UnauthorizedException(
+        'Biometric login is not enabled for this account',
+      );
+    }
+    return this.issueTokens(user);
+  }
+
+  private async verifyAndLoadRefreshUser(
+    refreshToken: string,
+  ): Promise<UserDocument> {
+    const payload = await this.verifyRefreshToken(refreshToken);
 
     const user = await this.usersService.findByIdWithRefreshToken(payload.sub);
     if (
       !user?.refreshToken ||
       user.refreshToken.expiresAt < new Date() ||
-      !refreshTokenMatches(dto.refreshToken, user.refreshToken.hashedToken)
+      !refreshTokenMatches(refreshToken, user.refreshToken.hashedToken)
     ) {
       throw new UnauthorizedException('Invalid refresh token');
     }
-
-    return this.issueTokens(user);
+    return user;
   }
 
   async logout(dto: RefreshTokenDto): Promise<void> {

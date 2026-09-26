@@ -69,6 +69,13 @@ export class AuthController {
     return this.authService.refresh(dto);
   }
 
+  @Throttle(AUTH_THROTTLE)
+  @HttpCode(HttpStatus.OK)
+  @Post('login-with-biometric')
+  loginWithBiometric(@Body() dto: RefreshTokenDto) {
+    return this.authService.loginWithBiometric(dto);
+  }
+
   @HttpCode(HttpStatus.OK)
   @Post('logout')
   async logout(@Body() dto: RefreshTokenDto) {
