@@ -155,6 +155,9 @@ export class UsersService {
 
     if (dto.name !== undefined) user.name = dto.name;
     if (dto.profileImage !== undefined) user.profileImage = dto.profileImage;
+    if (dto.loginWithFingerprintOrFaceid !== undefined) {
+      user.loginWithFingerprintOrFaceid = dto.loginWithFingerprintOrFaceid;
+    }
 
     await user.save();
     return await this.toPrivateProfile(user);
@@ -550,6 +553,7 @@ export class UsersService {
       reviewCount: user.reviewCount,
       hasPayoutDetails: user.hasPayoutDetails,
       profileImageUrl: user.profileImage,
+      loginWithFingerprintOrFaceid: user.loginWithFingerprintOrFaceid,
       trustScore: user.trustScore,
       policyStrike: user.policyStrike,
       ...stats,

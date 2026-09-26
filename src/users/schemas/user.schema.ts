@@ -238,6 +238,11 @@ export class User {
   @Prop()
   profileImage?: string;
 
+  // Client-side biometric-login preference — the actual fingerprint/FaceID
+  // check happens on-device; this just remembers whether the user opted in.
+  @Prop({ default: false })
+  loginWithFingerprintOrFaceid: boolean;
+
   @Prop({ default: 0 })
   avgRating: number;
 
