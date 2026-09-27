@@ -217,6 +217,20 @@ export class Transaction {
   })
   inspectionOutcome: InspectionOutcome;
 
+  // Set once, by markArrivedForInspection() — the buyer's own attestation
+  // that they've physically arrived at the meetup to inspect the item.
+  // Status stays ESCROW_ACTIVE and inspectionOutcome stays PENDING at this
+  // point (explicit instruction, 2026-09-27) — only inspectionStatus moves
+  // to COMPLETED here; the actual outcome is still decided later by
+  // confirmReceipt()/reportPurchase(). A hard prerequisite for both of those
+  // — even a "the seller never showed up" report requires marking arrived
+  // first. One-time: markArrivedForInspection() refuses a second call.
+  @Prop({ default: false })
+  markedAsArrived: boolean;
+
+  @Prop()
+  arrivedForInspectionAt?: Date;
+
   createdAt: Date;
   updatedAt: Date;
 }

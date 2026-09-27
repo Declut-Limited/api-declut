@@ -533,6 +533,14 @@ export class TransactionsService {
         `Transaction is ${transaction.status}, confirmation not available`,
       );
     }
+    // Explicit instruction, 2026-09-27: the buyer must have marked
+    // themselves as arrived for inspection before they can confirm receipt —
+    // see markArrivedForInspection().
+    if (!transaction.markedAsArrived) {
+      throw new BadRequestException(
+        'You must mark yourself as arrived for inspection before confirming receipt',
+      );
+    }
 
     // KYC gate, explicit instruction (2026-09-26): the buyer's very first
     // purchase is allowed to be PAID FOR with no KYC required, but can't be
@@ -695,6 +703,67 @@ export class TransactionsService {
         err as Error,
       );
     }
+  }
+
+  // Buyer-only, one-time — the buyer's own attestation that they've
+  // physically arrived at the meetup to inspect the item. Explicit
+  // instruction, 2026-09-27. Only Transaction.inspectionStatus moves (to
+  // COMPLETED) here — Transaction.status stays ESCROW_ACTIVE and
+  // inspectionOutcome stays PENDING, since the actual outcome is still
+  // undecided until confirmReceipt()/reportPurchase() runs. Can't be called
+  // once the inspection window has already ended (inspectionPeriodEnded) —
+  // same "must act while the window is still open" rule
+  // addInspectionExtension() already enforces.
+  async markArrivedForInspection(transactionId: string, buyerId: string) {
+    const transaction = await this.findRaw(transactionId);
+    if (transaction.buyer.toString() !== buyerId) {
+      throw new ForbiddenException(
+        'Only the buyer can mark themselves as arrived for inspection',
+      );
+    }
+    if (transaction.status !== TransactionStatus.ESCROW_ACTIVE) {
+      throw new BadRequestException(
+        `Transaction is ${transaction.status} — you can't mark yourself as arrived`,
+      );
+    }
+    if (transaction.inspectionPeriodEnded) {
+      throw new BadRequestException(
+        'Your inspection window has already ended — you can no longer mark yourself as arrived',
+      );
+    }
+    if (transaction.markedAsArrived) {
+      throw new BadRequestException(
+        'You have already marked yourself as arrived for this transaction',
+      );
+    }
+
+    const oldInspectionStatus = transaction.inspectionStatus;
+    transaction.markedAsArrived = true;
+    transaction.arrivedForInspectionAt = new Date();
+    transaction.inspectionStatus = InspectionStatus.COMPLETED;
+    await transaction.save();
+
+    await this.audit(
+      transactionId,
+      'buyer_marked_arrived',
+      buyerId,
+      oldInspectionStatus,
+      InspectionStatus.COMPLETED,
+    );
+
+    await this.notificationsService.notify({
+      recipientType: NotificationRecipientType.USER,
+      recipientId: transaction.seller.toString(),
+      type: 'inspection_started',
+      title: 'Buyer has arrived for inspection',
+      body: 'The buyer has arrived at the meetup to inspect the item.',
+      data: { transactionId },
+    });
+
+    return {
+      markedAsArrived: transaction.markedAsArrived,
+      arrivedForInspectionAt: transaction.arrivedForInspectionAt,
+    };
   }
 
   // Buyer-initiated, self-serve, one-time. Must be requested WHILE the
@@ -932,6 +1001,14 @@ export class TransactionsService {
     ) {
       throw new BadRequestException(
         `Transaction is ${transaction.status} — this purchase can't be reported`,
+      );
+    }
+    // Explicit instruction, 2026-09-27: marking arrived is the gate even for
+    // a "the seller never showed up" complaint — the buyer must have called
+    // markArrivedForInspection() before they can report this purchase.
+    if (!transaction.markedAsArrived) {
+      throw new BadRequestException(
+        'You must mark yourself as arrived for inspection before filing a report',
       );
     }
 
@@ -3140,9 +3217,16 @@ export class TransactionsService {
   async sweepEndedInspectionPeriods(): Promise<void> {
     const now = new Date();
 
+    // Filters on inspectionOutcome (not inspectionStatus) as the "still
+    // genuinely unresolved" signal — since markArrivedForInspection() (added
+    // 2026-09-27) can now flip inspectionStatus to COMPLETED well before the
+    // outcome is actually decided. Using inspectionStatus: AWAITING here
+    // would have silently stopped catching a buyer who arrived, inspected,
+    // and then never confirmed receipt or reported a problem — exactly the
+    // case this safety net exists for.
     const candidates = await this.transactionModel.find({
       status: TransactionStatus.ESCROW_ACTIVE,
-      inspectionStatus: InspectionStatus.AWAITING,
+      inspectionOutcome: InspectionOutcome.PENDING,
       inspectionPeriodEnded: false,
       $or: [
         { inspectionExtended: false, inspectionDeadlineAt: { $lte: now } },

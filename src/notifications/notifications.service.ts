@@ -491,15 +491,27 @@ export class NotificationsService {
         return { status: NotificationChannelStatus.SKIPPED };
       }
 
-      const { invalidTokens } = await this.fcmService.sendToTokens([token], {
-        title: params.title,
-        body: params.body,
-        data: params.data,
-      });
+      const { successCount, invalidTokens } =
+        await this.fcmService.sendToTokens([token], {
+          title: params.title,
+          body: params.body,
+          data: params.data,
+        });
       if (invalidTokens.length > 0) {
         await this.usersService.clearInvalidDeviceTokens(invalidTokens);
       }
-      return { status: NotificationChannelStatus.SENT };
+      // successCount reflects Expo's real per-token delivery ticket now —
+      // previously this unconditionally reported SENT regardless of whether
+      // anything was actually delivered.
+      if (successCount > 0) {
+        return { status: NotificationChannelStatus.SENT };
+      }
+      return {
+        status: NotificationChannelStatus.FAILED,
+        error: invalidTokens.includes(token)
+          ? 'Device token no longer registered'
+          : 'Push notification was not delivered',
+      };
     } catch (err) {
       this.logger.error('Push send failed', err as Error);
       return {

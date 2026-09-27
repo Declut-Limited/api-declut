@@ -56,9 +56,16 @@ export const envValidationSchema = Joi.object({
   // Inbox that receives "Get in touch" (public contact form) notifications — read fresh on every submission (see ContactService), never hardcoded.
   CONTACT_ADMIN_EMAIL: Joi.string().allow('').optional(),
 
+  // Google sign-in only, as of 2026-09-27 — FCM push no longer goes through
+  // Firebase (see FcmService), only Firebase-ID-token verification does.
   FIREBASE_PROJECT_ID: Joi.string().allow('').optional(),
   FIREBASE_CLIENT_EMAIL: Joi.string().allow('').optional(),
   FIREBASE_PRIVATE_KEY: Joi.string().allow('').optional(),
+
+  // Optional Expo "Enhanced Security for Push Notifications" bearer token —
+  // FcmService sends without it fine; only needed if that's turned on for
+  // the Expo project.
+  EXPO_ACCESS_TOKEN: Joi.string().allow('').optional(),
 
   PAYSTACK_PUBLIC_KEY: Joi.string().allow('').optional(),
   PAYSTACK_SECRET_KEY: Joi.string().allow('').optional(),

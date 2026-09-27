@@ -1890,6 +1890,38 @@
               "response": []
             },
             {
+              "name": "mark-arrived-for-inspection",
+              "description": "",
+              "item": [
+                {
+                  "name": "Mark arrived for inspection",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{accessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/transactions/{{transactionId}}/mark-arrived-for-inspection",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "transactions",
+                        "{{transactionId}}",
+                        "mark-arrived-for-inspection"
+                      ]
+                    },
+                    "description": "Buyer-only, one-time — the buyer's own attestation that they've physically arrived at the meetup to inspect the item. No body. Only valid while status is escrow_active and the inspection window hasn't already ended (inspectionPeriodEnded). Sets markedAsArrived/arrivedForInspectionAt and moves inspectionStatus to completed (status stays escrow_active, inspectionOutcome stays pending — the actual outcome is still decided by confirm-transaction or a report). Required before both confirm-transaction and POST /reports naming this transaction — even a \"the seller never showed up\" complaint requires marking arrived first. Notifies the seller."
+                  },
+                  "response": []
+                }
+              ]
+            },
+            {
               "name": "confirm-transaction",
               "description": "",
               "item": [
@@ -1915,7 +1947,7 @@
                         "confirm-transaction"
                       ]
                     },
-                    "description": "Buyer-only — confirms the item was received and releases the seller's payout. No confirmation code involved; only callable while the transaction is escrow_active/awaiting_inspection."
+                    "description": "Buyer-only — confirms the item was received and releases the seller's payout. No confirmation code involved; only callable while the transaction is escrow_active/awaiting_inspection. Requires markedAsArrived (mark-arrived-for-inspection) to have been set first, or this 400s."
                   },
                   "response": []
                 }
@@ -2538,7 +2570,7 @@
                 "reports"
               ]
             },
-            "description": "User-facing — a user files their own report directly (reporterId must equal the caller's own id, or 403). At least one of listingId/accusedUserId is required. If listingId is given, that listing is immediately reported (status becomes 'reported') and the accused user is derived from the listing's own seller — accusedUserId is only used when reporting a user directly with no listing. transactionId is now required (2026-09-27) — it must be the reporter's own transaction (403/400 otherwise) and freezes that purchase's escrow, letting the seller respond via POST /transactions/:id/seller-refund or POST /disputes/raise-dispute. This same transactionId is also what the new admin resolve-report actions (see admin/reports/{{reportId}}/resolve/*) act on, and is what shows up populated ({_id, reference, status, amount}) on this report's own detail/by-listing responses. Response now also includes sellerResponseDeadlineAt/sellerResponseSlaTimeInHour when enableSellerSLA is on at creation time (see admin/settings/issue-resolution-sla) — the seller-response clock starts the instant the report is filed.",
+            "description": "User-facing — a user files their own report directly (reporterId must equal the caller's own id, or 403). At least one of listingId/accusedUserId is required. If listingId is given, that listing is immediately reported (status becomes 'reported') and the accused user is derived from the listing's own seller — accusedUserId is only used when reporting a user directly with no listing. transactionId is now required (2026-09-27) — it must be the reporter's own transaction (403/400 otherwise) and freezes that purchase's escrow, letting the seller respond via POST /transactions/:id/seller-refund or POST /disputes/raise-dispute. This same transactionId is also what the new admin resolve-report actions (see admin/reports/{{reportId}}/resolve/*) act on, and is what shows up populated ({_id, reference, status, amount}) on this report's own detail/by-listing responses. Response now also includes sellerResponseDeadlineAt/sellerResponseSlaTimeInHour when enableSellerSLA is on at creation time (see admin/settings/issue-resolution-sla) — the seller-response clock starts the instant the report is filed. Also requires markedAsArrived on the named transaction (POST /transactions/:id/mark-arrived-for-inspection) as of 2026-09-27 — even a \"the seller never showed up\" complaint requires marking arrived first, or this 400s.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"reason\": \"Buyer called in claiming this listing's photos were lifted from a competitor's page.\",\n  \"listingId\": \"{{listingId}}\",\n  \"transactionId\": \"{{transactionId}}\",\n  \"reporterId\": \"{{reporterId}}\"\n}",

@@ -131,6 +131,18 @@ export const NOTIFICATION_TYPES = {
       [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
     },
   },
+  // Seller-facing notice that the buyer has arrived at the meetup —
+  // TransactionsService.markArrivedForInspection(), added 2026-09-27.
+  inspection_started: {
+    label: 'Buyer arrived for inspection',
+    channels: {
+      [NotificationRecipientType.USER]: [
+        'push',
+        'email',
+      ] as NotificationChannel[],
+      [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
+    },
+  },
   // Admin-triggered nudge (POST /admin/transactions/:id/send-inspection-reminder), gated by
   // inspectionReminders same as inspection_extended — added 2026-09-15.
   inspection_reminder: {
@@ -273,6 +285,7 @@ export const NOTIFICATION_SETTING_CATEGORY: Partial<
   purchase_cancelled_refunded: 'paymentAndEscrowUpdates',
   inspection_extended: 'inspectionReminders',
   inspection_reminder: 'inspectionReminders',
+  inspection_started: 'inspectionReminders',
   purchase_reported: 'disputeUpdates',
   seller_refunded_report: 'disputeUpdates',
   dispute_raised: 'disputeUpdates',
