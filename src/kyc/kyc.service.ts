@@ -24,6 +24,7 @@ import { UsersService } from '../users/users.service';
 import { KycStatus, User, UserDocument } from '../users/schemas/user.schema';
 import { TrustScoreService } from '../trust-score/trust-score.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationRecipientType } from '../notifications/schemas/notification.schema';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { escapeRegex } from '../common/utils/regex.util';
 
@@ -148,6 +149,24 @@ export class KycService {
           : `Your ${stage} check failed — you can try again.`,
       data: { type: 'kyc_status_change', stage, status: result.status },
     });
+
+    // Separate, one-time "you're fully verified" event — only fires on the
+    // actual transition into VERIFIED (user.kycStatus here is still the
+    // pre-check value), not on every subsequent check against an
+    // already-verified account.
+    if (
+      kycStatus === KycStatus.VERIFIED &&
+      user.kycStatus !== KycStatus.VERIFIED
+    ) {
+      await this.notificationsService.notify({
+        recipientType: NotificationRecipientType.USER,
+        recipientId: userId,
+        type: 'kyc_completed',
+        title: 'KYC verification complete',
+        body: "You're fully verified — you can now buy and sell freely on Declut.",
+        data: { type: 'kyc_completed' },
+      });
+    }
 
     return {
       status: result.status,

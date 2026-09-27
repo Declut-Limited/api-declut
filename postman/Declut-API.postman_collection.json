@@ -8241,7 +8241,7 @@
                     }
                   ]
                 },
-                "description": "5 insights, all scoped to one shared period window (same thisMonth/lastMonth/last3Months/thisYear/lastYear/custom shape as GET /admin/feedback/analytics): activeCampaigns (campaigns with status=published, created in the period), participants (distinct users with a status=in_progress Participant doc created in the period — a user is counted once even if they're in-progress across multiple campaigns), successfulReferrals (Referral docs with hasCompletedChallenge=true whose referring participant is currently qualified or paid, created in the period), rewardPaid (Reward docs with status=paid whose participant is also currently paid, created in the period), conversionRate (successfulReferrals / total referrals created in the period, as a percentage string). Every count is scoped by its own collection's createdAt within the window. Gated referrals/view."
+                "description": "5 insights, all scoped to one shared period window (same thisMonth/lastMonth/last3Months/thisYear/lastYear/custom shape as GET /admin/feedback/analytics): activeCampaigns (campaigns with status=published, created in the period), participants (distinct users with a status=active Participant doc created in the period — a user is counted once even if they're active across multiple campaigns), successfulReferrals (Referral docs with status=completed, created in the period), rewardPaid (Reward docs with status=paid, created in the period), conversionRate (successfulReferrals / total referrals created in the period, as a percentage string). Reworked 2026-09-27: qualification/reward status no longer lives on Participant at all (see List referral participants below) — successfulReferrals/rewardPaid are now plain Referral/Reward counts, no participant-status join needed. Every count is scoped by its own collection's createdAt within the window. Gated referrals/view."
               },
               "response": []
             },
@@ -8281,7 +8281,7 @@
                     }
                   ]
                 },
-                "description": "4 more dashboard sections beyond analytics: rewardSpent ({chart: 12 zero-filled Jan-Dec buckets of {month, amountSpent} for paid Reward.amountPaid, bestMonth: the month with the most recipients paid e.g. \"July - 50 users\", totalSpent: the year's total} — always scoped to the one calendar year, never affected by allTime), campaignPerformance (the 3 most recently created campaigns within scope, each with participants/referralCount/successfulCount/conversionRate/qualified/rewardSpent), topReferrals (top 3 participants by successful referrals within scope, with name/successfulReferrals/qualified/transactionsGenerated — the last reads from Participant.progress.amountOfCompletedTransaction, which is 0 for everyone until that counter is wired up), qualificationStatus (participant counts per status within scope). \"Within scope\" is the one calendar year (default) or every document ever (allTime=true). Gated referrals/view."
+                "description": "4 more dashboard sections beyond analytics: rewardSpent ({chart: 12 zero-filled Jan-Dec buckets of {month, amountSpent} for paid Reward.amountPaid, bestMonth: the month with the most recipients paid e.g. \"July - 50 users\", totalSpent: the year's total} — always scoped to the one calendar year, never affected by allTime), campaignPerformance (the 3 most recently created campaigns within scope, each with participants (active-status count)/referralCount/successfulCount/conversionRate/qualified/rewardSpent — qualified and successfulCount are now the same underlying Referral.status=completed count, kept as two separate keys for response-shape stability), topReferrals (top 3 participants by successful referrals within scope, with name/successfulReferrals/qualified/transactionsGenerated — the last reads from Participant.progress.amountOfCompletedTransaction, which is 0 for everyone until that counter is wired up), qualificationStatus (inProgress/disqualified/expired/left are Participant counts by status — active/disqualified/expired/left is the real 2026-09-27 enum, though the inProgress key name is kept for response-shape stability; qualified/paid are now Referral.status=completed / Reward.status=paid counts, since neither concept exists on Participant anymore). \"Within scope\" is the one calendar year (default) or every document ever (allTime=true). Gated referrals/view."
               },
               "response": []
             },
@@ -8497,9 +8497,9 @@
                     },
                     {
                       "key": "status",
-                      "value": "in_progress",
+                      "value": "active",
                       "disabled": true,
-                      "description": "Filter by participation status: in_progress, qualified, paid, disqualified, expired, left."
+                      "description": "Filter by participation status: active, disqualified, expired, left. Reworked 2026-09-27 — qualified/paid no longer exist on Participant (a participation is only ever access to a campaign, not a reward outcome); see List referral rewards for reward-payment status."
                     },
                     {
                       "key": "campaignId",
@@ -8527,7 +8527,7 @@
                     }
                   ]
                 },
-                "description": "Paginated, searchable, filterable list of every Participant across every campaign — id, slug (PAT-####, generated at first join; null for a pre-existing participant that predates this field), participant name, campaign name, referredUsers (total referrals made), qualified (referrals with qualifiedAt set), progressPercentage, deadline (joinedAt + the campaign's qualificationWindow, falling back to the campaign's endDate if none is set), reward (the campaign's configured rewardAmount, not a real Reward row's amountPaid), and status (raw ParticipantStatus value)."
+                "description": "Paginated, searchable, filterable list of every Participant across every campaign — id, slug (PAT-####, generated at first join; null for a pre-existing participant that predates this field), participant name, campaign name, referredUsers (total referrals made), qualified (referrals with qualifiedAt set), progressPercentage, deadline (joinedAt + the campaign's qualificationWindow, falling back to the campaign's endDate if none is set), reward (reworked 2026-09-27 — now the sum of this participant's actually-paid Reward rows, not the campaign's flat rewardAmount, since one-reward-per-referral means a participant can hold several rewards), and status (ParticipantStatus: active/disqualified/expired/left — qualified/paid no longer exist on Participant at all, see List referral rewards for reward-payment status instead)."
               },
               "response": []
             },
@@ -8641,7 +8641,7 @@
                         }
                       ]
                     },
-                    "description": "slug (PAT-####), transactionReference (this participant's own — the referrer's own — most recent real Transaction reference as buyer or seller, e.g. \"TXN-2026-00044\"; null if they've never transacted themselves — distinct from the transactions sub-table below, which is about their *referred* users' own transactions), insights ({potentialReward: the campaign's rewardAmount, referredUsers, qualifiedReferrals, rewardAmountPaid: summed paid Reward.amountPaid for this participant}), referredUsers (paginated — this participant's own Referral docs, each with the referred user's id/name, referredAt, qualifiedAt, hasCompletedChallenge, and transaction: {id, reference, amount, status} — the real Transaction that satisfied a qualifying referral, null while still in progress), transactions (paginated — real marketplace Transaction docs where any of this participant's referred users is the buyer or seller, with productName/amount/date/buyer/seller/status; empty if none of their referred users has transacted), and timeline (the 3 most recent AuditLog entries for this participant — join/rejoin/leave events)."
+                    "description": "slug (PAT-####), transactionReference (this participant's own — the referrer's own — most recent real Transaction reference as buyer or seller, e.g. \"TXN-2026-00044\"; null if they've never transacted themselves — distinct from the transactions sub-table below, which is about their *referred* users' own transactions), insights ({potentialReward: the campaign's rewardAmount — the value of one completed referral, referredUsers, qualifiedReferrals, rewardAmountPaid: summed paid Reward.amountPaid for this participant}), referredUsers (paginated — this participant's own Referral docs, each with the referred user's id/name, referredAt, qualifiedAt, hasCompletedChallenge, status (in_progress/completed/disqualified, added 2026-09-27 alongside hasCompletedChallenge), and transaction: {id, reference, amount, status} — the real Transaction that satisfied a qualifying referral, null while still in progress), transactions (paginated — real marketplace Transaction docs where any of this participant's referred users is the buyer or seller, with productName/amount/date/buyer/seller/status; empty if none of their referred users has transacted), and timeline (the 3 most recent AuditLog entries for this participant — join/rejoin/leave events)."
                   },
                   "response": []
                 }
@@ -8717,7 +8717,7 @@
                     }
                   ]
                 },
-                "description": "Paginated, searchable, filterable list of every Reward — participant name, campaign name, reward (the campaign's configured rewardAmount, shown even while pending — Reward.amountPaid itself is 0 until actually disbursed), qualifiedOn (the matching Referral's qualifiedAt, resolved by the shared (campaign, participant, referred) triple), payment (raw Reward status: pending/paid/canceled), schedule (the campaign's paymentSchedule)."
+                "description": "Paginated, searchable, filterable list of every Reward — participant name, campaign name, reward (the campaign's configured rewardAmount, shown even while pending — Reward.amountPaid itself is 0 until actually disbursed), qualifiedOn (reworked 2026-09-27 — resolved via a direct Reward.referral ref to the Referral it was created for, since Reward is now 1:1 with Referral; null for a pre-2026-09-27 reward with no referral set), payment (raw Reward status: pending/paid/canceled), schedule (the campaign's paymentSchedule)."
               },
               "response": []
             },

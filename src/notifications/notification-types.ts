@@ -246,6 +246,17 @@ export const NOTIFICATION_TYPES = {
       [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
     },
   },
+  // Fires once, the moment both KYC stages have passed and kycStatus first
+  // flips to VERIFIED — distinct from the existing per-stage "check
+  // passed/failed" notifyUser() call in KycService.recordCheck(). Explicit
+  // instruction, push only, no email.
+  kyc_completed: {
+    label: 'KYC verification complete',
+    channels: {
+      [NotificationRecipientType.USER]: ['push'] as NotificationChannel[],
+      [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
+    },
+  },
 } as const;
 
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;
