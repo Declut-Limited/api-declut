@@ -33,6 +33,10 @@ import { SettingsService } from '../settings/settings.service';
 const PARTY_FIELDS = 'name slug email phone accountStatus createdAt avgRating';
 const POPULATE_FIELDS = {
   listing: 'title slug mainImageUrl',
+  // The purchase this report froze, if any (CreateReportDto.transactionId)
+  // — was stored on Report but never actually populated/shown on any read
+  // path until now.
+  transaction: 'reference status amount',
   accusedUser: PARTY_FIELDS,
   reporter: PARTY_FIELDS,
   // Detail-view-only shape (list/findByIdOrSlug) — just the dispute's own
@@ -229,6 +233,7 @@ export class ReportsService {
     const report = await this.reportModel
       .findOne(filter)
       .populate('listing', POPULATE_FIELDS.listing)
+      .populate('transaction', POPULATE_FIELDS.transaction)
       .populate('accusedUser', POPULATE_FIELDS.accusedUser)
       .populate('reporter', POPULATE_FIELDS.reporter)
       .populate('sellerDispute', POPULATE_FIELDS.sellerDispute)
