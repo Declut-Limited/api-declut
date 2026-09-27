@@ -6,6 +6,8 @@ import { KycCheckResult, KycProvider } from './kyc-provider.interface';
 // verified against QoreID's real docs. Confirm before using real credentials.
 @Injectable()
 export class QoreIdProvider implements KycProvider {
+  readonly providerName = 'qoreid';
+
   constructor(private readonly config: ConfigService) {}
 
   async verifyNin(nin: string): Promise<KycCheckResult> {

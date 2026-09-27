@@ -9,7 +9,7 @@ import { KycService } from './kyc.service';
 import { KycController } from './kyc.controller';
 import { AdminKycController } from './admin-kyc.controller';
 import { KYC_PROVIDER } from './providers/kyc-provider.interface';
-import { QoreIdProvider } from './providers/qoreid.provider';
+import { AutoApproveKycProvider } from './providers/auto-approve.provider';
 import { UsersModule } from '../users/users.module';
 import { TrustScoreModule } from '../trust-score/trust-score.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -35,8 +35,12 @@ import { AuditLogModule } from '../audit-log/audit-log.module';
   controllers: [KycController, AdminKycController],
   providers: [
     KycService,
-    // Vendor swap = change this one binding, nothing else in the module.
-    { provide: KYC_PROVIDER, useClass: QoreIdProvider },
+    // Temporarily bound to an auto-approve stand-in — QoreID's own vendor
+    // setup isn't complete yet (explicit instruction, 2026-09-27). Swap back
+    // to `{ provide: KYC_PROVIDER, useClass: QoreIdProvider }` (import from
+    // './providers/qoreid.provider') once QoreID is actually configured —
+    // nothing else in this module or KycService needs to change.
+    { provide: KYC_PROVIDER, useClass: AutoApproveKycProvider },
   ],
   exports: [KycService],
 })

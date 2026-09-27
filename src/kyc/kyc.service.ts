@@ -107,6 +107,7 @@ export class KycService {
 
     await this.kycVerificationModel.create({
       user: userId,
+      provider: this.kycProvider.providerName,
       stage,
       status:
         result.status === 'verified'
