@@ -16,13 +16,13 @@ export class CreateReportDto {
   @IsMongoId()
   listingId?: string;
 
-  // The specific purchase this report is about, if any — explicit
-  // instruction, 2026-09-17: the client now tells us directly which
+  // The specific purchase this report is about — required, explicit
+  // instruction 2026-09-27 ("this should be required"), reversing the
+  // 2026-09-17 optional design. The client tells us directly which
   // transaction to freeze, rather than us inferring an "active" one from
   // listingId + the caller's own id.
-  @IsOptional()
   @IsMongoId()
-  transactionId?: string;
+  transactionId: string;
 
   // Only needed when reporting a user directly, with no listing involved —
   // when listingId is given, the accused user is derived server-side from

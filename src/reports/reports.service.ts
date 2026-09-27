@@ -96,16 +96,13 @@ export class ReportsService {
     // Freezes the named transaction/escrow directly, giving the seller a
     // chance to respond — see TransactionsService.reportPurchase(). Throws
     // (403/400) if the transaction isn't the reporter's own, or isn't in a
-    // reportable state — explicit instruction, 2026-09-17: the client now
-    // names the exact transaction, so an ineligible one is a real error,
-    // not a silent no-op.
-    if (dto.transactionId) {
-      await this.transactionsService.reportPurchase(
-        dto.transactionId,
-        callerId,
-        dto.listingId,
-      );
-    }
+    // reportable state. transactionId is required on the DTO (2026-09-27),
+    // so this always runs — every report now freezes a real purchase.
+    await this.transactionsService.reportPurchase(
+      dto.transactionId,
+      callerId,
+      dto.listingId,
+    );
 
     // Seller-response SLA — starts counting the instant a buyer's report is
     // created (explicit instruction, 2026-09-19: "SLA starts counting once
@@ -377,7 +374,7 @@ export class ReportsService {
   async resolveRelease(reportId: string, adminId: string) {
     const report = await this.getReportForResolve(reportId, adminId);
     return this.transactionsService.adminRelease(
-      report.transaction!.toString(),
+      report.transaction.toString(),
       adminId,
     );
   }
@@ -385,7 +382,7 @@ export class ReportsService {
   async resolveRefund(reportId: string, adminId: string, reason?: string) {
     const report = await this.getReportForResolve(reportId, adminId);
     return this.transactionsService.adminRefund(
-      report.transaction!.toString(),
+      report.transaction.toString(),
       adminId,
       reason,
     );
@@ -398,7 +395,7 @@ export class ReportsService {
   ) {
     const report = await this.getReportForResolve(reportId, adminId);
     return this.transactionsService.adminDelistAndRefund(
-      report.transaction!.toString(),
+      report.transaction.toString(),
       adminId,
       reason,
     );
