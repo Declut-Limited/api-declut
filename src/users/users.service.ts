@@ -45,20 +45,6 @@ export class UsersService {
     return this.userModel.findOne({ email: email.toLowerCase() }).exec();
   }
 
-  // Pre-login helper (unauthenticated) — the client checks this by email
-  // before a password field even renders, so it can't go through GET
-  // /users/me. Lean + single-field select, never the full document.
-  async getLoginWithFingerprintOrFaceidByEmail(
-    email: string,
-  ): Promise<boolean> {
-    const user = await this.userModel
-      .findOne({ email: email.toLowerCase() })
-      .select('loginWithFingerprintOrFaceid')
-      .lean()
-      .exec();
-    return user?.loginWithFingerprintOrFaceid ?? false;
-  }
-
   findByEmailWithPassword(email: string): Promise<UserDocument | null> {
     return this.userModel
       .findOne({ email: email.toLowerCase() })
@@ -169,9 +155,6 @@ export class UsersService {
 
     if (dto.name !== undefined) user.name = dto.name;
     if (dto.profileImage !== undefined) user.profileImage = dto.profileImage;
-    if (dto.loginWithFingerprintOrFaceid !== undefined) {
-      user.loginWithFingerprintOrFaceid = dto.loginWithFingerprintOrFaceid;
-    }
 
     await user.save();
     return await this.toPrivateProfile(user);
@@ -564,7 +547,6 @@ export class UsersService {
       reviewCount: user.reviewCount,
       hasPayoutDetails: user.hasPayoutDetails,
       profileImageUrl: user.profileImage,
-      loginWithFingerprintOrFaceid: user.loginWithFingerprintOrFaceid,
       trustScore: user.trustScore,
       policyStrike: user.policyStrike,
       ...stats,

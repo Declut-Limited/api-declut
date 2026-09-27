@@ -200,7 +200,7 @@ export class User {
 
   // Only one active push token at a time, by design — logging in on a new
   // device overwrites this rather than accumulating an array. Set from
-  // register/login/login-with-biometric's own pushToken body field.
+  // register/login's own pushToken body field.
   @Prop()
   deviceToken?: string;
 
@@ -240,11 +240,6 @@ export class User {
 
   @Prop()
   profileImage?: string;
-
-  // Client-side biometric-login preference — the actual fingerprint/FaceID
-  // check happens on-device; this just remembers whether the user opted in.
-  @Prop({ default: false })
-  loginWithFingerprintOrFaceid: boolean;
 
   @Prop({ default: 0 })
   avgRating: number;

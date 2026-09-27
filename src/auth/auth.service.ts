@@ -35,7 +35,6 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { GoogleAuthDto } from './dto/google-auth.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
-import { LoginWithBiometricDto } from './dto/login-with-biometric.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResendOtpDto } from './dto/resend-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
@@ -150,18 +149,6 @@ export class AuthService {
     };
   }
 
-  // Pre-login lookup — the mobile app checks this by email, before the
-  // password field even renders, to decide whether to offer a biometric
-  // prompt instead. Anti-enumeration: an unknown email just reads false,
-  // same posture as forgot-password/resend-otp elsewhere in this file.
-  async getBiometricLoginPreference(
-    email: string,
-  ): Promise<{ loginWithFingerprintOrFaceid: boolean }> {
-    const loginWithFingerprintOrFaceid =
-      await this.usersService.getLoginWithFingerprintOrFaceidByEmail(email);
-    return { loginWithFingerprintOrFaceid };
-  }
-
   async login(dto: LoginDto): Promise<TokenPair> {
     const user = await this.usersService.findByIdentifierWithPassword(
       dto.identifier,
@@ -257,30 +244,6 @@ export class AuthService {
 
   async refresh(dto: RefreshTokenDto): Promise<TokenPair> {
     const user = await this.verifyAndLoadRefreshUser(dto.refreshToken);
-    return this.issueTokens(user);
-  }
-
-  // Device-side biometric check already happened (expo-local-authentication)
-  // before this is ever called — the app pulled its stored refresh token out
-  // of secure storage (Keychain/Keystore) only because Face ID/fingerprint
-  // passed. This endpoint exists as a distinct call from plain refresh()
-  // for one reason: the user's loginWithFingerprintOrFaceid preference is
-  // re-checked server-side, so switching it off from another device/session
-  // actually revokes biometric login here — a stale value cached on-device
-  // can't bypass that. Otherwise identical to refresh() (same rotation).
-  async loginWithBiometric(dto: LoginWithBiometricDto): Promise<TokenPair> {
-    const user = await this.verifyAndLoadRefreshUser(dto.refreshToken);
-    if (!user.loginWithFingerprintOrFaceid) {
-      throw new UnauthorizedException(
-        'Biometric login is not enabled for this account',
-      );
-    }
-    if (dto.pushToken) {
-      await this.usersService.setDeviceToken(
-        user._id.toString(),
-        dto.pushToken,
-      );
-    }
     return this.issueTokens(user);
   }
 

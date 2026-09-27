@@ -16,7 +16,6 @@ export interface PrivateUserProfile {
   reviewCount: number;
   hasPayoutDetails: boolean;
   profileImageUrl?: string;
-  loginWithFingerprintOrFaceid: boolean;
   trustScore: number;
   // Admin-visible elsewhere (GET /admin/users list, user detail by
   // id/slug) — the one exception is the user's own GET /users/me. Never on

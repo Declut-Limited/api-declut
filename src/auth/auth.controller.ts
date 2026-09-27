@@ -1,20 +1,16 @@
 import {
   Body,
   Controller,
-  Get,
   HttpCode,
   HttpStatus,
   Patch,
   Post,
-  Query,
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import { GetBiometricLoginPreferenceDto } from './dto/get-biometric-login-preference.dto';
-import { LoginWithBiometricDto } from './dto/login-with-biometric.dto';
 import { GoogleAuthDto } from './dto/google-auth.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
@@ -51,12 +47,6 @@ export class AuthController {
   }
 
   @Throttle(AUTH_THROTTLE)
-  @Get('login-with-fingerprint-or-faceid')
-  getBiometricLoginPreference(@Query() dto: GetBiometricLoginPreferenceDto) {
-    return this.authService.getBiometricLoginPreference(dto.email);
-  }
-
-  @Throttle(AUTH_THROTTLE)
   @HttpCode(HttpStatus.OK)
   @Post('google')
   googleAuth(@Body() dto: GoogleAuthDto) {
@@ -68,13 +58,6 @@ export class AuthController {
   @Post('refresh')
   refresh(@Body() dto: RefreshTokenDto) {
     return this.authService.refresh(dto);
-  }
-
-  @Throttle(AUTH_THROTTLE)
-  @HttpCode(HttpStatus.OK)
-  @Post('login-with-biometric')
-  loginWithBiometric(@Body() dto: LoginWithBiometricDto) {
-    return this.authService.loginWithBiometric(dto);
   }
 
   @HttpCode(HttpStatus.OK)
