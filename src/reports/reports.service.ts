@@ -374,7 +374,7 @@ export class ReportsService {
   async resolveRelease(reportId: string, adminId: string) {
     const report = await this.getReportForResolve(reportId, adminId);
     return this.transactionsService.adminRelease(
-      report.transaction.toString(),
+      report.transaction!.toString(),
       adminId,
     );
   }
@@ -382,7 +382,7 @@ export class ReportsService {
   async resolveRefund(reportId: string, adminId: string, reason?: string) {
     const report = await this.getReportForResolve(reportId, adminId);
     return this.transactionsService.adminRefund(
-      report.transaction.toString(),
+      report.transaction!.toString(),
       adminId,
       reason,
     );
@@ -395,7 +395,7 @@ export class ReportsService {
   ) {
     const report = await this.getReportForResolve(reportId, adminId);
     return this.transactionsService.adminDelistAndRefund(
-      report.transaction.toString(),
+      report.transaction!.toString(),
       adminId,
       reason,
     );
