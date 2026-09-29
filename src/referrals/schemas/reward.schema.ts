@@ -35,6 +35,16 @@ export class Reward {
   })
   participant: Types.ObjectId;
 
+  // Added 2026-09-27 — the specific Referral this reward was created for.
+  // One Reward per Referral now (reworked, explicit instruction), so this
+  // replaces the old (campaign, participant, referred) triple-match used to
+  // resolve qualifiedOn. Optional/sparse-in-practice — Reward rows created
+  // before this field existed have none, no backfill (same "old data
+  // predates a new invariant" precedent every other schema addition in this
+  // app follows).
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Referral', index: true })
+  referral?: Types.ObjectId;
+
   @Prop({
     type: MongooseSchema.Types.ObjectId,
     ref: 'User',

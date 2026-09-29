@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { Model, PipelineStage, Types, isValidObjectId } from 'mongoose';
 import { createHash } from 'crypto';
 import {
@@ -20,7 +21,11 @@ import {
   ParticipantDocument,
   ParticipantStatus,
 } from './schemas/participant.schema';
-import { Referral, ReferralDocument } from './schemas/referral.schema';
+import {
+  Referral,
+  ReferralDocument,
+  ReferralStatus,
+} from './schemas/referral.schema';
 import { Reward, RewardDocument, RewardStatus } from './schemas/reward.schema';
 import { CreateReferralCampaignDto } from './dto/create-referral-campaign.dto';
 import { UpdateReferralCampaignDto } from './dto/update-referral-campaign.dto';
@@ -73,12 +78,10 @@ const JOINABLE_STATUSES = [
 
 // A participant already in one of these is mid-participation — join() must
 // not be called again until they've left (or the campaign has otherwise
-// moved them out of an active state).
-const ACTIVE_PARTICIPANT_STATUSES = [
-  ParticipantStatus.IN_PROGRESS,
-  ParticipantStatus.QUALIFIED,
-  ParticipantStatus.PAID,
-];
+// moved them out of an active state). Only one status left in this bucket
+// since the 2026-09-27 rework — qualified/paid no longer exist on
+// Participant at all, see participant.schema.ts.
+const ACTIVE_PARTICIPANT_STATUSES = [ParticipantStatus.ACTIVE];
 
 const ADMIN_POPULATE_FIELDS = 'name email slug';
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -106,6 +109,7 @@ interface AdminParticipantAggregateRow {
   } | null;
   referredUsersCount: number;
   qualifiedCount: number;
+  rewardPaidTotal: number;
 }
 
 interface AdminRewardAggregateRow {
@@ -312,18 +316,24 @@ export class ReferralsService {
     ]);
   }
 
+  // Reworked 2026-09-27: qualified/paid moved off Participant entirely (see
+  // participant.schema.ts) — "qualified" now always means "a Referral
+  // reached completed," "paid" now always means "a Reward reached paid,"
+  // wherever either word appears in a response in this service.
+  // `participants` is unaffected (a plain per-campaign Participant count,
+  // regardless of status — never was status-scoped).
   private async computeCampaignCounts(
     campaignId: Types.ObjectId,
   ): Promise<{ participants: number; qualified: number; paid: number }> {
     const [participants, qualified, paid] = await Promise.all([
       this.participantModel.countDocuments({ campaign: campaignId }),
-      this.participantModel.countDocuments({
+      this.referralModel.countDocuments({
         campaign: campaignId,
-        status: ParticipantStatus.QUALIFIED,
+        status: ReferralStatus.COMPLETED,
       }),
-      this.participantModel.countDocuments({
+      this.rewardModel.countDocuments({
         campaign: campaignId,
-        status: ParticipantStatus.PAID,
+        status: RewardStatus.PAID,
       }),
     ]);
     return { participants, qualified, paid };
@@ -615,13 +625,11 @@ export class ReferralsService {
     );
     const periodFilter = { createdAt: { $gte: since, $lt: until } };
 
-    const [
-      activeCampaigns,
-      inProgressUserIds,
-      qualifiedOrPaidParticipantIds,
-      paidParticipantIds,
-      totalReferrals,
-    ] = await Promise.all([
+    // Reworked 2026-09-27: qualification/reward status no longer lives on
+    // Participant at all, so successfulReferrals/rewardPaid are now plain
+    // counts against Referral/Reward directly — no participant-status join
+    // needed anymore (a real simplification, not just a rename).
+    const [activeCampaigns, activeUserIds, totalReferrals] = await Promise.all([
       this.referralCampaignModel.countDocuments({
         status: ReferralCampaignStatus.PUBLISHED,
         ...periodFilter,
@@ -631,31 +639,20 @@ export class ReferralsService {
       // joined, and explicit instruction is that this insight counts each
       // person once regardless of how many participation rows they have.
       this.participantModel.distinct('user', {
-        status: ParticipantStatus.IN_PROGRESS,
+        status: ParticipantStatus.ACTIVE,
         ...periodFilter,
-      }),
-      this.participantModel.distinct('_id', {
-        status: { $in: [ParticipantStatus.QUALIFIED, ParticipantStatus.PAID] },
-      }),
-      this.participantModel.distinct('_id', {
-        status: ParticipantStatus.PAID,
       }),
       this.referralModel.countDocuments(periodFilter),
     ]);
-    const participants = inProgressUserIds.length;
+    const participants = activeUserIds.length;
 
     const [successfulReferrals, rewardPaid] = await Promise.all([
-      // hasCompletedChallenge true AND the referring participant is
-      // currently qualified or paid.
       this.referralModel.countDocuments({
-        hasCompletedChallenge: true,
-        referrer: { $in: qualifiedOrPaidParticipantIds },
+        status: ReferralStatus.COMPLETED,
         ...periodFilter,
       }),
-      // Reward status paid AND the participant it's owed to is also paid.
       this.rewardModel.countDocuments({
         status: RewardStatus.PAID,
-        participant: { $in: paidParticipantIds },
         ...periodFilter,
       }),
     ]);
@@ -857,12 +854,16 @@ export class ReferralsService {
         ] = await Promise.all([
           this.participantModel.countDocuments({
             campaign: campaignId,
-            status: ParticipantStatus.IN_PROGRESS,
+            status: ParticipantStatus.ACTIVE,
             ...scopeFilter,
           }),
-          this.participantModel.countDocuments({
+          // qualified now reads Referral.status directly (was Participant
+          // status QUALIFIED, which no longer exists) — see the
+          // computeCampaignCounts() comment for the same rename applied
+          // consistently across this service.
+          this.referralModel.countDocuments({
             campaign: campaignId,
-            status: ParticipantStatus.QUALIFIED,
+            status: ReferralStatus.COMPLETED,
             ...scopeFilter,
           }),
           this.referralModel.countDocuments({
@@ -891,6 +892,11 @@ export class ReferralsService {
             ? 0
             : Math.round((successfulCount / referralCount) * 1000) / 10;
 
+        // qualified/successfulCount are now the same underlying count
+        // (Referral.status COMPLETED) — kept as two separate response keys
+        // for shape stability rather than collapsed into one, since
+        // "qualified" used to be a distinct participant-level signal before
+        // the 2026-09-27 rework moved qualification onto Referral entirely.
         return {
           _id: campaignId.toString(),
           name: campaign.name,
@@ -952,24 +958,40 @@ export class ReferralsService {
     );
   }
 
-  // Current status distribution of participants who joined within
-  // scopeFilter (one year's window or {} for all-time).
+  // Response keys unchanged since before the 2026-09-27 rework
+  // (inProgress/qualified/paid/disqualified/expired/left) even though the
+  // source data has moved: inProgress/disqualified/expired/left still read
+  // Participant.status (disqualified/expired scoped to participants
+  // created within scopeFilter, same as before); qualified now reads
+  // Referral.status COMPLETED and paid now reads Reward.status PAID, both
+  // scoped to their own createdAt within the same scopeFilter, since
+  // neither concept exists on Participant anymore.
   private async computeQualificationStatus(
     scopeFilter: Record<string, unknown>,
   ): Promise<Record<string, number>> {
-    const rows = await this.participantModel.aggregate<{
-      _id: ParticipantStatus;
-      count: number;
-    }>([
-      { $match: scopeFilter },
-      { $group: { _id: '$status', count: { $sum: 1 } } },
+    const [participantRows, qualified, paid] = await Promise.all([
+      this.participantModel.aggregate<{
+        _id: ParticipantStatus;
+        count: number;
+      }>([
+        { $match: scopeFilter },
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]),
+      this.referralModel.countDocuments({
+        status: ReferralStatus.COMPLETED,
+        ...scopeFilter,
+      }),
+      this.rewardModel.countDocuments({
+        status: RewardStatus.PAID,
+        ...scopeFilter,
+      }),
     ]);
-    const counts = new Map(rows.map((r) => [r._id, r.count]));
+    const counts = new Map(participantRows.map((r) => [r._id, r.count]));
 
     return {
-      inProgress: counts.get(ParticipantStatus.IN_PROGRESS) ?? 0,
-      qualified: counts.get(ParticipantStatus.QUALIFIED) ?? 0,
-      paid: counts.get(ParticipantStatus.PAID) ?? 0,
+      inProgress: counts.get(ParticipantStatus.ACTIVE) ?? 0,
+      qualified,
+      paid,
       disqualified: counts.get(ParticipantStatus.DISQUALIFIED) ?? 0,
       expired: counts.get(ParticipantStatus.EXPIRED) ?? 0,
       left: counts.get(ParticipantStatus.LEFT) ?? 0,
@@ -1051,7 +1073,7 @@ export class ReferralsService {
         referredUsers: row.referredUsersCount,
         qualified: row.qualifiedCount,
         progressPercentage,
-        reward: campaignDoc?.rewardAmount ?? '',
+        reward: row.rewardPaidTotal,
         joinedAt: row.joinedAt,
       };
     });
@@ -1122,6 +1144,14 @@ export class ReferralsService {
         },
       },
       {
+        $lookup: {
+          from: 'rewards',
+          localField: '_id',
+          foreignField: 'participant',
+          as: 'rewardDocs',
+        },
+      },
+      {
         $addFields: {
           referredUsersCount: { $size: '$referralDocs' },
           qualifiedCount: {
@@ -1130,6 +1160,27 @@ export class ReferralsService {
                 input: '$referralDocs',
                 as: 'r',
                 cond: { $ne: ['$$r.qualifiedAt', null] },
+              },
+            },
+          },
+          // Reworked 2026-09-27 — replaces the flat "campaign's configured
+          // rewardAmount" the row used to show for every participant
+          // regardless of how many rewards they'd actually earned. Under
+          // one-reward-per-referral a participant can hold several Reward
+          // rows, so this sums what they've actually been paid (same
+          // computation the detail view's insights.rewardAmountPaid uses).
+          rewardPaidTotal: {
+            $sum: {
+              $map: {
+                input: {
+                  $filter: {
+                    input: '$rewardDocs',
+                    as: 'rw',
+                    cond: { $eq: ['$$rw.status', RewardStatus.PAID] },
+                  },
+                },
+                as: 'paidReward',
+                in: '$$paidReward.amountPaid',
               },
             },
           },
@@ -1145,9 +1196,10 @@ export class ReferralsService {
   // endDate when no qualificationWindow is set — judgment call, flagged:
   // qualificationWindow exists specifically to describe "how long a
   // referrer has after joining," which reads as the more literal "deadline"
-  // than the campaign's own overall end date. reward is the campaign's
-  // configured rewardAmount (the "up to" figure), not a real Reward row's
-  // amountPaid — a participant may not have a Reward document yet at all.
+  // than the campaign's own overall end date. reward is now the sum of
+  // this participant's actually-paid Reward rows (reworked 2026-09-27) —
+  // no longer the campaign's flat rewardAmount, since one-reward-per-
+  // referral means a participant can hold several rewards.
   private shapeAdminParticipantRow(
     row: AdminParticipantAggregateRow,
   ): Record<string, unknown> {
@@ -1180,7 +1232,7 @@ export class ReferralsService {
       qualified: row.qualifiedCount,
       progressPercentage,
       deadline,
-      reward: campaignDoc?.rewardAmount ?? null,
+      reward: row.rewardPaidTotal,
       status: row.status,
     };
   }
@@ -1221,9 +1273,7 @@ export class ReferralsService {
       rewardPaidAgg,
       referralDocs,
       referralsTotal,
-      referredUserIds,
       recentAuditLogs,
-      ownMostRecentTransaction,
     ] = await Promise.all([
       this.referralModel.countDocuments({ referrer: participant._id }),
       this.referralModel.countDocuments({
@@ -1243,34 +1293,20 @@ export class ReferralsService {
         .limit(referralsLimit)
         .exec(),
       this.referralModel.countDocuments({ referrer: participant._id }),
-      this.referralModel.distinct('referred', { referrer: participant._id }),
       this.auditLogService.findForEntity(
         'referral_participant',
         participant._id.toString(),
         3,
       ),
-      // The detail header's own transaction reference — the participant's
-      // (the referrer's own) most recent real Transaction as buyer or
-      // seller, per explicit instruction ("use the referral guy's id to get
-      // all his transaction"). Distinct from the transactions sub-table
-      // below, which is about their *referred* users' own transactions.
-      this.transactionModel
-        .findOne({
-          $or: [{ buyer: participantUserId }, { seller: participantUserId }],
-        })
-        .select('reference')
-        .sort({ createdAt: -1 })
-        .exec(),
     ]);
 
+    // Only the transactions actually involved in this participation —
+    // stamped with referralParticipant by evaluateReferralProgress() the
+    // moment they satisfied a qualifying task, not every transaction the
+    // referred users have ever made.
     const [transactionDocs, transactionsTotal] = await Promise.all([
       this.transactionModel
-        .find({
-          $or: [
-            { buyer: { $in: referredUserIds } },
-            { seller: { $in: referredUserIds } },
-          ],
-        })
+        .find({ referralParticipant: participant._id })
         .populate('listing', 'title')
         .populate('buyer', 'name')
         .populate('seller', 'name')
@@ -1279,10 +1315,7 @@ export class ReferralsService {
         .limit(transactionsLimit)
         .exec(),
       this.transactionModel.countDocuments({
-        $or: [
-          { buyer: { $in: referredUserIds } },
-          { seller: { $in: referredUserIds } },
-        ],
+        referralParticipant: participant._id,
       }),
     ]);
 
@@ -1297,10 +1330,6 @@ export class ReferralsService {
       },
       campaign: { _id: campaign._id.toString(), name: campaign.name },
       joinedAt: participant.joinedAt,
-      // The participant's own (the referrer's) most recent real Transaction
-      // reference, e.g. "TXN-2026-00044" — null if they've never
-      // transacted on the marketplace themselves.
-      transactionReference: ownMostRecentTransaction?.reference ?? null,
       insights: {
         potentialReward: campaign.rewardAmount,
         referredUsers: referredUsersCount,
@@ -1349,6 +1378,9 @@ export class ReferralsService {
       referredAt: referral.referredAt,
       qualifiedAt: referral.qualifiedAt,
       hasCompletedChallenge: referral.hasCompletedChallenge,
+      // Added 2026-09-27 alongside hasCompletedChallenge (kept for
+      // stability) — the richer in_progress/completed/disqualified signal.
+      status: referral.status,
       // The real Transaction that satisfied this referral's qualifying
       // task — null while still in progress / never qualified.
       transaction: transaction
@@ -1506,31 +1538,18 @@ export class ReferralsService {
       });
     }
 
-    // The Referral this Reward corresponds to — same (campaign, referrer,
-    // referred) triple identifies it — resolved for qualifiedOn only.
+    // The Referral this Reward was created for — reworked 2026-09-27 to a
+    // direct ref (Reward.referral) instead of matching the old (campaign,
+    // referrer, referred) triple, now that Reward is 1:1 with Referral.
+    // Falls back to null for a pre-2026-09-27 Reward row with no `referral`
+    // set — same "old data predates a new invariant" precedent this app
+    // uses everywhere else a field is added after the fact.
     pipeline.push(
       {
         $lookup: {
           from: 'referrals',
-          let: {
-            campaign: '$campaign',
-            referrer: '$participant',
-            referred: '$referred',
-          },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$campaign', '$$campaign'] },
-                    { $eq: ['$referrer', '$$referrer'] },
-                    { $eq: ['$referred', '$$referred'] },
-                  ],
-                },
-              },
-            },
-            { $project: { qualifiedAt: 1 } },
-          ],
+          localField: 'referral',
+          foreignField: '_id',
           as: 'referralDoc',
         },
       },
@@ -1573,7 +1592,6 @@ export class ReferralsService {
     reward.status = RewardStatus.PAID;
     reward.amountPaid = amountPaid;
     await reward.save();
-    await this.flipParticipantToPaid(reward.participant.toString(), adminId);
 
     await this.auditLogService.record({
       entityType: 'referral_reward',
@@ -1591,31 +1609,6 @@ export class ReferralsService {
       status: reward.status,
       amountPaid: reward.amountPaid,
     };
-  }
-
-  // "Paid is triggered by the endpoint to mark as paid" — explicit
-  // instruction: marking the Reward paid is also what closes out the
-  // Participant's own lifecycle, qualified -> paid. Guarded to QUALIFIED so
-  // this is a no-op (not an error) if the participant is somehow already
-  // past that state.
-  private async flipParticipantToPaid(
-    participantId: string,
-    adminId: string,
-  ): Promise<void> {
-    const result = await this.participantModel.updateOne(
-      { _id: participantId, status: ParticipantStatus.QUALIFIED },
-      { $set: { status: ParticipantStatus.PAID } },
-    );
-    if (result.modifiedCount > 0) {
-      await this.auditLogService.record({
-        entityType: 'referral_participant',
-        entityId: participantId,
-        event: 'referral_participant.paid',
-        actor: adminId,
-        oldState: ParticipantStatus.QUALIFIED,
-        newState: ParticipantStatus.PAID,
-      });
-    }
   }
 
   // Bulk variant — takes an array of reward ids. Anything not found or not
@@ -1660,7 +1653,6 @@ export class ReferralsService {
       reward.status = RewardStatus.PAID;
       reward.amountPaid = amountPaid;
       await reward.save();
-      await this.flipParticipantToPaid(reward.participant.toString(), adminId);
 
       await this.auditLogService.record({
         entityType: 'referral_reward',
@@ -1870,9 +1862,8 @@ export class ReferralsService {
 
   // First join creates the Participant document; a returning participant
   // (status left/expired/disqualified) is reused — only the status flips
-  // back to in_progress, per explicit instruction. Eligibility is
-  // re-validated server-side regardless of what the list endpoint showed
-  // the client.
+  // back to active, per explicit instruction. Eligibility is re-validated
+  // server-side regardless of what the list endpoint showed the client.
   async join(campaignId: string, userId: string): Promise<ParticipantDocument> {
     const campaign = await this.findVisibleCampaignByIdOrCode(campaignId);
     if (!JOINABLE_STATUSES.includes(campaign.status)) {
@@ -1913,7 +1904,7 @@ export class ReferralsService {
       // Rejoin — status + rejoinedAt only. joinedAt (the original join) and
       // leftAt (the last time they left) are both permanent and never
       // touched here.
-      existing.status = ParticipantStatus.IN_PROGRESS;
+      existing.status = ParticipantStatus.ACTIVE;
       existing.rejoinedAt = new Date();
       await existing.save();
 
@@ -1945,7 +1936,7 @@ export class ReferralsService {
         user: userId,
         slug,
         referralCode,
-        status: ParticipantStatus.IN_PROGRESS,
+        status: ParticipantStatus.ACTIVE,
         joinedAt: new Date(),
         progress: {
           amountOfReferrals: 0,
@@ -1974,9 +1965,8 @@ export class ReferralsService {
     return participant;
   }
 
-  // Only from in_progress — a qualified/paid participation has already
-  // earned its reward, and "leaving" it doesn't mean anything; a left/
-  // expired/disqualified one is already inactive.
+  // Only from active — a left/expired/disqualified participation is already
+  // inactive, so "leaving" it again doesn't mean anything.
   async leave(
     campaignId: string,
     userId: string,
@@ -1989,7 +1979,7 @@ export class ReferralsService {
     if (!participant) {
       throw new NotFoundException('You are not a participant in this campaign');
     }
-    if (participant.status !== ParticipantStatus.IN_PROGRESS) {
+    if (participant.status !== ParticipantStatus.ACTIVE) {
       throw new BadRequestException(
         `You can't leave — your participation is currently ${participant.status}`,
       );
@@ -2052,7 +2042,7 @@ export class ReferralsService {
   // whenever a transaction reaches COMPLETED (confirmReceipt()/
   // adminRelease()) — a referred person can satisfy either task type
   // depending on which role they played on this specific transaction.
-  // No-op for a user with no un-qualified Referral row, which is the
+  // No-op for a user with no in-progress Referral row, which is the
   // overwhelmingly common case, so this stays cheap on the hot path.
   async evaluateReferralProgress(
     userId: string,
@@ -2060,7 +2050,7 @@ export class ReferralsService {
   ): Promise<void> {
     const referral = await this.referralModel.findOne({
       referred: userId,
-      hasCompletedChallenge: false,
+      status: ReferralStatus.IN_PROGRESS,
     });
     if (!referral) {
       return;
@@ -2128,21 +2118,39 @@ export class ReferralsService {
       // about for the role this user played on it.
       return;
     }
-    if (referral.completedTasks.some((t) => t.taskType === taskType)) {
-      // Already satisfied this task type via an earlier transaction —
-      // eachReferredTask only ever needs each type completed once.
-      return;
-    }
 
+    // Reworked 2026-09-27, explicit instruction: no longer deduped by task
+    // type — referralRequirement.referralAmount is a COUNT of qualifying
+    // completions this one referred person must reach (of any type listed
+    // in eachReferredTask), not "each type done once." Every qualifying
+    // transaction counts, even a repeat of the same type.
     referral.completedTasks.push({
       taskType,
       transaction: transaction._id,
       completedAt: new Date(),
     });
 
-    // Per-task-type progress — increments the moment THIS type first
-    // completes for this referral, independent of whether every required
-    // type is done yet.
+    // Stamp the link onto the Transaction itself — this is what makes it
+    // "involved in the referral-campaign participation," so the admin
+    // participant-detail view can query for exactly these and nothing else.
+    // A raw model update, not transaction.save(), since this same in-memory
+    // document is shared with the parallel buyer/seller
+    // evaluateReferralProgress() call and the caller's own subsequent
+    // populate()/save() elsewhere.
+    await this.transactionModel.updateOne(
+      { _id: transaction._id },
+      {
+        $set: {
+          referralCampaign: campaign._id,
+          referralParticipant: referral.referrer,
+          referral: referral._id,
+        },
+      },
+    );
+
+    // Per-task-type progress — increments on every qualifying completion of
+    // that type, independent of whether the referral's own count target has
+    // been reached yet.
     const progressField =
       taskType === ReferredTaskType.COMPLETE_SALE
         ? 'progress.amountOfCompletedSales'
@@ -2152,14 +2160,11 @@ export class ReferralsService {
       { $inc: { [progressField]: 1 } },
     );
 
-    const completedTypes = new Set(
-      referral.completedTasks.map((t) => t.taskType),
-    );
-    const fullyQualified = requirement.eachReferredTask.every((t) =>
-      completedTypes.has(t),
-    );
+    const fullyQualified =
+      referral.completedTasks.length >= requirement.referralAmount;
 
     if (fullyQualified) {
+      referral.status = ReferralStatus.COMPLETED;
       referral.hasCompletedChallenge = true;
       referral.qualifiedAt = new Date();
       referral.transaction = transaction._id;
@@ -2170,10 +2175,18 @@ export class ReferralsService {
       return;
     }
 
-    // amountOfReferrals only ever counts FULLY qualifying referrals (every
-    // required task type done) — confirmed explicitly; this is what
-    // referralRequirement.referralAmount and progressPercentage measure
-    // against, not raw referred-signup count.
+    await this.auditLogService.record({
+      entityType: 'referral_referral',
+      entityId: referral._id.toString(),
+      event: 'referral_referral.completed',
+      actor: 'system',
+      oldState: ReferralStatus.IN_PROGRESS,
+      newState: ReferralStatus.COMPLETED,
+    });
+
+    // amountOfReferrals counts this participant's own fully-completed
+    // referrals — still a meaningful "how many people I've successfully
+    // referred" tally, decoupled from reward creation now (see below).
     const participant = await this.participantModel.findOneAndUpdate(
       { _id: referral.referrer },
       { $inc: { 'progress.amountOfReferrals': 1 } },
@@ -2183,35 +2196,88 @@ export class ReferralsService {
       return;
     }
 
-    // "Qualified" means qualified FOR PAYMENT, not just "hit the referral
-    // count" in isolation — explicit instruction: reaching the target both
-    // flips status and creates the actual Reward (pending) in the same
-    // moment, since tracking progress with no reward ever generated was the
-    // exact gap this whole feature exists to close. Guarded to IN_PROGRESS
-    // so this can only ever fire once per participant.
-    if (
-      participant.status === ParticipantStatus.IN_PROGRESS &&
-      participant.progress.amountOfReferrals >= requirement.referralAmount
-    ) {
-      const oldStatus = participant.status;
-      participant.status = ParticipantStatus.QUALIFIED;
-      await participant.save();
-
-      await this.rewardModel.create({
+    // One reward per referral, created the instant THIS referral's own
+    // completion count is reached — reworked 2026-09-27, explicit
+    // instruction: no longer gated behind a participant-wide aggregate
+    // threshold, and Participant itself never flips status here anymore
+    // (qualified/paid moved off Participant entirely, see
+    // participant.schema.ts). Only if the referring participant is still
+    // active — a left/disqualified/expired participant doesn't keep
+    // earning new rewards.
+    if (participant.status === ParticipantStatus.ACTIVE) {
+      const reward = await this.rewardModel.create({
         campaign: campaign._id,
         participant: participant._id,
+        referral: referral._id,
         referred: userId,
         status: RewardStatus.PENDING,
         amountPaid: 0,
       });
 
       await this.auditLogService.record({
-        entityType: 'referral_participant',
-        entityId: participant._id.toString(),
-        event: 'referral_participant.qualified',
+        entityType: 'referral_reward',
+        entityId: reward._id.toString(),
+        event: 'referral_reward.created',
+        actor: 'system',
+        newState: RewardStatus.PENDING,
+        metadata: {
+          referralId: referral._id.toString(),
+          participantId: participant._id.toString(),
+        },
+      });
+    }
+  }
+
+  // Hourly sweep: a campaign whose endDate has passed while still
+  // published/scheduled flips to ended, and every still-active participant/
+  // still-in-progress referral under it moves to a terminal outcome
+  // (expired / disqualified respectively) — explicit instruction ("i hope
+  // there's a cron on a campaign expiring hence all the campaign expires
+  // too"). Bulk updateMany, not a per-document loop — this is a lifecycle
+  // sweep, not individually money-moving the way e.g.
+  // TransactionsService.autoRefundExpiredInspection() is, so one audit-log
+  // entry per campaign (with the affected counts in metadata) is
+  // proportionate rather than one row per participant/referral.
+  @Cron(CronExpression.EVERY_HOUR)
+  async sweepExpiredCampaigns(): Promise<void> {
+    const now = new Date();
+    const expiring = await this.referralCampaignModel.find({
+      status: {
+        $in: [
+          ReferralCampaignStatus.PUBLISHED,
+          ReferralCampaignStatus.SCHEDULED,
+        ],
+      },
+      endDate: { $lte: now },
+    });
+
+    for (const campaign of expiring) {
+      const oldStatus = campaign.status;
+      campaign.status = ReferralCampaignStatus.ENDED;
+      await campaign.save();
+
+      const [expiredParticipants, disqualifiedReferrals] = await Promise.all([
+        this.participantModel.updateMany(
+          { campaign: campaign._id, status: ParticipantStatus.ACTIVE },
+          { $set: { status: ParticipantStatus.EXPIRED } },
+        ),
+        this.referralModel.updateMany(
+          { campaign: campaign._id, status: ReferralStatus.IN_PROGRESS },
+          { $set: { status: ReferralStatus.DISQUALIFIED } },
+        ),
+      ]);
+
+      await this.auditLogService.record({
+        entityType: 'referral_campaign',
+        entityId: campaign._id.toString(),
+        event: 'referral_campaign.ended',
         actor: 'system',
         oldState: oldStatus,
-        newState: participant.status,
+        newState: campaign.status,
+        metadata: {
+          expiredParticipants: expiredParticipants.modifiedCount,
+          disqualifiedReferrals: disqualifiedReferrals.modifiedCount,
+        },
       });
     }
   }
@@ -2336,13 +2402,15 @@ export class ReferralsService {
     return `${minutes} min${minutes === 1 ? '' : 's'} ${suffix}`;
   }
 
-  // Judgment call, flagged: referralRequirement.referralAmount is the only
-  // stated numeric target on a campaign (eachReferredTask names which task
-  // types count, but carries no count of its own) — so progress is measured
-  // against it via progress.amountOfReferrals. Since incrementing progress
-  // on real referral/transaction/sale events isn't wired up yet (deferred,
-  // per "we'd add more to it later"), this will read 0% for everyone today;
-  // the computation itself is ready for when that lands.
+  // Stale since the 2026-09-27 rework, flagged rather than silently changed:
+  // referralAmount is now a per-REFERRAL completion count (see
+  // referral-campaign.schema.ts), not a participant-wide referral-count
+  // target — so dividing the participant's own amountOfReferrals by it no
+  // longer has a clean meaning (it was built when referralAmount meant "how
+  // many referred people the participant needs"). Left as-is rather than
+  // guessed at further, since no participant-level target exists in the
+  // schema anymore; worth a follow-up decision (e.g. move this per-referral
+  // instead, or drop it) once that's confirmed.
   private computeProgressPercentage(
     campaign: ReferralCampaignDocument,
     participant: Pick<ParticipantDocument, 'progress'>,

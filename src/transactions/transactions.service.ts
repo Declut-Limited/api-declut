@@ -3433,6 +3433,11 @@ export class TransactionsService {
     const obj = transaction.toObject() as unknown as Record<string, unknown>;
     obj.buyer = shapeParty(buyer, 'buyer');
     obj.seller = shapeParty(seller, 'seller');
+    // Referral-link fields are only ever surfaced via the referral module's
+    // own admin views — never on an ordinary transaction read.
+    delete obj.referralCampaign;
+    delete obj.referralParticipant;
+    delete obj.referral;
     return obj;
   }
 
@@ -3882,6 +3887,9 @@ export class TransactionsService {
       transaction.status === TransactionStatus.DISPUTED
         ? (transaction.disputeStatus ?? DisputeStatus.UNDER_INVESTIGATION)
         : transaction.disputeStatus;
+    delete obj.referralCampaign;
+    delete obj.referralParticipant;
+    delete obj.referral;
     return obj;
   }
 }

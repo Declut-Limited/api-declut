@@ -158,6 +158,21 @@ export class Transaction {
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Escrow' })
   escrow?: Types.ObjectId;
 
+  // Stamped only on the exact transaction that satisfied a referral's
+  // qualifying task (ReferralsService.evaluateReferralProgress()) — absent
+  // on every ordinary transaction. Deliberately excluded from
+  // toResponseShape()/toAdminResponseShape() so this never leaks into a
+  // normal transaction read; only the referral-specific admin views surface
+  // it.
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'ReferralCampaign' })
+  referralCampaign?: Types.ObjectId;
+
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Participant' })
+  referralParticipant?: Types.ObjectId;
+
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Referral' })
+  referral?: Types.ObjectId;
+
   @Prop({
     type: String,
     enum: InspectionStatus,

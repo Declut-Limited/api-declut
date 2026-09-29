@@ -4,14 +4,27 @@ import { ReferredTaskType } from './referral-campaign.schema';
 
 export type ReferralDocument = HydratedDocument<Referral>;
 
-// One entry per task TYPE the referred person has completed — added
-// 2026-09-26, explicit instruction: a campaign's eachReferredTask can list
-// BOTH complete_sale and complete_transaction, and when it does, the
-// referred person must complete EACH one (not just one of them) before the
-// referral counts. A single hasCompletedChallenge boolean can't represent
-// "completed one of two required types," so this array tracks partial
-// progress per type; hasCompletedChallenge/qualifiedAt/transaction below
-// only flip once this array covers every type the campaign requires.
+// Added 2026-09-27, explicit instruction: qualification/reward-eligibility
+// now lives on the Referral, not the Participant. A referral is in_progress
+// until its referred person hits referralRequirement.referralAmount
+// qualifying completions; completed is the one moment a Reward is created
+// for it; disqualified only ever happens via the campaign-expiry sweep
+// (ReferralsService.sweepExpiredCampaigns()) — an in-progress referral whose
+// campaign ended before it finished.
+export enum ReferralStatus {
+  IN_PROGRESS = 'in_progress',
+  COMPLETED = 'completed',
+  DISQUALIFIED = 'disqualified',
+}
+
+// One entry per qualifying task completion the referred person has racked
+// up — reworked 2026-09-27, explicit instruction: no longer deduped by task
+// type (the 2026-09-26 "each type once" rule). referralRequirement.
+// referralAmount is now a COUNT of qualifying completions (of any type
+// listed in eachReferredTask) this one referred person must reach before
+// the referral counts — completedTasks.length is what's compared against
+// it. hasCompletedChallenge/status/qualifiedAt/transaction below only flip
+// once that count is hit.
 @Schema({ _id: false })
 export class CompletedTask {
   @Prop({ type: String, enum: ReferredTaskType, required: true })
@@ -51,9 +64,8 @@ export class Referral {
   })
   campaign: Types.ObjectId;
 
-  // The referring Participant, not the raw User — "successful referrals"
-  // is defined against the participant's own status (qualified/paid, see
-  // ReferralsService.getAnalytics()), so the link has to be to Participant.
+  // The referring Participant, not the raw User — a Referral belongs to one
+  // person's participation in one campaign.
   @Prop({
     type: MongooseSchema.Types.ObjectId,
     ref: 'Participant',
@@ -82,6 +94,17 @@ export class Referral {
 
   @Prop({ default: false })
   hasCompletedChallenge: boolean;
+
+  // Kept alongside hasCompletedChallenge (which stays as-is for response-
+  // shape stability) — this is the richer signal, since a boolean alone
+  // can't distinguish "still in progress" from "disqualified."
+  @Prop({
+    type: String,
+    enum: ReferralStatus,
+    default: ReferralStatus.IN_PROGRESS,
+    index: true,
+  })
+  status: ReferralStatus;
 
   // The real Transaction that satisfied the LAST required task type for
   // this referral (the one that sealed hasCompletedChallenge) — evidence

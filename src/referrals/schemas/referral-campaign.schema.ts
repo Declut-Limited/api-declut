@@ -53,11 +53,12 @@ export enum ReferralPaymentSchedule {
 
 @Schema({ _id: false })
 export class ReferralRequirement {
-  // Number of qualifying referrals a referrer must make — judgment call on
-  // naming/meaning, flagged: the spec named this field with no further
-  // description; read as a referral-count threshold since it sits beside
-  // eachReferredTask/the two minimum-value fields, which all describe what
-  // "counts" as a qualifying referral.
+  // Reworked 2026-09-27, explicit instruction: NOT a count of how many
+  // separate people the referrer must refer — it's the number of qualifying
+  // task completions ONE referred person must rack up (of the types listed
+  // in eachReferredTask, meeting the relevant minimum-value field) before
+  // that specific Referral is considered done and its Reward is created.
+  // See ReferralsService.evaluateReferralProgress().
   @Prop({ required: true, min: 1 })
   referralAmount: number;
 

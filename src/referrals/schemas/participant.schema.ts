@@ -3,10 +3,13 @@ import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 
 export type ParticipantDocument = HydratedDocument<Participant>;
 
+// Reworked 2026-09-27, explicit instruction: a Participant is only access
+// to a campaign, never the reward outcome — qualified/paid moved to
+// Referral/Reward (see referral.schema.ts's own ReferralStatus). A
+// participation is now just: active, or one of three terminal ways out
+// (disqualified/expired via the campaign-expiry sweep, or left by choice).
 export enum ParticipantStatus {
-  IN_PROGRESS = 'in_progress',
-  QUALIFIED = 'qualified',
-  PAID = 'paid',
+  ACTIVE = 'active',
   DISQUALIFIED = 'disqualified',
   EXPIRED = 'expired',
   LEFT = 'left',
@@ -65,7 +68,7 @@ export class Participant {
   @Prop({
     type: String,
     enum: ParticipantStatus,
-    default: ParticipantStatus.IN_PROGRESS,
+    default: ParticipantStatus.ACTIVE,
     index: true,
   })
   status: ParticipantStatus;
