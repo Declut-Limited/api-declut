@@ -33,6 +33,7 @@ import { UpdateGeneralSettingsDto } from '../settings/dto/update-general-setting
 import { UpdatePaymentSettingsDto } from '../settings/dto/update-payment-settings.dto';
 import { UpdateFeesSettingsDto } from '../settings/dto/update-fees-settings.dto';
 import { UpdateIssueResolutionSlaDto } from '../settings/dto/update-issue-resolution-sla.dto';
+import { UpdateKycSettingsDto } from '../settings/dto/update-kyc-settings.dto';
 import { DateRangeDto } from '../common/dto/date-range.dto';
 import { ListEscrowsDto } from '../escrow/dto/list-escrows.dto';
 import { AdminJwtAuthGuard } from '../admin-auth/guards/admin-jwt-auth.guard';
@@ -416,6 +417,12 @@ export class AdminController {
   @RequirePermission('settings', 'write')
   updateFeesSettings(@Body() dto: UpdateFeesSettingsDto) {
     return this.adminService.updateFeesSettings(dto);
+  }
+
+  @Patch('settings/kyc-setup')
+  @RequirePermission('settings', 'write')
+  updateKycSettings(@Body() dto: UpdateKycSettingsDto) {
+    return this.adminService.updateKycSettings(dto);
   }
 
   @Patch('settings/issue-resolution-sla')

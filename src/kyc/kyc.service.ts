@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { randomUUID } from 'crypto';
 import {
   KycCheckStage,
   KycVerification,
@@ -27,6 +28,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationRecipientType } from '../notifications/schemas/notification.schema';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { escapeRegex } from '../common/utils/regex.util';
+import { SettingsService } from '../settings/settings.service';
 
 @Injectable()
 export class KycService {
@@ -43,15 +45,19 @@ export class KycService {
     private readonly trustScoreService: TrustScoreService,
     private readonly notificationsService: NotificationsService,
     private readonly auditLogService: AuditLogService,
+    private readonly settingsService: SettingsService,
   ) {}
 
   async verifyNin(userId: string, dto: VerifyNinDto) {
     const user = await this.requireEmailVerified(userId);
-    const result = await this.kycProvider.verifyNin(dto.nin);
+    const { result, providerName } = await this.runProviderCheck((provider) =>
+      provider.verifyNin(dto.nin),
+    );
     return this.recordCheck(
       user,
       KycCheckStage.NIN,
       result,
+      providerName,
       result.status === 'verified',
       user.kyc.livenessChecked,
     );
@@ -59,14 +65,39 @@ export class KycService {
 
   async checkLiveness(userId: string, dto: LivenessCheckDto) {
     const user = await this.requireEmailVerified(userId);
-    const result = await this.kycProvider.checkLiveness(dto.selfieImageBase64);
+    const { result, providerName } = await this.runProviderCheck((provider) =>
+      provider.checkLiveness(dto.selfieImageBase64),
+    );
     return this.recordCheck(
       user,
       KycCheckStage.LIVENESS,
       result,
+      providerName,
       user.kyc.verifiedNIN,
       result.status === 'verified',
     );
+  }
+
+  // The live on/off check — AppSettings.useKycProvider is a DB setting an
+  // admin can flip at any time via PATCH /admin/settings/kyc-setup, so this
+  // reads it fresh on every call rather than deciding once at boot. true ->
+  // calls the one bound KYC_PROVIDER (QoreIdProvider). false -> no
+  // automated decision at all, straight to 'pending' for manual review.
+  private async runProviderCheck(
+    call: (provider: KycProvider) => Promise<KycCheckResult>,
+  ): Promise<{ result: KycCheckResult; providerName: string }> {
+    const settings = await this.settingsService.get();
+    if (!settings.useKycProvider) {
+      return {
+        result: { status: 'pending', referenceId: `MANUAL-${randomUUID()}` },
+        providerName: 'manual',
+      };
+    }
+    const result = await call(this.kycProvider);
+    return {
+      result,
+      providerName: settings.kycProvider || this.kycProvider.providerName,
+    };
   }
 
   history(userId: string): Promise<KycVerificationDocument[]> {
@@ -101,19 +132,24 @@ export class KycService {
     user: UserDocument,
     stage: KycCheckStage,
     result: KycCheckResult,
+    providerName: string,
     verifiedNIN: boolean,
     livenessChecked: boolean,
   ) {
     const userId = user._id.toString();
 
+    const verificationStatus =
+      result.status === 'verified'
+        ? KycVerificationStatus.VERIFIED
+        : result.status === 'pending'
+          ? KycVerificationStatus.PENDING
+          : KycVerificationStatus.REJECTED;
+
     await this.kycVerificationModel.create({
       user: userId,
-      provider: this.kycProvider.providerName,
+      provider: providerName,
       stage,
-      status:
-        result.status === 'verified'
-          ? KycVerificationStatus.VERIFIED
-          : KycVerificationStatus.REJECTED,
+      status: verificationStatus,
       referenceId: result.referenceId,
       failureReason: result.failureReason,
     });
@@ -142,11 +178,17 @@ export class KycService {
 
     await this.notificationsService.notifyUser(userId, {
       title:
-        result.status === 'verified' ? 'KYC check passed' : 'KYC check failed',
+        result.status === 'verified'
+          ? 'KYC check passed'
+          : result.status === 'pending'
+            ? 'KYC submission received'
+            : 'KYC check failed',
       body:
         result.status === 'verified'
           ? `Your ${stage} check passed.`
-          : `Your ${stage} check failed — you can try again.`,
+          : result.status === 'pending'
+            ? `Your ${stage} submission has been received and is pending manual review.`
+            : `Your ${stage} check failed — you can try again.`,
       data: { type: 'kyc_status_change', stage, status: result.status },
     });
 

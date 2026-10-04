@@ -6,6 +6,9 @@ export type KycVerificationDocument = HydratedDocument<KycVerification>;
 export enum KycVerificationStatus {
   VERIFIED = 'verified',
   REJECTED = 'rejected',
+  // No automated decision was made — manual-review mode
+  // (AppSettings.useKycProvider: false). Awaits an admin override.
+  PENDING = 'pending',
 }
 
 export enum KycCheckStage {

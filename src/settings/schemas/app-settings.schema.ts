@@ -85,6 +85,16 @@ export class AppSettings {
   @Prop({ required: true, min: 1, default: 6 })
   reminderSlaTimeInHour: number;
 
+  // true -> route to the configured provider (QoreIdProvider). false ->
+  // manual review only, admin decides via PATCH /admin/kyc/user/:idOrSlug.
+  @Prop({ required: true, default: false })
+  useKycProvider: boolean;
+
+  // Display/audit label only, not a dynamic multi-vendor selector — qoreid
+  // is the one real vendor in use.
+  @Prop({ trim: true, default: 'qoreid' })
+  kycProvider: string;
+
   createdAt: Date;
   updatedAt: Date;
 }

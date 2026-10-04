@@ -19,6 +19,7 @@ import { UpdateGeneralSettingsDto } from '../settings/dto/update-general-setting
 import { UpdatePaymentSettingsDto } from '../settings/dto/update-payment-settings.dto';
 import { UpdateFeesSettingsDto } from '../settings/dto/update-fees-settings.dto';
 import { UpdateIssueResolutionSlaDto } from '../settings/dto/update-issue-resolution-sla.dto';
+import { UpdateKycSettingsDto } from '../settings/dto/update-kyc-settings.dto';
 import { AdminAuthService } from '../admin-auth/admin-auth.service';
 import {
   AdminAccountStatus,
@@ -776,6 +777,10 @@ export class AdminService {
 
   updateIssueResolutionSlaSettings(dto: UpdateIssueResolutionSlaDto) {
     return this.settingsService.updateIssueResolutionSla(dto);
+  }
+
+  updateKycSettings(dto: UpdateKycSettingsDto) {
+    return this.settingsService.updateKycSetup(dto);
   }
 
   // Spans Users + Listings + Transactions — same "genuine exception, lives here rather than forced into one domain service" reasoning as the Users federation above.

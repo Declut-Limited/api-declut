@@ -1,5 +1,9 @@
 export interface KycCheckResult {
-  status: 'verified' | 'rejected';
+  // 'pending' = no automated decision was made (manual-review mode,
+  // useKycProvider: false) — an admin must decide via the override endpoint.
+  // Only KycService's own manual branch produces this; a real KycProvider
+  // implementation only ever returns verified/rejected.
+  status: 'verified' | 'rejected' | 'pending';
   referenceId: string;
   failureReason?: string;
 }

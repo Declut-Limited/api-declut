@@ -9,12 +9,13 @@ import { KycService } from './kyc.service';
 import { KycController } from './kyc.controller';
 import { AdminKycController } from './admin-kyc.controller';
 import { KYC_PROVIDER } from './providers/kyc-provider.interface';
-import { AutoApproveKycProvider } from './providers/auto-approve.provider';
+import { QoreIdProvider } from './providers/qoreid.provider';
 import { UsersModule } from '../users/users.module';
 import { TrustScoreModule } from '../trust-score/trust-score.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AdminAuthModule } from '../admin-auth/admin-auth.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
+import { SettingsModule } from '../settings/settings.module';
 
 @Module({
   imports: [
@@ -31,16 +32,16 @@ import { AuditLogModule } from '../audit-log/audit-log.module';
     NotificationsModule,
     AdminAuthModule,
     AuditLogModule,
+    SettingsModule,
   ],
   controllers: [KycController, AdminKycController],
   providers: [
     KycService,
-    // Temporarily bound to an auto-approve stand-in — QoreID's own vendor
-    // setup isn't complete yet (explicit instruction, 2026-09-27). Swap back
-    // to `{ provide: KYC_PROVIDER, useClass: QoreIdProvider }` (import from
-    // './providers/qoreid.provider') once QoreID is actually configured —
-    // nothing else in this module or KycService needs to change.
-    { provide: KYC_PROVIDER, useClass: AutoApproveKycProvider },
+    // qoreid is the one real vendor — KycService itself checks
+    // AppSettings.useKycProvider before calling this and skips straight to
+    // a manual/pending result when it's off. Swapping vendors later is
+    // still just one binding change here.
+    { provide: KYC_PROVIDER, useClass: QoreIdProvider },
   ],
   exports: [KycService],
 })
