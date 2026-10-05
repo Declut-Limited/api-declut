@@ -15,8 +15,15 @@ export interface KycProvider {
   // shows which provider actually made the call (e.g. 'auto-approve' vs
   // 'qoreid') rather than defaulting to a misleading value.
   readonly providerName: string;
-  verifyNin(nin: string): Promise<KycCheckResult>;
-  checkLiveness(selfieImageBase64: string): Promise<KycCheckResult>;
+  // One vendor call does the whole check: the selfie is matched against the
+  // photo on this NIN's record (proving the person holding the phone owns
+  // the NIN), and the name on that record is matched against `fullName`
+  // (the account's User.name). Both must pass for 'verified'.
+  verifyIdentity(
+    nin: string,
+    selfieImageBase64: string,
+    fullName: string,
+  ): Promise<KycCheckResult>;
 }
 
 export const KYC_PROVIDER = Symbol('KYC_PROVIDER');

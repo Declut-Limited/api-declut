@@ -67,7 +67,7 @@ Either way, the account is **not yet fully active** — that requires the second
 ### 3.2 Verifying identity and building trust
 
 - **Email verification**: the buyer/seller enters the 6-digit code (`POST /auth/verify-email`). This flips `emailVerified` to true.
-- **KYC (identity verification)**: `POST /kyc/verify-nin` (national ID number check) and `POST /kyc/liveness-check` (a selfie-based "are you a real live person" check), each independently, via a third-party vendor (QoreID). Only once **both** are passed does the account become fully `active`. Until then, the account can still be logged into and browse, but the app is deliberately not letting it transact freely.
+- **KYC (identity verification)**: `POST /kyc/verify-identity` sends the national ID number and a selfie together in one request, and the API makes a single call to a third-party vendor (QoreID's NIN Face Match): the selfie must match the photo on that NIN's record, and the name on the record must match the account name. Only once that passes does the account become fully `active`. Until then, the account can still be logged into and browse, but the app is deliberately not letting it transact freely.
 - **Trust score**: a single 0–100 number, recalculated automatically after key events (a completed sale, a new review, a KYC pass, a dispute). It rewards being verified, having a track record of completed sales, having good reviews, and having an account that's been around a while — and penalizes a high rate of disputes. It's not shown to end users as "here's how it's calculated" (to prevent gaming it), and today it doesn't gate anything (checkout, listing) — it's informational, surfaced only on the user's own profile.
 
 ### 3.3 Listing an item for sale
@@ -445,7 +445,7 @@ Every route below sits under the global `/api` prefix (e.g. the first row is rea
 | PATCH | `/users/me` | logged-in user | Update name/photo |
 | POST | `/users/me/deactivate` | logged-in user | Self-deactivate |
 | GET | `/users/:id` | logged-in user | Another user's public profile |
-| POST | `/kyc/verify-nin` / `/liveness-check` | logged-in user | Identity verification |
+| POST | `/kyc/verify-identity` | logged-in user | Identity verification (NIN + selfie, one call) |
 | GET | `/kyc/history` | logged-in user | Own verification attempts |
 | POST | `/admin/auth/login` | public | Staff login |
 | POST | `/admin/auth/refresh` / `/logout` | admin | Session management |

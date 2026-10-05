@@ -1556,11 +1556,11 @@
       "description": "",
       "item": [
         {
-          "name": "verify-nin",
+          "name": "verify-identity",
           "description": "",
           "item": [
             {
-              "name": "Verify NIN",
+              "name": "Verify identity (NIN + selfie)",
               "request": {
                 "method": "POST",
                 "header": [
@@ -1576,64 +1576,19 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/kyc/verify-nin",
+                  "raw": "{{baseUrl}}/kyc/verify-identity",
                   "host": [
                     "{{baseUrl}}"
                   ],
                   "path": [
                     "kyc",
-                    "verify-nin"
+                    "verify-identity"
                   ]
                 },
-                "description": "Requires emailVerified: true.",
+                "description": "Requires emailVerified: true. One QoreID NIN Face Match call: the selfie is matched against this NIN's record photo and the record's name against the account name. Selfie is never persisted.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"nin\": \"12345678901\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "response": []
-            }
-          ]
-        },
-        {
-          "name": "liveness-check",
-          "description": "",
-          "item": [
-            {
-              "name": "Liveness check",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{accessToken}}",
-                    "type": "text"
-                  },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/kyc/liveness-check",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "kyc",
-                    "liveness-check"
-                  ]
-                },
-                "description": "Requires emailVerified: true. Selfie is never persisted.",
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"selfieImageBase64\": \"<base64-encoded-selfie-jpeg>\"\n}",
+                  "raw": "{\n  \"nin\": \"12345678901\",\n  \"selfieImageBase64\": \"<base64-encoded-selfie-jpeg>\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"

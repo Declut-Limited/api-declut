@@ -12,6 +12,11 @@ export enum KycVerificationStatus {
 }
 
 export enum KycCheckStage {
+  // NIN + selfie verified together in one provider call — the only stage
+  // new attempts are recorded under.
+  IDENTITY = 'identity',
+  // Legacy: the old two-step flow (separate NIN then selfie checks). Kept
+  // so existing history rows still validate.
   NIN = 'nin',
   LIVENESS = 'liveness',
 }

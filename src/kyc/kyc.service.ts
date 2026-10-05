@@ -18,8 +18,7 @@ import type {
   KycCheckResult,
   KycProvider,
 } from './providers/kyc-provider.interface';
-import { VerifyNinDto } from './dto/verify-nin.dto';
-import { LivenessCheckDto } from './dto/liveness-check.dto';
+import { VerifyIdentityDto } from './dto/verify-identity.dto';
 import { AdminListKycDto } from './dto/admin-list-kyc.dto';
 import { UsersService } from '../users/users.service';
 import { KycStatus, User, UserDocument } from '../users/schemas/user.schema';
@@ -48,34 +47,15 @@ export class KycService {
     private readonly settingsService: SettingsService,
   ) {}
 
-  async verifyNin(userId: string, dto: VerifyNinDto) {
+  // NIN and selfie arrive together and go to the provider in one call, so
+  // the selfie is always matched against the same NIN whose name is
+  // checked — never a different NIN from an earlier step.
+  async verifyIdentity(userId: string, dto: VerifyIdentityDto) {
     const user = await this.requireEmailVerified(userId);
     const { result, providerName } = await this.runProviderCheck((provider) =>
-      provider.verifyNin(dto.nin),
+      provider.verifyIdentity(dto.nin, dto.selfieImageBase64, user.name),
     );
-    return this.recordCheck(
-      user,
-      KycCheckStage.NIN,
-      result,
-      providerName,
-      result.status === 'verified',
-      user.kyc.livenessChecked,
-    );
-  }
-
-  async checkLiveness(userId: string, dto: LivenessCheckDto) {
-    const user = await this.requireEmailVerified(userId);
-    const { result, providerName } = await this.runProviderCheck((provider) =>
-      provider.checkLiveness(dto.selfieImageBase64),
-    );
-    return this.recordCheck(
-      user,
-      KycCheckStage.LIVENESS,
-      result,
-      providerName,
-      user.kyc.verifiedNIN,
-      result.status === 'verified',
-    );
+    return this.recordCheck(user, result, providerName);
   }
 
   // The live on/off check — AppSettings.useKycProvider is a DB setting an
@@ -130,13 +110,12 @@ export class KycService {
 
   private async recordCheck(
     user: UserDocument,
-    stage: KycCheckStage,
     result: KycCheckResult,
     providerName: string,
-    verifiedNIN: boolean,
-    livenessChecked: boolean,
   ) {
     const userId = user._id.toString();
+    const stage = KycCheckStage.IDENTITY;
+    const passed = result.status === 'verified';
 
     const verificationStatus =
       result.status === 'verified'
@@ -154,22 +133,17 @@ export class KycService {
       failureReason: result.failureReason,
     });
 
-    if (stage === KycCheckStage.NIN) {
-      await this.usersService.updateKycFlags(userId, {
-        verifiedNIN: result.status === 'verified',
-      });
-    } else {
-      await this.usersService.updateKycFlags(userId, {
-        livenessChecked: result.status === 'verified',
-      });
-    }
+    // One call settles both checks, so both flags move together.
+    await this.usersService.updateKycFlags(userId, {
+      verifiedNIN: passed,
+      livenessChecked: passed,
+    });
 
-    const kycStatus =
-      result.status === 'rejected'
+    const kycStatus = passed
+      ? KycStatus.VERIFIED
+      : result.status === 'rejected'
         ? KycStatus.REJECTED
-        : verifiedNIN && livenessChecked
-          ? KycStatus.VERIFIED
-          : KycStatus.PENDING;
+        : KycStatus.PENDING;
     await this.usersService.setKycStatus(userId, kycStatus);
 
     if (kycStatus === KycStatus.VERIFIED) {
