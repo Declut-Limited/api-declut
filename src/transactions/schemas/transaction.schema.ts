@@ -143,6 +143,13 @@ export class Transaction {
   })
   status: TransactionStatus;
 
+  // Stamped atomically the moment a verified Paystack payment is taken up for
+  // settlement (TransactionsService.settleVerifiedPayment()) — the lock that
+  // stops the webhook, a cancel request and the hourly sweep from settling the
+  // same payment twice when they race. Added 2026-10-09, explicit instruction.
+  @Prop()
+  paymentVerifiedAt?: Date;
+
   // Doubles as the value sent to Paystack as its own `reference` param at
   // checkout — the webhook's data.reference is matched against this same
   // field, so this is both the human-facing TXN-YYYY-##### id and the

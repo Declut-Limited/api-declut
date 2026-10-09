@@ -40,7 +40,7 @@ export class BankAccount {
   @Prop()
   logoUrl?: string;
 
-  // Set lazily on this account's first checkout (TransactionsService.create()), not at bank-account creation time — moved here from User.paystackSubaccountCode.
+  // Set when the bank account is created and repointed on Paystack whenever the bank details change (2026-10-09, explicit instruction — was set lazily at first checkout before). Checkout only reads it. Parked on User.paystackSubaccountCode if this account is removed.
   @Prop()
   paystackSubaccountCode?: string;
 

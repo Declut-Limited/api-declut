@@ -410,6 +410,21 @@ export class UsersService {
       .exec();
   }
 
+  // Both used only by BankAccountsService — see User.paystackSubaccountCode.
+  async getParkedSubaccountCode(userId: string): Promise<string | undefined> {
+    const user = await this.userModel
+      .findById(userId)
+      .select('+paystackSubaccountCode')
+      .exec();
+    return user?.paystackSubaccountCode;
+  }
+
+  async parkSubaccountCode(userId: string, code: string): Promise<void> {
+    await this.userModel
+      .updateOne({ _id: userId }, { paystackSubaccountCode: code })
+      .exec();
+  }
+
   // Called from every session-creating flow (login, Google auth, refresh) —
   // the one shared choke point in AuthService.issueTokens(), so stamping
   // lastSeenAt here covers all three without a separate call site each.

@@ -13,6 +13,10 @@ export interface InitializeTransactionResult {
 
 export interface VerifyTransactionResult {
   successful: boolean;
+  // Paystack's own status, e.g. success/abandoned/failed/ongoing/pending/
+  // processing/queued/reversed — lets a caller tell "never paid" (abandoned/
+  // failed) apart from "payment still on its way" (ongoing/pending/...).
+  status: string;
   amountKobo: number;
   currency: string;
   channel: string;
@@ -106,6 +110,7 @@ export class PaystackService {
 
     return {
       successful: response.data.status === 'success',
+      status: response.data.status,
       amountKobo: response.data.amount,
       currency: response.data.currency,
       channel: response.data.channel,
@@ -133,6 +138,41 @@ export class PaystackService {
     );
 
     return response.data.subaccount_code;
+  }
+
+  // Points an existing subaccount at a seller's new bank details, so money
+  // already held in it stays put and settles to the new account (explicit
+  // instruction, 2026-10-09 — a seller keeps one subaccount for life rather
+  // than getting a fresh, empty one on every bank change). Paystack's
+  // official OpenAPI spec names the bank field `settlement_bank` on update.
+  // The response is checked rather than trusted: if Paystack didn't actually
+  // switch the account number, this throws so the caller doesn't save a bank
+  // change the subaccount never received.
+  async updateSubaccount(
+    subaccountCode: string,
+    params: {
+      businessName: string;
+      bankCode: string;
+      accountNumber: string;
+    },
+  ): Promise<void> {
+    const response = await this.request<{ account_number: string }>(
+      `/subaccount/${encodeURIComponent(subaccountCode)}`,
+      'PUT',
+      {
+        business_name: params.businessName,
+        settlement_bank: params.bankCode,
+        account_number: params.accountNumber,
+      },
+    );
+    if (response.data.account_number !== params.accountNumber) {
+      this.logger.error(
+        `[paystack] subaccount ${subaccountCode} update returned account_number=${response.data.account_number}, expected ${params.accountNumber}`,
+      );
+      throw new InternalServerErrorException(
+        'Could not update payout details with Paystack',
+      );
+    }
   }
 
   async releaseToSeller(params: {
@@ -286,7 +326,7 @@ export class PaystackService {
 
   private async request<T = unknown>(
     path: string,
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'PUT',
     body?: Record<string, unknown>,
   ): Promise<PaystackApiResponse<T>> {
     // Never log the secret key or the buyer's email — everything else about the call shape is

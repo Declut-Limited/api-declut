@@ -11,6 +11,14 @@ export class AppRealtimeService {
     this.userEventsGateway.emitToUser(userId, 'notification', payload);
   }
 
+  // A transaction's status just changed server-side — sent the moment Paystack's webhook (or the safety-net checks) settle a payment, so the buyer's open checkout screen closes Paystack's page and shows the result itself instead of polling. Sent regardless of notification settings: it drives the checkout UI, it isn't an alert. Added 2026-10-09, explicit instruction.
+  emitTransactionUpdate(
+    userId: string,
+    payload: { transactionId: string; status: string },
+  ): void {
+    this.userEventsGateway.emitToUser(userId, 'transaction:update', payload);
+  }
+
   // Listing status ping — broadcastPublic:false keeps a transition off the shared listing room and the global broadcast below (the PAUSED-privacy case: nobody but the owner should ever learn a listing's state changed while it's a private draft).
   emitListingStatusChange(
     listingId: string,

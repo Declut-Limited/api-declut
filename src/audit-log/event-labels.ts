@@ -36,6 +36,8 @@ const EVENT_LABELS: Record<string, string> = {
   admin_refunded: 'Refunded by admin',
   auto_cancelled_abandoned_checkout:
     'Automatically cancelled — checkout abandoned',
+  late_payment_refunded:
+    'Refunded in full — paid after cancelling, item already sold',
   buyer_marked_arrived: 'Buyer marked arrived for inspection',
   inspection_extension_requested: 'Requested inspection extension',
   inspection_extended: 'Inspection window extended',

@@ -6,6 +6,7 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -48,9 +49,13 @@ import { ListingStatus } from '../listings/schemas/listing.schema';
 import { UsersService } from '../users/users.service';
 import { KycStatus } from '../users/schemas/user.schema';
 import { ReferralsService } from '../referrals/referrals.service';
-import { PaystackService } from '../payments/paystack.service';
+import {
+  PaystackService,
+  VerifyTransactionResult,
+} from '../payments/paystack.service';
 import { TrustScoreService } from '../trust-score/trust-score.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AppRealtimeService } from '../notifications/app-realtime.service';
 import {
   NotificationChannelStatus,
   NotificationDocument,
@@ -158,6 +163,7 @@ export class TransactionsService {
     private readonly counterService: CounterService,
     private readonly bankAccountsService: BankAccountsService,
     private readonly referralsService: ReferralsService,
+    private readonly appRealtimeService: AppRealtimeService,
   ) {}
 
   async create(buyerId: string, dto: CreateTransactionDto) {
@@ -208,24 +214,19 @@ export class TransactionsService {
       );
     }
 
-    let subaccountCode = bankAccount.paystackSubaccountCode;
+    // Checkout only ever reads the seller's subaccount — it's created/updated
+    // with their bank details (BankAccountsService), never here (explicit
+    // instruction, 2026-10-09).
+    const subaccountCode = bankAccount.paystackSubaccountCode;
     if (!subaccountCode) {
-      this.logger.log(
-        `[checkout] no cached subaccount for seller=${seller._id.toString()} — creating one on Paystack`,
+      this.logger.warn(
+        `[checkout] blocked — seller=${seller._id.toString()} has bank details but no Paystack subaccount`,
       );
-      subaccountCode = await this.paystackService.createSubaccount({
-        businessName: seller.name,
-        bankCode: bankAccount.bankCode,
-        accountNumber: bankAccount.accountNumber,
-      });
-      await this.bankAccountsService.setPaystackSubaccountCode(
-        bankAccount._id.toString(),
-        subaccountCode,
+      throw new BadRequestException(
+        "This seller's payout account isn't ready yet — they need to re-save their bank details before this listing can be purchased",
       );
-      this.logger.log(`[checkout] created subaccount=${subaccountCode}`);
-    } else {
-      this.logger.log(`[checkout] reusing cached subaccount=${subaccountCode}`);
     }
+    this.logger.log(`[checkout] using subaccount=${subaccountCode}`);
 
     const buyer = await this.usersService.findById(buyerId);
     if (!buyer) {
@@ -352,10 +353,14 @@ export class TransactionsService {
       `[webhook] matched transaction=${transaction._id.toString()} reference=${reference} currentStatus=${transaction.status}`,
     );
 
-    // Idempotency: a retried webhook for a transaction already past pending_payment is a no-op, not a re-activation.
-    if (transaction.status !== TransactionStatus.PENDING_PAYMENT) {
+    // Idempotency: a retried webhook for a transaction already settled is a
+    // no-op, not a re-activation. A checkout cancelled before payment is the
+    // one exception (2026-10-09, explicit instruction) — the buyer may have
+    // paid after the mobile app gave up waiting, so it's still settled below
+    // rather than ignored with the buyer's money unrecorded.
+    if (!this.isAwaitingSettlement(transaction)) {
       this.logger.log(
-        `[webhook] transaction=${transaction._id.toString()} already past pending_payment (status=${transaction.status}) — no-op`,
+        `[webhook] transaction=${transaction._id.toString()} already settled (status=${transaction.status}) — no-op`,
       );
       return;
     }
@@ -373,6 +378,36 @@ export class TransactionsService {
       return;
     }
 
+    await this.settleVerifiedPayment(transaction, verification, 'webhook');
+  }
+
+  // Unpaid, or cancelled before any payment was recorded (no escrow, never
+  // settled) — the only states a verified Paystack payment can still be
+  // settled into. A cancelled transaction WITH an escrow is the
+  // inspection-expiry auto-refund, which is already fully settled.
+  private isAwaitingSettlement(transaction: TransactionDocument): boolean {
+    if (transaction.paymentVerifiedAt || transaction.escrow) return false;
+    return [
+      TransactionStatus.PENDING_PAYMENT,
+      TransactionStatus.CANCELLED,
+    ].includes(transaction.status);
+  }
+
+  // The one place a Paystack-verified payment turns into escrow — shared by
+  // the webhook, the buyer's cancel request (which checks Paystack first) and
+  // the hourly sweep, so whichever notices the payment first settles it.
+  // Claims the transaction atomically (paymentVerifiedAt) before doing
+  // anything, so two of them racing can never both settle it. Pushes the
+  // result to the buyer's phone (transaction:update) so an open checkout
+  // screen closes Paystack's page and shows it right away. 2026-10-09,
+  // explicit instruction.
+  private async settleVerifiedPayment(
+    transaction: TransactionDocument,
+    verification: VerifyTransactionResult,
+    actor: string,
+  ): Promise<void> {
+    const reference = transaction.reference;
+
     // Only underpayment is suspicious enough to block — Paystack legitimately collects more than
     // the listing price on channels that gross its own transaction fee onto the payer (the buyer
     // bears this, not Declut; see Transaction.paystackFee). Rejecting on `!==` was blocking every
@@ -385,7 +420,7 @@ export class TransactionsService {
       await this.audit(
         transaction._id.toString(),
         'payment_amount_mismatch',
-        'webhook',
+        actor,
         transaction.status,
         transaction.status,
         { expectedKobo, receivedKobo: verification.amountKobo },
@@ -407,6 +442,32 @@ export class TransactionsService {
         ? PaymentMethod.CARD
         : PaymentMethod.BANK_TRANSFER;
 
+    const locked = await this.transactionModel.findOneAndUpdate(
+      {
+        _id: transaction._id,
+        status: {
+          $in: [TransactionStatus.PENDING_PAYMENT, TransactionStatus.CANCELLED],
+        },
+        escrow: { $exists: false },
+        paymentVerifiedAt: { $exists: false },
+      },
+      { $set: { paymentVerifiedAt: new Date() } },
+      { new: true },
+    );
+    if (!locked) {
+      this.logger.log(
+        `[settle] transaction=${transaction._id.toString()} reference=${reference} already being settled elsewhere — no-op`,
+      );
+      return;
+    }
+    transaction = locked;
+    const wasCancelled = transaction.status === TransactionStatus.CANCELLED;
+    if (wasCancelled) {
+      this.logger.warn(
+        `[settle] transaction=${transaction._id.toString()} reference=${reference} was cancelled before Paystack confirmed the payment — settling the late payment (actor=${actor})`,
+      );
+    }
+
     // Claim the listing before finalizing escrow — atomic, so two webhooks
     // racing for the same listing (two buyers both reached pending_payment
     // before either paid) can't both win. The loser's money has already
@@ -416,6 +477,16 @@ export class TransactionsService {
     const claimed = await this.listingsService.markPendingSale(
       transaction.listing.toString(),
     );
+    if (!claimed && wasCancelled) {
+      await this.refundLatePaymentForGoneListing(
+        transaction,
+        verification,
+        paymentMethod,
+        paystackFeeKobo,
+        actor,
+      );
+      return;
+    }
     if (!claimed) {
       const lostRaceOldStatus = transaction.status;
       transaction.status = TransactionStatus.DISPUTED;
@@ -431,10 +502,11 @@ export class TransactionsService {
       await this.audit(
         transaction._id.toString(),
         'listing_unavailable_after_payment',
-        'webhook',
+        actor,
         lostRaceOldStatus,
         TransactionStatus.DISPUTED,
       );
+      this.pushTransactionUpdate(transaction);
       await this.notificationsService.notify({
         recipientType: NotificationRecipientType.USER,
         recipientId: transaction.buyer.toString(),
@@ -480,11 +552,12 @@ export class TransactionsService {
     });
     transaction.escrow = escrowId;
     await transaction.save();
+    this.pushTransactionUpdate(transaction);
 
     await this.audit(
       transaction._id.toString(),
       'escrow_held',
-      'webhook',
+      actor,
       oldStatus,
       TransactionStatus.ESCROW_ACTIVE,
       paystackFeeKobo > 0 ? { paystackFeeKobo } : undefined,
@@ -509,6 +582,80 @@ export class TransactionsService {
       body: "Meet the seller, then confirm receipt in-app once you have the item — that's what releases their payment.",
       data: { transactionId: transaction._id.toString() },
     });
+  }
+
+  // A checkout cancelled before Paystack confirmed it, whose payment then
+  // came through after the listing had already gone to someone else — the
+  // buyer gets everything back automatically, no fee (2026-10-09, explicit
+  // instruction). amountKobo omitted so Paystack refunds the full charge,
+  // processing fee included. If Paystack rejects the refund, the settlement
+  // lock is released so the hourly sweep tries again; refundAndRecord() still
+  // leaves a FAILED Refund row for the admin to see.
+  private async refundLatePaymentForGoneListing(
+    transaction: TransactionDocument,
+    verification: VerifyTransactionResult,
+    paymentMethod: PaymentMethod,
+    paystackFeeKobo: number,
+    actor: string,
+  ): Promise<void> {
+    const transactionId = transaction._id.toString();
+    const paidAmount = verification.amountKobo / 100;
+    try {
+      await this.refundAndRecord({
+        transactionId,
+        buyerId: transaction.buyer.toString(),
+        reference: transaction.reference,
+        amount: paidAmount,
+        reason:
+          'Paid after the checkout was cancelled, and the item had already been sold',
+        triggeredByType: 'system',
+      });
+    } catch (err) {
+      await this.transactionModel.updateOne(
+        { _id: transaction._id },
+        { $unset: { paymentVerifiedAt: 1 } },
+      );
+      this.logger.error(
+        `[settle] late payment refund FAILED for transaction=${transactionId} reference=${transaction.reference} — will retry on the next sweep`,
+        err as Error,
+      );
+      return;
+    }
+
+    transaction.status = TransactionStatus.REFUNDED;
+    transaction.inspectionStatus = InspectionStatus.FAILED;
+    transaction.inspectionOutcome = InspectionOutcome.DISPUTED;
+    transaction.gatewayProcessingFee = paystackFeeKobo / 100;
+    transaction.paymentMethod = paymentMethod;
+    await transaction.save();
+    this.pushTransactionUpdate(transaction);
+
+    await this.audit(
+      transactionId,
+      'late_payment_refunded',
+      actor,
+      TransactionStatus.CANCELLED,
+      TransactionStatus.REFUNDED,
+      { refundAmount: paidAmount },
+    );
+    await this.notificationsService.notify({
+      recipientType: NotificationRecipientType.USER,
+      recipientId: transaction.buyer.toString(),
+      type: 'purchase_cancelled_refunded',
+      title: 'Payment refunded',
+      body: `Your payment came through after the item was sold to someone else — ₦${paidAmount.toLocaleString()} is being refunded to you in full.`,
+      data: { transactionId },
+    });
+  }
+
+  private pushTransactionUpdate(transaction: TransactionDocument): void {
+    this.appRealtimeService.emitTransactionUpdate(
+      transaction.buyer.toString(),
+      {
+        transactionId: transaction._id.toString(),
+        status: transaction.status,
+      },
+    );
   }
 
   // Buyer-only, by explicit instruction — no confirmation code involved
@@ -1276,7 +1423,7 @@ export class TransactionsService {
   }
 
   async cancel(transactionId: string, buyerId: string) {
-    const transaction = await this.findRaw(transactionId);
+    let transaction = await this.findRaw(transactionId);
     if (transaction.buyer.toString() !== buyerId) {
       throw new ForbiddenException(
         'Only the buyer can cancel this transaction',
@@ -1288,18 +1435,55 @@ export class TransactionsService {
       );
     }
 
-    const oldStatus = transaction.status;
-    transaction.status = TransactionStatus.CANCELLED;
-    await transaction.save();
+    // Ask Paystack before cancelling (2026-10-09, explicit instruction) — the
+    // mobile app asks for a cancel when it stops waiting for confirmation,
+    // which can be before a slow payment (often a bank transfer) has cleared.
+    // Paid -> settled into escrow instead. Still on its way -> left pending.
+    // Only a payment Paystack reports as abandoned/failed is cancelled.
+    let verification: VerifyTransactionResult;
+    try {
+      verification = await this.paystackService.verifyTransaction(
+        transaction.reference,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `[cancel] could not check transaction=${transactionId} with Paystack — left pending`,
+        err as Error,
+      );
+      throw new ServiceUnavailableException(
+        "We couldn't confirm your payment status just now — please try again shortly",
+      );
+    }
 
-    await this.audit(
-      transactionId,
-      'cancelled_by_buyer',
-      buyerId,
-      oldStatus,
-      TransactionStatus.CANCELLED,
-    );
+    if (verification.successful) {
+      this.logger.log(
+        `[cancel] transaction=${transactionId} was actually paid — settling instead of cancelling`,
+      );
+      await this.settleVerifiedPayment(transaction, verification, buyerId);
+    } else if (!['abandoned', 'failed'].includes(verification.status)) {
+      throw new ConflictException(
+        "Your payment is still being processed — we'll update you as soon as it's confirmed",
+      );
+    } else {
+      // Atomic — if the webhook settled this between the check above and
+      // now, it's left alone rather than overwritten.
+      const cancelled = await this.transactionModel.findOneAndUpdate(
+        { _id: transaction._id, status: TransactionStatus.PENDING_PAYMENT },
+        { $set: { status: TransactionStatus.CANCELLED } },
+      );
+      if (cancelled) {
+        await this.audit(
+          transactionId,
+          'cancelled_by_buyer',
+          buyerId,
+          TransactionStatus.PENDING_PAYMENT,
+          TransactionStatus.CANCELLED,
+        );
+      }
+    }
 
+    // Whatever it ended up as — cancelled, escrow_active, or disputed.
+    transaction = await this.findRaw(transactionId);
     await transaction.populate([
       { path: 'buyer', select: PARTY_POPULATE_FIELDS },
       { path: 'seller', select: PARTY_POPULATE_FIELDS },
@@ -3346,53 +3530,89 @@ export class TransactionsService {
   // existingPending guard in create()). Always re-verifies with Paystack before cancelling —
   // never assumes "unpaid" from elapsed time alone, in case the charge succeeded but the webhook
   // delivery was missed or delayed.
+  //
+  // Reworked 2026-10-09 (explicit instruction): a payment Paystack confirms is now settled into
+  // escrow here (missed webhook) rather than only logged, a payment still on its way is left
+  // pending, and checkouts cancelled before payment in the last 48 hours are re-checked too — the
+  // safety net for a late payment whose webhook never arrived.
   @Cron(CronExpression.EVERY_HOUR)
   async sweepAbandonedCheckouts(): Promise<void> {
     const cutoff = new Date(Date.now() - 30 * 60 * 1000);
-    const stale = await this.transactionModel.find({
-      status: TransactionStatus.PENDING_PAYMENT,
-      createdAt: { $lte: cutoff },
+    const lateCutoff = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    const candidates = await this.transactionModel.find({
+      $or: [
+        {
+          status: TransactionStatus.PENDING_PAYMENT,
+          createdAt: { $lte: cutoff },
+        },
+        {
+          status: TransactionStatus.CANCELLED,
+          escrow: { $exists: false },
+          paymentVerifiedAt: { $exists: false },
+          updatedAt: { $gte: lateCutoff },
+        },
+      ],
     });
 
     let cancelled = 0;
-    for (const transaction of stale) {
-      let verification;
+    let settled = 0;
+    for (const transaction of candidates) {
+      let verification: VerifyTransactionResult;
       try {
         verification = await this.paystackService.verifyTransaction(
           transaction.reference,
         );
       } catch (err) {
         this.logger.warn(
-          `Could not verify stale transaction ${transaction.reference} with Paystack — leaving as-is for next sweep`,
+          `Could not verify transaction ${transaction.reference} with Paystack — leaving as-is for next sweep`,
           err as Error,
         );
         continue;
       }
 
       if (verification.successful) {
-        // Paid on Paystack but never flipped to escrow_active — the webhook was missed. Don't
-        // cancel a paid transaction; surface this loudly so it gets manual attention.
-        this.logger.error(
-          `Transaction ${transaction.reference} was paid on Paystack but is still pending_payment — webhook may have been missed. Needs manual review.`,
+        this.logger.warn(
+          `Transaction ${transaction.reference} (status=${transaction.status}) was paid on Paystack but never settled — webhook missed, settling now`,
         );
+        try {
+          await this.settleVerifiedPayment(transaction, verification, 'system');
+          settled++;
+        } catch (err) {
+          this.logger.error(
+            `Settling paid transaction ${transaction.reference} failed — will retry next sweep`,
+            err as Error,
+          );
+        }
         continue;
       }
 
-      const oldStatus = transaction.status;
-      transaction.status = TransactionStatus.CANCELLED;
-      await transaction.save();
+      // Already cancelled and still unpaid, or a payment still on its way — nothing to do yet.
+      if (
+        transaction.status !== TransactionStatus.PENDING_PAYMENT ||
+        !['abandoned', 'failed'].includes(verification.status)
+      ) {
+        continue;
+      }
+
+      const wasCancelled = await this.transactionModel.findOneAndUpdate(
+        { _id: transaction._id, status: TransactionStatus.PENDING_PAYMENT },
+        { $set: { status: TransactionStatus.CANCELLED } },
+      );
+      if (!wasCancelled) continue;
       await this.audit(
         transaction._id.toString(),
         'auto_cancelled_abandoned_checkout',
         'system',
-        oldStatus,
+        TransactionStatus.PENDING_PAYMENT,
         TransactionStatus.CANCELLED,
       );
       cancelled++;
     }
 
-    if (cancelled > 0) {
-      this.logger.log(`Auto-cancelled ${cancelled} abandoned checkout(s)`);
+    if (cancelled > 0 || settled > 0) {
+      this.logger.log(
+        `Checkout sweep: auto-cancelled ${cancelled} abandoned, settled ${settled} paid`,
+      );
     }
   }
 

@@ -255,6 +255,14 @@ export class User {
   @Prop({ default: false })
   hasPayoutDetails: boolean;
 
+  // The seller's Paystack subaccount, parked here only when they remove their
+  // BankAccount (which normally holds it) — so re-adding bank details later
+  // reuses the same subaccount instead of stranding any money left in it.
+  // Hidden from every normal read; see UsersService.getParkedSubaccountCode().
+  // Added 2026-10-09, explicit instruction.
+  @Prop({ select: false })
+  paystackSubaccountCode?: string;
+
   // Re-added 2026-09-12 (explicit instruction) — was removed 2026-09-10.
   // TrustScoreService.recalculate() writes this on every trigger event; only
   // ever surfaced back to the user themselves, on GET /users/me.

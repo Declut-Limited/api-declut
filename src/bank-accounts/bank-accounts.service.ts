@@ -49,6 +49,14 @@ export class BankAccountsService {
       dto.accountNumber,
     );
 
+    // Paystack first — if the subaccount can't be set up, nothing is saved,
+    // so a seller never has payout details without a subaccount behind them.
+    const paystackSubaccountCode = await this.provisionSubaccount(
+      userId,
+      dto.bankCode,
+      dto.accountNumber,
+    );
+
     const bankAccount = await this.bankAccountModel.create({
       user: userId,
       bankCode: dto.bankCode,
@@ -58,6 +66,7 @@ export class BankAccountsService {
       maskedAccountNumber: this.maskAccountNumber(dto.accountNumber),
       accountHolderName: resolved.accountHolderName,
       logoUrl: resolved.logoUrl,
+      paystackSubaccountCode,
     });
 
     await this.auditLogService.record({
@@ -84,6 +93,14 @@ export class BankAccountsService {
       const accountNumber = dto.accountNumber ?? bankAccount.accountNumber;
       const resolved = await this.resolveAndValidate(bankCode, accountNumber);
 
+      // The seller's existing subaccount is repointed on Paystack before the
+      // local save — a failed update leaves both sides on the old bank.
+      bankAccount.paystackSubaccountCode = await this.provisionSubaccount(
+        userId,
+        bankCode,
+        accountNumber,
+        bankAccount.paystackSubaccountCode,
+      );
       bankAccount.bankCode = bankCode;
       bankAccount.shortName = resolved.bankName;
       bankAccount.fullName = resolved.bankName;
@@ -126,6 +143,13 @@ export class BankAccountsService {
       );
     }
 
+    // Kept on the user so re-adding bank details reuses this subaccount.
+    if (bankAccount.paystackSubaccountCode) {
+      await this.usersService.parkSubaccountCode(
+        userId,
+        bankAccount.paystackSubaccountCode,
+      );
+    }
     await bankAccount.deleteOne();
     await this.usersService.setHasPayoutDetails(userId, false);
 
@@ -158,13 +182,29 @@ export class BankAccountsService {
     return this.bankAccountModel.findOne({ user: userId }).exec();
   }
 
-  async setPaystackSubaccountCode(
-    bankAccountId: string,
-    code: string,
-  ): Promise<void> {
-    await this.bankAccountModel
-      .updateOne({ _id: bankAccountId }, { paystackSubaccountCode: code })
-      .exec();
+  // One subaccount per seller, for life (explicit instruction, 2026-10-09):
+  // an existing one (on the BankAccount, or parked on the user after a
+  // removal) is repointed at the new bank details; only a seller who's never
+  // had one gets a new subaccount. Returns the subaccount code to store.
+  private async provisionSubaccount(
+    userId: string,
+    bankCode: string,
+    accountNumber: string,
+    existingCode?: string,
+  ): Promise<string> {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    const details = { businessName: user.name, bankCode, accountNumber };
+
+    const code =
+      existingCode ?? (await this.usersService.getParkedSubaccountCode(userId));
+    if (code) {
+      await this.paystackService.updateSubaccount(code, details);
+      return code;
+    }
+    return this.paystackService.createSubaccount(details);
   }
 
   private async findOwned(

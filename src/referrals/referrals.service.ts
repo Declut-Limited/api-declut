@@ -1864,7 +1864,9 @@ export class ReferralsService {
   // newest first — backs the app's My Referrals screen. 404s (same message
   // as an unknown campaign) if the caller never joined this campaign, since
   // there's no participation to list referrals under. `summary` counts
-  // every referral under this participation, not just the current page.
+  // every referral under this participation, not just the current page;
+  // its under_review/qualified split the completed ones by whether their
+  // reward is still pending (the app's design shows those separately).
   async listMyReferrals(
     idOrCode: string,
     userId: string,
@@ -1874,7 +1876,10 @@ export class ReferralsService {
     total: number;
     page: number;
     limit: number;
-    summary: Record<ReferralStatus | 'total', number>;
+    summary: Record<
+      ReferralStatus | 'total' | 'under_review' | 'qualified',
+      number
+    >;
   }> {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
@@ -1887,7 +1892,7 @@ export class ReferralsService {
       throw new NotFoundException('Referral campaign not found');
     }
 
-    const [referrals, total, statusCounts] = await Promise.all([
+    const [referrals, total, statusCounts, pendingRewards] = await Promise.all([
       this.referralModel
         .find({ referrer: participant._id })
         .populate('referred', 'name')
@@ -1900,18 +1905,42 @@ export class ReferralsService {
         { $match: { referrer: participant._id } },
         { $group: { _id: '$status', count: { $sum: 1 } } },
       ]),
+      // Rewards only exist for completed referrals (one each), so this is
+      // how many completed referrals are still waiting on their payout.
+      this.rewardModel.countDocuments({
+        participant: participant._id,
+        status: RewardStatus.PENDING,
+      }),
     ]);
 
-    const summary: Record<ReferralStatus | 'total', number> = {
+    const summary: Record<
+      ReferralStatus | 'total' | 'under_review' | 'qualified',
+      number
+    > = {
       total,
       [ReferralStatus.IN_PROGRESS]: 0,
       [ReferralStatus.COMPLETED]: 0,
       [ReferralStatus.EXPIRED]: 0,
       [ReferralStatus.DISQUALIFIED]: 0,
+      under_review: 0,
+      qualified: 0,
     };
     for (const row of statusCounts) {
       summary[row._id] = row.count;
     }
+    summary.under_review = Math.min(pendingRewards, summary.completed);
+    summary.qualified = summary.completed - summary.under_review;
+
+    // Each completed referral's own reward status on this page — null for
+    // a referral with no reward (not completed, or the referrer had left
+    // when it completed).
+    const rewards = await this.rewardModel
+      .find({ referral: { $in: referrals.map((r) => r._id) } })
+      .select('referral status')
+      .lean();
+    const rewardStatusByReferral = new Map(
+      rewards.map((r) => [r.referral?.toString(), r.status]),
+    );
 
     const requiredTasks = campaign.referralRequirement.referralAmount;
     const results = referrals.map((referral) => {
@@ -1934,6 +1963,8 @@ export class ReferralsService {
         // referral.schema.ts), so this pair is the friend's own progress.
         completedTasks: referral.completedTasks.length,
         requiredTasks,
+        rewardStatus:
+          rewardStatusByReferral.get(referral._id.toString()) ?? null,
       };
     });
 
