@@ -170,10 +170,9 @@ export class ReferralCampaign {
   paymentSchedule: ReferralPaymentSchedule;
 
   // Only meaningful when status is SCHEDULED — required together in that
-  // case (enforced in the DTO). The cron sweep that actually reads these to
-  // auto-publish a scheduled campaign isn't built in this pass — only the
-  // 4 endpoints asked for (create/update/get/list) are; flag when that
-  // sweep is wanted.
+  // case (enforced in the DTO). Read by the hourly
+  // ReferralsService.sweepScheduledCampaigns() (2026-10-08), which publishes
+  // the campaign once this moment has passed.
   @Prop({ type: Date })
   activationDate?: Date;
 

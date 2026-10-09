@@ -8,13 +8,16 @@ export type ReferralDocument = HydratedDocument<Referral>;
 // now lives on the Referral, not the Participant. A referral is in_progress
 // until its referred person hits referralRequirement.referralAmount
 // qualifying completions; completed is the one moment a Reward is created
-// for it; disqualified only ever happens via the campaign-expiry sweep
-// (ReferralsService.sweepExpiredCampaigns()) — an in-progress referral whose
-// campaign ended before it finished.
+// for it; expired is an in-progress referral whose campaign ended (end date
+// passed or budget exhausted) before it finished — added 2026-10-08,
+// explicit instruction, replacing disqualified for that case, since the
+// referred person did nothing wrong. disqualified is no longer set anywhere
+// but stays in the enum so referrals already stored with it remain valid.
 export enum ReferralStatus {
   IN_PROGRESS = 'in_progress',
   COMPLETED = 'completed',
   DISQUALIFIED = 'disqualified',
+  EXPIRED = 'expired',
 }
 
 // One entry per qualifying task completion the referred person has racked

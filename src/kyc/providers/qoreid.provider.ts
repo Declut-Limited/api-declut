@@ -7,10 +7,11 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { KycCheckResult, KycProvider } from './kyc-provider.interface';
 
-// Shape per docs.qoreid.com "NIN Face Match" (checked 2026-10-05):
-// POST /v1/ng/identities/face-verification/nin with { idNumber, photobase64 }.
-// One call returns the face-match verdict plus the NIN record's biodata,
-// so the name check needs no second request.
+// Shape per a live sandbox call (2026-10-09):
+// POST /v1/ng/identities/face-verification/nin with { idNumber, photoBase64 }
+// (capital B; lowercase is rejected as "no photo provided"). One call returns
+// the face-match verdict plus the NIN record's biodata under `nin`, so the
+// name check needs no second request.
 interface QoreIdFaceResponse {
   id?: number;
   summary?: {
@@ -21,7 +22,7 @@ interface QoreIdFaceResponse {
     };
   };
   status?: { state?: string; status?: string };
-  face_verification?: {
+  nin?: {
     firstname?: string;
     lastname?: string;
   };
@@ -54,7 +55,7 @@ export class QoreIdProvider implements KycProvider {
   ): Promise<KycCheckResult> {
     const result = await this.call<QoreIdFaceResponse>(
       '/v1/ng/identities/face-verification/nin',
-      { idNumber: nin, photobase64: stripDataUrlPrefix(selfieImageBase64) },
+      { idNumber: nin, photoBase64: stripDataUrlPrefix(selfieImageBase64) },
     );
     if (result instanceof QoreIdRejection) {
       return this.rejected(result.reason);
@@ -71,7 +72,7 @@ export class QoreIdProvider implements KycProvider {
       };
     }
 
-    const record = result.face_verification;
+    const record = result.nin;
     if (!namesMatch(fullName, record?.firstname, record?.lastname)) {
       return {
         status: 'rejected',

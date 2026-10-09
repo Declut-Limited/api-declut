@@ -1100,7 +1100,9 @@ export class TransactionsService {
       transaction._id.toString(),
       EscrowStatus.REFUNDED,
     );
-    await this.listingsService.revertToActive(transaction.listing.toString());
+    await this.listingsService.revertToActive(transaction.listing.toString(), {
+      fromReported: true,
+    });
     // No dispute was ever raised here — the report just closes as resolved,
     // same as the three admin dispute-resolution paths below.
     await this.closeActiveReportForListing(
@@ -3095,7 +3097,9 @@ export class TransactionsService {
 
     // Paystack call before the local write — same ordering rule as everywhere else money moves in this module.
     await this.resolveDisputeWithRefund(transaction, adminId, reason);
-    await this.listingsService.revertToActive(transaction.listing.toString());
+    await this.listingsService.revertToActive(transaction.listing.toString(), {
+      fromReported: true,
+    });
     await this.closeReportIfDisputed(transactionId);
 
     await this.audit(

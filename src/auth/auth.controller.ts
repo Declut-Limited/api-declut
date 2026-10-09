@@ -11,7 +11,7 @@ import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import { GoogleAuthDto } from './dto/google-auth.dto';
+// import { GoogleAuthDto } from './dto/google-auth.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResendOtpDto } from './dto/resend-otp.dto';
@@ -46,12 +46,15 @@ export class AuthController {
     return this.authService.login(dto);
   }
 
-  @Throttle(AUTH_THROTTLE)
-  @HttpCode(HttpStatus.OK)
-  @Post('google')
-  googleAuth(@Body() dto: GoogleAuthDto) {
-    return this.authService.googleAuth(dto);
-  }
+  // Google sign-in (and with it Firebase) paused 2026-10-08 — not in use for
+  // now, may come back later. Uncomment to re-enable; the service, DTO and
+  // firebase-admin module are left in place untouched.
+  // @Throttle(AUTH_THROTTLE)
+  // @HttpCode(HttpStatus.OK)
+  // @Post('google')
+  // googleAuth(@Body() dto: GoogleAuthDto) {
+  //   return this.authService.googleAuth(dto);
+  // }
 
   @Throttle(AUTH_THROTTLE)
   @HttpCode(HttpStatus.OK)

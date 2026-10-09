@@ -82,9 +82,24 @@ export class ReportsService {
     // only used for the no-listing, report-a-user-directly case.
     let accusedUserId = dto.accusedUserId;
 
-    // Flag the listing before creating the report — a bad listingId fails
-    // loudly with nothing dangling, rather than a Report row referencing a
-    // listing that was never actually reported.
+    // Freezes the named transaction/escrow directly, giving the seller a
+    // chance to respond — see TransactionsService.reportPurchase(). Throws
+    // (403/400) if the transaction isn't the reporter's own, isn't for the
+    // given listing, or isn't in a reportable state. transactionId is
+    // required on the DTO (2026-09-27), so this always runs — every report
+    // now freezes a real purchase. Runs BEFORE the listing is flagged
+    // (2026-10-08, explicit instruction): flagging first let a report that
+    // was always going to fail validation still hide any listing and notify
+    // its seller, with no Report row left behind to explain it.
+    await this.transactionsService.reportPurchase(
+      dto.transactionId,
+      callerId,
+      dto.listingId,
+    );
+
+    // Only reached once the purchase above is confirmed to be the caller's
+    // own, for this exact listing — so a listing can only be hidden by its
+    // real buyer during a live purchase.
     if (dto.listingId) {
       const listing = await this.listingsService.report(
         dto.listingId,
@@ -92,17 +107,6 @@ export class ReportsService {
       );
       accusedUserId = listing.seller.toString();
     }
-
-    // Freezes the named transaction/escrow directly, giving the seller a
-    // chance to respond — see TransactionsService.reportPurchase(). Throws
-    // (403/400) if the transaction isn't the reporter's own, or isn't in a
-    // reportable state. transactionId is required on the DTO (2026-09-27),
-    // so this always runs — every report now freezes a real purchase.
-    await this.transactionsService.reportPurchase(
-      dto.transactionId,
-      callerId,
-      dto.listingId,
-    );
 
     // Seller-response SLA — starts counting the instant a buyer's report is
     // created (explicit instruction, 2026-09-19: "SLA starts counting once

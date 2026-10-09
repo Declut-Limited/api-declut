@@ -19,6 +19,7 @@ import {
 } from './schemas/listing-view.schema';
 import {
   Transaction,
+  DisputeStatus,
   TransactionDocument,
   TransactionStatus,
 } from '../transactions/schemas/transaction.schema';
@@ -736,12 +737,20 @@ export class ListingsService {
   // is indexed, and a buyer's own transaction count is naturally small and
   // bounded — this never scans the whole collection), not a per-row cost,
   // so it doesn't add meaningfully to fetch time.
+  // Also covers an admin dispute refund (2026-10-08, explicit instruction) —
+  // that path leaves status at DISPUTED and only sets disputeStatus to
+  // REFUNDED, so it was slipping through. The inspection-expiry auto-refund
+  // (status CANCELLED) is deliberately still not hidden: the buyer never
+  // actively backed out, so they may still want the item.
   private async getRefundedListingIds(
     userId: string,
   ): Promise<Types.ObjectId[]> {
     return this.transactionModel.distinct('listing', {
       buyer: userId,
-      status: TransactionStatus.REFUNDED,
+      $or: [
+        { status: TransactionStatus.REFUNDED },
+        { disputeStatus: DisputeStatus.REFUNDED },
+      ],
     });
   }
 
@@ -1244,24 +1253,38 @@ export class ListingsService {
   // Reverses markPendingSale() when a reserved transaction ends up refunded
   // instead of completed. Only flips PENDING_SALE back to ACTIVE — never
   // SOLD (terminal) or anything else an admin may have set in the meantime.
-  async revertToActive(id: string): Promise<void> {
+  // fromReported (2026-10-08, explicit instruction): the seller-refund and
+  // admin-refund paths for a reported purchase also bring a REPORTED listing
+  // back to ACTIVE — it was left stuck there before (hidden from every feed,
+  // locked from edit/pause/delete). The reporting buyer still never sees it
+  // again — see getRefundedListingIds(). DELISTED/SOLD are never touched.
+  async revertToActive(
+    id: string,
+    options: { fromReported?: boolean } = {},
+  ): Promise<void> {
+    const fromStatuses = options.fromReported
+      ? [ListingStatus.PENDING_SALE, ListingStatus.REPORTED]
+      : [ListingStatus.PENDING_SALE];
     const listing = await this.listingModel.findOneAndUpdate(
-      { _id: id, status: ListingStatus.PENDING_SALE },
+      { _id: id, status: { $in: fromStatuses } },
       { status: ListingStatus.ACTIVE },
     );
     if (!listing) return;
+    // findOneAndUpdate returns the pre-update document by default, so this is
+    // the real status the listing came from.
+    const oldStatus = listing.status;
     await this.auditLogService.record({
       entityType: 'listing',
       entityId: id,
       event: 'listing.reactivated',
       actor: 'system',
-      oldState: ListingStatus.PENDING_SALE,
+      oldState: oldStatus,
       newState: ListingStatus.ACTIVE,
     });
     this.appRealtimeService.emitListingStatusChange(
       id,
       listing.seller.toString(),
-      { status: ListingStatus.ACTIVE, oldStatus: ListingStatus.PENDING_SALE },
+      { status: ListingStatus.ACTIVE, oldStatus },
     );
   }
 

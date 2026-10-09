@@ -2225,19 +2225,16 @@ export class ReferralsService {
           participantId: participant._id.toString(),
         },
       });
+
+      await this.enforceCampaignBudget(campaign, reward._id);
     }
   }
 
   // Hourly sweep: a campaign whose endDate has passed while still
   // published/scheduled flips to ended, and every still-active participant/
-  // still-in-progress referral under it moves to a terminal outcome
-  // (expired / disqualified respectively) — explicit instruction ("i hope
-  // there's a cron on a campaign expiring hence all the campaign expires
-  // too"). Bulk updateMany, not a per-document loop — this is a lifecycle
-  // sweep, not individually money-moving the way e.g.
-  // TransactionsService.autoRefundExpiredInspection() is, so one audit-log
-  // entry per campaign (with the affected counts in metadata) is
-  // proportionate rather than one row per participant/referral.
+  // still-in-progress referral under it expires — explicit instruction ("i
+  // hope there's a cron on a campaign expiring hence all the campaign
+  // expires too"). See endCampaign().
   @Cron(CronExpression.EVERY_HOUR)
   async sweepExpiredCampaigns(): Promise<void> {
     const now = new Date();
@@ -2252,32 +2249,168 @@ export class ReferralsService {
     });
 
     for (const campaign of expiring) {
-      const oldStatus = campaign.status;
-      campaign.status = ReferralCampaignStatus.ENDED;
-      await campaign.save();
+      await this.endCampaign(campaign._id, 'referral_campaign.ended');
+    }
+  }
 
-      const [expiredParticipants, disqualifiedReferrals] = await Promise.all([
-        this.participantModel.updateMany(
-          { campaign: campaign._id, status: ParticipantStatus.ACTIVE },
-          { $set: { status: ParticipantStatus.EXPIRED } },
-        ),
-        this.referralModel.updateMany(
-          { campaign: campaign._id, status: ReferralStatus.IN_PROGRESS },
-          { $set: { status: ReferralStatus.DISQUALIFIED } },
-        ),
-      ]);
+  // Shared by both ways a campaign ends — its endDate passing
+  // (sweepExpiredCampaigns()) or its budget running out
+  // (enforceCampaignBudget()); the audit event is what records which one,
+  // so no extra field is needed on the campaign itself (explicit
+  // instruction, 2026-10-08). Still-active participants and still-in-progress
+  // referrals both move to expired — not disqualified, since nobody did
+  // anything wrong (2026-10-08). The status flip is an atomic claim on
+  // published/scheduled, so two paths ending the same campaign at once
+  // can't both run the tidy-up. Bulk updateMany, not a per-document loop —
+  // a lifecycle change, not individually money-moving, so one audit-log
+  // entry per campaign (with the affected counts) is proportionate.
+  private async endCampaign(
+    campaignId: Types.ObjectId,
+    event: 'referral_campaign.ended' | 'referral_campaign.budget_exhausted',
+    metadata: Record<string, unknown> = {},
+  ): Promise<void> {
+    const previous = await this.referralCampaignModel.findOneAndUpdate(
+      {
+        _id: campaignId,
+        status: {
+          $in: [
+            ReferralCampaignStatus.PUBLISHED,
+            ReferralCampaignStatus.SCHEDULED,
+          ],
+        },
+      },
+      { status: ReferralCampaignStatus.ENDED },
+    );
+    if (!previous) return;
+
+    const [expiredParticipants, expiredReferrals] = await Promise.all([
+      this.participantModel.updateMany(
+        { campaign: campaignId, status: ParticipantStatus.ACTIVE },
+        { $set: { status: ParticipantStatus.EXPIRED } },
+      ),
+      this.referralModel.updateMany(
+        { campaign: campaignId, status: ReferralStatus.IN_PROGRESS },
+        { $set: { status: ReferralStatus.EXPIRED } },
+      ),
+    ]);
+
+    await this.auditLogService.record({
+      entityType: 'referral_campaign',
+      entityId: campaignId.toString(),
+      event,
+      actor: 'system',
+      oldState: previous.status,
+      newState: ReferralCampaignStatus.ENDED,
+      metadata: {
+        ...metadata,
+        expiredParticipants: expiredParticipants.modifiedCount,
+        expiredReferrals: expiredReferrals.modifiedCount,
+      },
+    });
+  }
+
+  // Enforces maxCampaignBudget, explicit instruction 2026-10-08 — it was
+  // stored but never checked. Runs right after a reward is created. Every
+  // reward is worth the campaign's flat rewardAmount (frozen once the
+  // campaign is live, see EDITABLE_STATUSES), so the budget allows exactly
+  // floor(maxCampaignBudget / rewardAmount) non-canceled rewards. Rewards
+  // are ranked by creation order (_id), so if two referrals complete at the
+  // same instant and both slip past, the later one is consistently the one
+  // canceled, never both. Once no further reward fits, the campaign ends
+  // straight away rather than letting people keep working toward a reward
+  // that can't be paid. Returns whether this reward was canceled.
+  private async enforceCampaignBudget(
+    campaign: ReferralCampaignDocument,
+    rewardId: Types.ObjectId,
+  ): Promise<boolean> {
+    if (campaign.rewardAmount <= 0) {
+      return false;
+    }
+    const allowedRewards = Math.floor(
+      campaign.maxCampaignBudget / campaign.rewardAmount,
+    );
+
+    const rewards = await this.rewardModel
+      .find({
+        campaign: campaign._id,
+        status: { $ne: RewardStatus.CANCELED },
+      })
+      .sort({ _id: 1 })
+      .select('_id')
+      .lean();
+    const position = rewards.findIndex((r) => r._id.equals(rewardId));
+
+    let canceled = false;
+    if (position >= allowedRewards) {
+      const result = await this.rewardModel.updateOne(
+        { _id: rewardId, status: RewardStatus.PENDING },
+        { $set: { status: RewardStatus.CANCELED } },
+      );
+      canceled = result.modifiedCount > 0;
+      if (canceled) {
+        await this.auditLogService.record({
+          entityType: 'referral_reward',
+          entityId: rewardId.toString(),
+          event: 'referral_reward.canceled',
+          actor: 'system',
+          oldState: RewardStatus.PENDING,
+          newState: RewardStatus.CANCELED,
+          metadata: { reason: 'budget_exhausted' },
+        });
+      }
+    }
+
+    const committedRewards = canceled ? rewards.length - 1 : rewards.length;
+    if (committedRewards >= allowedRewards) {
+      await this.endCampaign(
+        campaign._id,
+        'referral_campaign.budget_exhausted',
+        {
+          reason: 'budget_exhausted',
+          maxCampaignBudget: campaign.maxCampaignBudget,
+          rewardAmount: campaign.rewardAmount,
+          committedAmount: committedRewards * campaign.rewardAmount,
+        },
+      );
+    }
+    return canceled;
+  }
+
+  // Hourly sweep: a scheduled campaign goes live (published) once its
+  // effective start moment (activationDate + activationTime, see
+  // resolveEffectiveStartDate()) has passed — explicit instruction,
+  // 2026-10-08; it previously needed an admin to publish it by hand. One
+  // already past its endDate is left for sweepExpiredCampaigns() to end
+  // instead. The status flip is an atomic claim on SCHEDULED, so an admin
+  // edit or another run landing at the same moment can't double-publish.
+  @Cron(CronExpression.EVERY_HOUR)
+  async sweepScheduledCampaigns(): Promise<void> {
+    const now = new Date();
+    const scheduled = await this.referralCampaignModel.find({
+      status: ReferralCampaignStatus.SCHEDULED,
+      endDate: { $gt: now },
+    });
+
+    for (const campaign of scheduled) {
+      const start = this.resolveEffectiveStartDate(campaign);
+      if (!start || start.getTime() > now.getTime()) {
+        continue;
+      }
+
+      const published = await this.referralCampaignModel.findOneAndUpdate(
+        { _id: campaign._id, status: ReferralCampaignStatus.SCHEDULED },
+        { status: ReferralCampaignStatus.PUBLISHED },
+      );
+      if (!published) continue;
 
       await this.auditLogService.record({
         entityType: 'referral_campaign',
         entityId: campaign._id.toString(),
-        event: 'referral_campaign.ended',
+        event: 'referral_campaign.published',
         actor: 'system',
-        oldState: oldStatus,
-        newState: campaign.status,
-        metadata: {
-          expiredParticipants: expiredParticipants.modifiedCount,
-          disqualifiedReferrals: disqualifiedReferrals.modifiedCount,
-        },
+        oldState: ReferralCampaignStatus.SCHEDULED,
+        newState: ReferralCampaignStatus.PUBLISHED,
+        metadata: { effectiveStartDate: start },
       });
     }
   }
