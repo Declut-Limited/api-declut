@@ -271,6 +271,24 @@ export class NotificationsService {
     );
   }
 
+  // Marks every unread notification for this recipient as read in one go —
+  // backs the mobile app's "mark all as read" header button. Returns how many
+  // changed. Added 2026-10-09, explicit instruction.
+  async markAllRead(
+    recipientType: NotificationRecipientType,
+    recipientId: string,
+  ): Promise<number> {
+    const result = await this.notificationModel.updateMany(
+      {
+        recipientType,
+        recipient: new Types.ObjectId(recipientId),
+        read: false,
+      },
+      { $set: { read: true, readAt: new Date() } },
+    );
+    return result.modifiedCount;
+  }
+
   // Triggered from ContentService whenever a save results in status 'published'. Writes the NotificationBroadcast row synchronously, then queues the fan-out.
   async broadcastContentPublished(
     content: ContentDocument,

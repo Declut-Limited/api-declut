@@ -53,6 +53,15 @@ export class NotificationsController {
     return { unreadCount };
   }
 
+  @Patch('read-all')
+  async markAllRead(@CurrentUser() user: AccessTokenPayload) {
+    const updated = await this.notificationsService.markAllRead(
+      NotificationRecipientType.USER,
+      user.sub,
+    );
+    return { updated };
+  }
+
   @Patch(':id/read')
   async markRead(
     @CurrentUser() user: AccessTokenPayload,

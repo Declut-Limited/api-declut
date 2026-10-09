@@ -1966,7 +1966,7 @@
                         "cancel"
                       ]
                     },
-                    "description": "Buyer-only, only before payment (pending_payment). For a paid transaction, use cancel-purchase instead."
+                    "description": "Buyer-only, only before payment (pending_payment). For a paid transaction, use cancel-purchase instead.\n\nChecks Paystack before cancelling (2026-10-09): if the buyer actually paid, the transaction is settled into escrow instead and returned as escrow_active (or refunded, if the listing was no longer available). Cancelled only when Paystack reports the payment abandoned/failed. 409 if the payment is still being processed (e.g. a bank transfer on its way) — it stays pending_payment. 503 if Paystack can't be reached — try again shortly."
                   },
                   "response": []
                 }
@@ -2072,7 +2072,7 @@
                         "paystack"
                       ]
                     },
-                    "description": "Not for manual testing — signature-authenticated by Paystack, not a bearer token.",
+                    "description": "Not for manual testing — signature-authenticated by Paystack, not a bearer token.\n\n2026-10-09: charge.success also settles a checkout that was cancelled before the payment landed (late payment). If the listing is no longer available — another buyer's payment claimed it first, or it was sold/taken off sale — the buyer is refunded in full automatically (no longer flagged disputed). Each settlement pushes a `transaction:update` socket event ({ transactionId, status }) to the buyer's personal room so the mobile app's checkout screen closes Paystack's page itself.",
                     "body": {
                       "mode": "raw",
                       "raw": "{\n  \"event\": \"charge.success\",\n  \"data\": {\n    \"reference\": \"declut_xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx\",\n    \"amount\": 4500000,\n    \"status\": \"success\"\n  }\n}",
@@ -2187,7 +2187,7 @@
                 "bank-accounts"
               ]
             },
-            "description": "One per user — 409s if one already exists (use the edit endpoint instead). accountHolderName/shortName/fullName/maskedAccountNumber are all resolved server-side from Paystack, never client-supplied.",
+            "description": "One per user — 409s if one already exists (use the edit endpoint instead). accountHolderName/shortName/fullName/maskedAccountNumber are all resolved server-side from Paystack, never client-supplied.\n\n2026-10-09: also creates the seller's Paystack subaccount (or repoints the one kept from a previously removed bank account) before saving. If Paystack fails, nothing is saved. Checkout no longer creates subaccounts.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"bankCode\": \"999992\",\n  \"accountNumber\": \"9057643470\"\n}",
@@ -2226,7 +2226,7 @@
                 "{{bankAccountId}}"
               ]
             },
-            "description": "Object-level ownership checked — 403 if the caller does not own it. Only re-resolves against Paystack when bankCode/accountNumber actually change.",
+            "description": "Object-level ownership checked — 403 if the caller does not own it. Only re-resolves against Paystack when bankCode/accountNumber actually change.\n\n2026-10-09: a bank change also updates the seller's existing Paystack subaccount (same subaccount, new bank) before saving, and checks Paystack really switched the account number. Money already held in the subaccount stays put. If Paystack fails, nothing changes.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"bankCode\": \"058\",\n  \"accountNumber\": \"0123456789\"\n}",
@@ -2286,7 +2286,7 @@
                 "{{bankAccountId}}"
               ]
             },
-            "description": "User end only. Object-level ownership checked. 409 if the caller has any escrow_active/awaiting_inspection transaction as seller — resolve those first. Sets hasPayoutDetails back to false on success."
+            "description": "User end only. Object-level ownership checked. 409 if the caller has any escrow_active/awaiting_inspection transaction as seller — resolve those first. Sets hasPayoutDetails back to false on success.\n\n2026-10-09: the account's Paystack subaccount code is kept on the user, so adding bank details again reuses the same subaccount."
           },
           "response": []
         }
@@ -2769,6 +2769,36 @@
             "description": "Lightweight badge count — no rows fetched. Returns { unreadCount }."
           },
           "response": []
+        },
+        {
+          "name": "read-all",
+          "item": [
+            {
+              "name": "Mark all notifications read",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/notifications/read-all",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "notifications",
+                    "read-all"
+                  ]
+                },
+                "description": "Marks every unread notification for the caller as read. Returns { updated } — how many changed. Backs the mobile app's \"mark all as read\" header button. Added 2026-10-09."
+              },
+              "response": []
+            }
+          ]
         },
         {
           "name": "{id}",

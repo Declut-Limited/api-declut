@@ -482,13 +482,15 @@ export class ListingsService {
       oldState,
       newState: listing.status,
     });
-    // broadcastPublic:false — a paused listing is a private draft, nobody but the owner should learn it changed state.
-    this.appRealtimeService.emitListingStatusChange(
-      id,
-      userId,
-      { status: listing.status, oldStatus: oldState },
-      false,
-    );
+    // Broadcast publicly (2026-10-09, explicit instruction) — it used to be
+    // owner-only to keep the draft private, which left the paused listing
+    // sitting in every other user's feeds until they refreshed (tapping it
+    // just 404'd). Realtime only, no notification: other devices drop it
+    // from their lists, same as a delete.
+    this.appRealtimeService.emitListingStatusChange(id, userId, {
+      status: listing.status,
+      oldStatus: oldState,
+    });
     return listing;
   }
 
@@ -511,13 +513,13 @@ export class ListingsService {
       oldState,
       newState: listing.status,
     });
-    // broadcastPublic:false for symmetry with pause() — nobody could have been subscribed to this listing's room while it was paused anyway.
-    this.appRealtimeService.emitListingStatusChange(
-      id,
-      userId,
-      { status: listing.status, oldStatus: oldState },
-      false,
-    );
+    // Broadcast publicly, same as pause() (2026-10-09, explicit instruction)
+    // — other devices refetch their lists so the listing reappears without a
+    // manual refresh. Realtime only, no notification.
+    this.appRealtimeService.emitListingStatusChange(id, userId, {
+      status: listing.status,
+      oldStatus: oldState,
+    });
     return listing;
   }
 
