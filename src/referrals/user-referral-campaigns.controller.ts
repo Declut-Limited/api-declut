@@ -35,6 +35,16 @@ export class UserReferralCampaignsController {
     return this.referralsService.getMyCampaignDetail(idOrCode, user.sub);
   }
 
+  // The people the caller has referred within one of their own campaigns.
+  @Get('me/:idOrCode/referrals')
+  listMyReferrals(
+    @Param('idOrCode') idOrCode: string,
+    @CurrentUser() user: AccessTokenPayload,
+    @Query() dto: PaginationDto,
+  ) {
+    return this.referralsService.listMyReferrals(idOrCode, user.sub, dto);
+  }
+
   // One available (browsable) campaign, by Mongo id or internalCampaignCode.
   @Get(':idOrCode')
   getOne(

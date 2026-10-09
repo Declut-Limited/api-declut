@@ -12,6 +12,7 @@ import { AdminReferralCampaignsController } from './admin-referral-campaigns.con
 import { UserReferralCampaignsController } from './user-referral-campaigns.controller';
 import { AdminReferralParticipantsController } from './admin-referral-participants.controller';
 import { AdminReferralRewardsController } from './admin-referral-rewards.controller';
+import { UserReferralRewardsController } from './user-referral-rewards.controller';
 import { AdminAuthModule } from '../admin-auth/admin-auth.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { User, UserSchema } from '../users/schemas/user.schema';
@@ -51,6 +52,7 @@ import { CounterModule } from '../common/counter/counter.module';
     UserReferralCampaignsController,
     AdminReferralParticipantsController,
     AdminReferralRewardsController,
+    UserReferralRewardsController,
   ],
   providers: [ReferralsService],
   exports: [ReferralsService],

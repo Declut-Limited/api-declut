@@ -1860,6 +1860,263 @@ export class ReferralsService {
     };
   }
 
+  // The people the caller has referred within one of their own campaigns,
+  // newest first — backs the app's My Referrals screen. 404s (same message
+  // as an unknown campaign) if the caller never joined this campaign, since
+  // there's no participation to list referrals under. `summary` counts
+  // every referral under this participation, not just the current page.
+  async listMyReferrals(
+    idOrCode: string,
+    userId: string,
+    dto: PaginationDto,
+  ): Promise<{
+    results: Record<string, unknown>[];
+    total: number;
+    page: number;
+    limit: number;
+    summary: Record<ReferralStatus | 'total', number>;
+  }> {
+    const page = dto.page ?? 1;
+    const limit = dto.limit ?? 20;
+    const campaign = await this.findVisibleCampaignByIdOrCode(idOrCode);
+    const participant = await this.participantModel
+      .findOne({ campaign: campaign._id, user: userId })
+      .select('_id')
+      .exec();
+    if (!participant) {
+      throw new NotFoundException('Referral campaign not found');
+    }
+
+    const [referrals, total, statusCounts] = await Promise.all([
+      this.referralModel
+        .find({ referrer: participant._id })
+        .populate('referred', 'name')
+        .sort({ referredAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .exec(),
+      this.referralModel.countDocuments({ referrer: participant._id }),
+      this.referralModel.aggregate<{ _id: ReferralStatus; count: number }>([
+        { $match: { referrer: participant._id } },
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]),
+    ]);
+
+    const summary: Record<ReferralStatus | 'total', number> = {
+      total,
+      [ReferralStatus.IN_PROGRESS]: 0,
+      [ReferralStatus.COMPLETED]: 0,
+      [ReferralStatus.EXPIRED]: 0,
+      [ReferralStatus.DISQUALIFIED]: 0,
+    };
+    for (const row of statusCounts) {
+      summary[row._id] = row.count;
+    }
+
+    const requiredTasks = campaign.referralRequirement.referralAmount;
+    const results = referrals.map((referral) => {
+      const referredUser = referral.referred as unknown as {
+        _id: Types.ObjectId;
+        name?: string;
+      } | null;
+      return {
+        _id: referral._id.toString(),
+        slug: referral.slug ?? null,
+        // Name only — never the referred person's email/phone, since the
+        // caller is just another user, not an admin.
+        referredUser: referredUser
+          ? { _id: referredUser._id.toString(), name: referredUser.name }
+          : null,
+        status: referral.status,
+        referredAt: referral.referredAt,
+        qualifiedAt: referral.qualifiedAt,
+        // referralAmount is a per-referral completion count (see
+        // referral.schema.ts), so this pair is the friend's own progress.
+        completedTasks: referral.completedTasks.length,
+        requiredTasks,
+      };
+    });
+
+    return { results, total, page, limit, summary };
+  }
+
+  // Every reward the caller has earned, across all their campaigns, newest
+  // first — backs the app's Reward History screen. `summary` totals the
+  // caller's whole reward set, not just the current page.
+  async listMyRewards(
+    userId: string,
+    dto: PaginationDto,
+  ): Promise<{
+    results: Record<string, unknown>[];
+    total: number;
+    page: number;
+    limit: number;
+    summary: {
+      totalPaid: number;
+      totalPending: number;
+      paidCount: number;
+      pendingCount: number;
+      canceledCount: number;
+    };
+  }> {
+    const page = dto.page ?? 1;
+    const limit = dto.limit ?? 20;
+    const participantIds = await this.participantModel.distinct('_id', {
+      user: userId,
+    });
+    const filter = { participant: { $in: participantIds } };
+
+    const [rewards, total, statusTotals] = await Promise.all([
+      this.rewardModel
+        .find(filter)
+        .populate('campaign', 'name rewardAmount internalCampaignCode')
+        .populate('referred', 'name')
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .exec(),
+      this.rewardModel.countDocuments(filter),
+      this.rewardModel.aggregate<{
+        _id: RewardStatus;
+        count: number;
+        amountPaid: number;
+        rewardAmount: number;
+      }>([
+        { $match: filter },
+        {
+          $lookup: {
+            from: 'referralcampaigns',
+            localField: 'campaign',
+            foreignField: '_id',
+            as: 'campaignDoc',
+          },
+        },
+        {
+          $unwind: { path: '$campaignDoc', preserveNullAndEmptyArrays: true },
+        },
+        {
+          $group: {
+            _id: '$status',
+            count: { $sum: 1 },
+            amountPaid: { $sum: '$amountPaid' },
+            rewardAmount: {
+              $sum: { $ifNull: ['$campaignDoc.rewardAmount', 0] },
+            },
+          },
+        },
+      ]),
+    ]);
+
+    const byStatus = new Map(statusTotals.map((row) => [row._id, row]));
+    const summary = {
+      totalPaid: byStatus.get(RewardStatus.PAID)?.amountPaid ?? 0,
+      // Pending rewards have amountPaid 0 — what they're worth is the
+      // campaign's configured rewardAmount, same as shapeAdminRewardRow().
+      totalPending: byStatus.get(RewardStatus.PENDING)?.rewardAmount ?? 0,
+      paidCount: byStatus.get(RewardStatus.PAID)?.count ?? 0,
+      pendingCount: byStatus.get(RewardStatus.PENDING)?.count ?? 0,
+      canceledCount: byStatus.get(RewardStatus.CANCELED)?.count ?? 0,
+    };
+
+    const results = rewards.map((reward) => this.shapeUserRewardRow(reward));
+    return { results, total, page, limit, summary };
+  }
+
+  // One of the caller's own rewards — backs the app's Reward Details
+  // screen. 404s for anyone else's reward, indistinguishable from a
+  // nonexistent one.
+  async getMyReward(
+    id: string,
+    userId: string,
+  ): Promise<Record<string, unknown>> {
+    if (!isValidObjectId(id)) {
+      throw new NotFoundException('Reward not found');
+    }
+    const reward = await this.rewardModel
+      .findById(id)
+      .populate('participant', 'user referralCode')
+      .populate(
+        'campaign',
+        'name rewardAmount internalCampaignCode referralRequirement',
+      )
+      .populate('referred', 'name')
+      .populate('referral', 'referredAt qualifiedAt completedTasks')
+      .exec();
+    const participant = reward?.participant as unknown as {
+      user: Types.ObjectId;
+      referralCode: string;
+    } | null;
+    if (!reward || !participant || participant.user.toString() !== userId) {
+      throw new NotFoundException('Reward not found');
+    }
+
+    const referral = reward.referral as unknown as {
+      referredAt: Date;
+      qualifiedAt: Date | null;
+      completedTasks: { taskType: ReferredTaskType; completedAt: Date }[];
+    } | null;
+
+    return {
+      ...this.shapeUserRewardRow(reward),
+      referralCode: participant.referralCode,
+      // Null for a pre-2026-09-27 reward with no `referral` link — same
+      // "old data predates a new invariant" fallback as the admin list.
+      referral: referral
+        ? {
+            referredAt: referral.referredAt,
+            qualifiedAt: referral.qualifiedAt,
+            completedTasks: referral.completedTasks.map((task) => ({
+              taskType: task.taskType,
+              completedAt: task.completedAt,
+            })),
+          }
+        : null,
+    };
+  }
+
+  // Shared row shape for the user's reward list and detail. A reward's
+  // status only ever changes once (pending → paid via markRewardPaid(), or
+  // pending → canceled via enforceCampaignBudget()), so updatedAt is the
+  // moment it was paid/canceled — there's no dedicated timestamp field.
+  private shapeUserRewardRow(reward: RewardDocument): Record<string, unknown> {
+    const campaign = reward.campaign as unknown as {
+      _id: Types.ObjectId;
+      name: string;
+      rewardAmount: number;
+      internalCampaignCode: string;
+    } | null;
+    const referredUser = reward.referred as unknown as {
+      _id: Types.ObjectId;
+      name?: string;
+    } | null;
+    const settledAt =
+      reward.status === RewardStatus.PENDING ? null : reward.updatedAt;
+    return {
+      _id: reward._id.toString(),
+      slug: reward.slug ?? null,
+      status: reward.status,
+      // Paid → what was actually disbursed; otherwise the campaign's
+      // configured reward (amountPaid is 0 until then).
+      amount:
+        reward.status === RewardStatus.PAID
+          ? reward.amountPaid
+          : (campaign?.rewardAmount ?? 0),
+      campaign: campaign
+        ? {
+            _id: campaign._id.toString(),
+            name: campaign.name,
+            internalCampaignCode: campaign.internalCampaignCode,
+          }
+        : null,
+      referredUser: referredUser
+        ? { _id: referredUser._id.toString(), name: referredUser.name }
+        : null,
+      earnedAt: reward.createdAt,
+      paidAt: reward.status === RewardStatus.PAID ? settledAt : null,
+      canceledAt: reward.status === RewardStatus.CANCELED ? settledAt : null,
+    };
+  }
+
   // First join creates the Participant document; a returning participant
   // (status left/expired/disqualified) is reused — only the status flips
   // back to active, per explicit instruction. Eligibility is re-validated
