@@ -57,6 +57,31 @@ export enum DisputeStatus {
   RESOLVED = 'resolved',
 }
 
+// Every transaction whose buyer money is still being held — active, awaiting
+// inspection, reported (escrow frozen), or disputed and not yet resolved. A
+// dispute resolved by refund keeps status DISPUTED with disputeStatus
+// REFUNDED, hence the disputeStatus check. Shared by the admin dashboard's
+// Escrow Balance card and a user's totalAmountInEscrow (2026-10-09, explicit
+// instruction — both used to drop reported/disputed money, understating what
+// was actually held).
+export const HELD_IN_ESCROW_FILTER = {
+  $or: [
+    {
+      status: {
+        $in: [
+          TransactionStatus.ESCROW_ACTIVE,
+          TransactionStatus.AWAITING_INSPECTION,
+          TransactionStatus.REPORTED,
+        ],
+      },
+    },
+    {
+      status: TransactionStatus.DISPUTED,
+      disputeStatus: { $nin: [DisputeStatus.REFUNDED, DisputeStatus.RESOLVED] },
+    },
+  ],
+};
+
 // Mirrors InspectionStatus's own AWAITING/COMPLETED/FAILED transitions 1:1 —
 // ACCEPTED wherever inspectionStatus becomes COMPLETED (confirmReceipt(),
 // adminRelease()), DISPUTED wherever it becomes FAILED (the webhook race

@@ -14,6 +14,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { Model, Types, isValidObjectId } from 'mongoose';
 import {
   DisputeStatus,
+  HELD_IN_ESCROW_FILTER,
   InspectionOutcome,
   InspectionStatus,
   PaymentMethod,
@@ -468,61 +469,25 @@ export class TransactionsService {
       );
     }
 
-    // Claim the listing before finalizing escrow — atomic, so two webhooks
+    // Claim the listing before finalizing escrow — atomic, so two payments
     // racing for the same listing (two buyers both reached pending_payment
-    // before either paid) can't both win. The loser's money has already
-    // moved on Paystack, so it's never auto-refunded here — flagged
-    // disputed for an explicit admin decision, same as every other
-    // stalled/disputed transaction in this app.
+    // before either paid) can't both win. The one that loses — or a late
+    // payment on a cancelled checkout, or a listing that's otherwise no
+    // longer available — is refunded in full automatically (2026-10-09,
+    // explicit instruction). It used to be flagged disputed with no report
+    // behind it, which left the buyer's money with no way out.
     const claimed = await this.listingsService.markPendingSale(
       transaction.listing.toString(),
     );
-    if (!claimed && wasCancelled) {
-      await this.refundLatePaymentForGoneListing(
+    if (!claimed) {
+      await this.refundPaymentForUnavailableListing(
         transaction,
         verification,
         paymentMethod,
         paystackFeeKobo,
+        wasCancelled,
         actor,
       );
-      return;
-    }
-    if (!claimed) {
-      const lostRaceOldStatus = transaction.status;
-      transaction.status = TransactionStatus.DISPUTED;
-      transaction.disputeStatus = DisputeStatus.UNDER_INVESTIGATION;
-      transaction.inspectionStatus = InspectionStatus.FAILED;
-      transaction.inspectionOutcome = InspectionOutcome.DISPUTED;
-      transaction.gatewayProcessingFee = paystackFeeKobo / 100;
-      transaction.paymentMethod = paymentMethod;
-      await transaction.save();
-      this.logger.error(
-        `[webhook] transaction=${transaction._id.toString()} reference=${reference} paid but listing=${transaction.listing.toString()} is no longer active — likely claimed by another buyer's payment first. Flagged disputed for manual review.`,
-      );
-      await this.audit(
-        transaction._id.toString(),
-        'listing_unavailable_after_payment',
-        actor,
-        lostRaceOldStatus,
-        TransactionStatus.DISPUTED,
-      );
-      this.pushTransactionUpdate(transaction);
-      await this.notificationsService.notify({
-        recipientType: NotificationRecipientType.USER,
-        recipientId: transaction.buyer.toString(),
-        type: 'listing_unavailable_after_payment',
-        title: 'Payment received — action needed',
-        body: 'This item became unavailable right as your payment cleared. Our team will reach out to resolve this.',
-        data: { transactionId: transaction._id.toString() },
-      });
-      await this.notificationsService.notify({
-        recipientType: NotificationRecipientType.USER,
-        recipientId: transaction.seller.toString(),
-        type: 'listing_unavailable_after_payment',
-        title: 'Sale on hold',
-        body: 'A payment for your listing could not be completed because it was already claimed by another buyer. Our team is reviewing it.',
-        data: { transactionId: transaction._id.toString() },
-      });
       return;
     }
 
@@ -584,30 +549,35 @@ export class TransactionsService {
     });
   }
 
-  // A checkout cancelled before Paystack confirmed it, whose payment then
-  // came through after the listing had already gone to someone else — the
-  // buyer gets everything back automatically, no fee (2026-10-09, explicit
-  // instruction). amountKobo omitted so Paystack refunds the full charge,
-  // processing fee included. If Paystack rejects the refund, the settlement
-  // lock is released so the hourly sweep tries again; refundAndRecord() still
-  // leaves a FAILED Refund row for the admin to see.
-  private async refundLatePaymentForGoneListing(
+  // A verified payment for a listing this buyer can no longer have — another
+  // buyer's payment claimed it first (two checkouts racing), or their own
+  // checkout was cancelled and the item sold before the late payment landed,
+  // or the listing was otherwise taken off sale. The buyer gets everything
+  // back automatically, no fee (2026-10-09, explicit instruction). amountKobo
+  // omitted so Paystack refunds the full charge, processing fee included. If
+  // Paystack rejects the refund, the settlement lock is released so the next
+  // webhook retry or hourly sweep tries again; refundAndRecord() still leaves
+  // a FAILED Refund row for the admin to see.
+  private async refundPaymentForUnavailableListing(
     transaction: TransactionDocument,
     verification: VerifyTransactionResult,
     paymentMethod: PaymentMethod,
     paystackFeeKobo: number,
+    wasCancelled: boolean,
     actor: string,
   ): Promise<void> {
     const transactionId = transaction._id.toString();
     const paidAmount = verification.amountKobo / 100;
+    const oldStatus = transaction.status;
     try {
       await this.refundAndRecord({
         transactionId,
         buyerId: transaction.buyer.toString(),
         reference: transaction.reference,
         amount: paidAmount,
-        reason:
-          'Paid after the checkout was cancelled, and the item had already been sold',
+        reason: wasCancelled
+          ? 'Paid after the checkout was cancelled, and the item had already been sold'
+          : 'The item was no longer available when the payment cleared',
         triggeredByType: 'system',
       });
     } catch (err) {
@@ -616,7 +586,7 @@ export class TransactionsService {
         { $unset: { paymentVerifiedAt: 1 } },
       );
       this.logger.error(
-        `[settle] late payment refund FAILED for transaction=${transactionId} reference=${transaction.reference} — will retry on the next sweep`,
+        `[settle] refund for unavailable listing FAILED for transaction=${transactionId} reference=${transaction.reference} — will retry`,
         err as Error,
       );
       return;
@@ -629,21 +599,28 @@ export class TransactionsService {
     transaction.paymentMethod = paymentMethod;
     await transaction.save();
     this.pushTransactionUpdate(transaction);
+    this.logger.warn(
+      `[settle] transaction=${transactionId} reference=${transaction.reference} paid but listing=${transaction.listing.toString()} was no longer available — refunded in full (₦${paidAmount})`,
+    );
 
     await this.audit(
       transactionId,
-      'late_payment_refunded',
+      wasCancelled
+        ? 'late_payment_refunded'
+        : 'listing_unavailable_after_payment',
       actor,
-      TransactionStatus.CANCELLED,
+      oldStatus,
       TransactionStatus.REFUNDED,
       { refundAmount: paidAmount },
     );
     await this.notificationsService.notify({
       recipientType: NotificationRecipientType.USER,
       recipientId: transaction.buyer.toString(),
-      type: 'purchase_cancelled_refunded',
+      type: wasCancelled
+        ? 'purchase_cancelled_refunded'
+        : 'listing_unavailable_after_payment',
       title: 'Payment refunded',
-      body: `Your payment came through after the item was sold to someone else — ₦${paidAmount.toLocaleString()} is being refunded to you in full.`,
+      body: `This item was no longer available when your payment came through — ₦${paidAmount.toLocaleString()} is being refunded to you in full.`,
       data: { transactionId },
     });
   }
@@ -3713,16 +3690,7 @@ export class TransactionsService {
       amount: number;
       count: number;
     }>([
-      {
-        $match: {
-          status: {
-            $in: [
-              TransactionStatus.ESCROW_ACTIVE,
-              TransactionStatus.AWAITING_INSPECTION,
-            ],
-          },
-        },
-      },
+      { $match: HELD_IN_ESCROW_FILTER },
       {
         $group: { _id: null, amount: { $sum: '$amount' }, count: { $sum: 1 } },
       },

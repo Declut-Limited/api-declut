@@ -13,6 +13,7 @@ import {
   UserDocument,
 } from './schemas/user.schema';
 import {
+  HELD_IN_ESCROW_FILTER,
   Transaction,
   TransactionDocument,
   TransactionStatus,
@@ -522,13 +523,10 @@ export class UsersService {
         this.transactionModel.aggregate<{ _id: null; total: number }>([
           {
             $match: {
-              $or: [{ buyer: uid }, { seller: uid }],
-              status: {
-                $in: [
-                  TransactionStatus.ESCROW_ACTIVE,
-                  TransactionStatus.AWAITING_INSPECTION,
-                ],
-              },
+              $and: [
+                { $or: [{ buyer: uid }, { seller: uid }] },
+                HELD_IN_ESCROW_FILTER,
+              ],
             },
           },
           { $group: { _id: null, total: { $sum: '$amount' } } },

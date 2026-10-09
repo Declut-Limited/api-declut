@@ -31,7 +31,11 @@ export class NotificationSetting {
   @Prop({ default: false })
   transactionUpdates: boolean;
 
-  @Prop({ default: false })
+  // Default true (opt-out) as of 2026-10-09, explicit instruction — it gates
+  // disputes, reports and refunds-after-a-dispute (see
+  // NOTIFICATION_SETTING_CATEGORY), and a never-configured user used to get
+  // no push or email for any of them.
+  @Prop({ default: true })
   disputeUpdates: boolean;
 
   // User-toggleable as of 2026-09-16 (explicit instruction) — default true
