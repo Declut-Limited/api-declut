@@ -1428,8 +1428,10 @@ export class ListingsService {
       recipientType: NotificationRecipientType.USER,
       recipientId: listing.seller.toString(),
       type: 'listing_unlisted',
-      title: 'Your listing was unlisted',
-      body: `Your listing "${listing.title}" was taken down by an admin.`,
+      // Wording changed from "unlisted" to "delisted" 2026-10-10 (explicit instruction); the
+      // `listing_unlisted` type key itself is unchanged — the app and saved settings key off it.
+      title: 'Your listing was delisted',
+      body: `Your listing "${listing.title}" was delisted by an admin.`,
     });
     this.appRealtimeService.emitListingStatusChange(
       id,

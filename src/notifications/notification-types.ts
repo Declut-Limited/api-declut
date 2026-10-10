@@ -38,7 +38,7 @@ export const NOTIFICATION_TYPES = {
     },
   },
   listing_unlisted: {
-    label: 'Listing unlisted',
+    label: 'Listing delisted',
     channels: {
       [NotificationRecipientType.USER]: ['push'] as NotificationChannel[],
       [NotificationRecipientType.ADMIN]: [] as NotificationChannel[],
