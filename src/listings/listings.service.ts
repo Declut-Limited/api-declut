@@ -712,7 +712,7 @@ export class ListingsService {
     return { results, total };
   }
 
-  // Recently posted feed — createdAt within the last 7 days, newest first. Now also accepting the shared categoryId/itemCondition/priceRange/address/state/area filters (no search).
+  // Recently posted feed — createdAt within the last postedWithinDays (default 14), newest first. Now also accepting the shared categoryId/itemCondition/priceRange/address/state/area filters (no search).
   // Excludes the caller's own listings — a seller browses everyone else's, and gets their own via GET /listings/mine.
   async recent(
     dto: RecentListingsDto,
@@ -727,7 +727,7 @@ export class ListingsService {
     const limit = dto.limit ?? 20;
 
     const since = new Date();
-    since.setDate(since.getDate() - RECENT_LISTINGS_DAYS);
+    since.setDate(since.getDate() - (dto.postedWithinDays ?? RECENT_LISTINGS_DAYS));
     const [refundedListingIds, deactivatedSellerIds] = await Promise.all([
       this.getRefundedListingIds(currentUserId),
       this.getDeactivatedSellerIds(),

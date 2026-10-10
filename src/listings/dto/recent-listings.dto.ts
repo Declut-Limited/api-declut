@@ -16,4 +16,13 @@ export class RecentListingsDto extends ListingExtraFiltersDto {
   @Min(1)
   @Max(50)
   limit?: number = 20;
+
+  // How far back "recently posted" reaches, in days (2026-10-10) — set from the app's Recently
+  // Posted filter. Omitted = RECENT_LISTINGS_DAYS (14) in listings.service.
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(90)
+  postedWithinDays?: number;
 }

@@ -1195,6 +1195,12 @@
                   "description": "Maximum price, >= 0."
                 },
                 {
+                  "key": "postedWithinDays",
+                  "value": "7",
+                  "disabled": true,
+                  "description": "How far back 'recently posted' reaches, in whole days, 1-90. Default 14 when omitted. Set from the app's Recently Posted filter (2026-10-10)."
+                },
+                {
                   "key": "page",
                   "value": "1",
                   "disabled": false,
@@ -1208,7 +1214,7 @@
                 }
               ]
             },
-            "description": "Active listings created in the last 7 days, newest first. The window is fixed (not admin-configurable). Excludes the caller's own listings — use 'Get my listings' for those. Also accepts categoryId/itemCondition/priceRange/address/state/area as additional filters (no search). Also excludes listings the caller previously had a purchase REFUNDED for. Also excludes any listing whose seller is currently deactivated (2026-09-19, explicit instruction) — the listing itself stays active, it just stops surfacing here while the seller is deactivated; admin views are unaffected."
+            "description": "Active listings created in the last postedWithinDays days (1-90, default 14), newest first. 2026-10-10: the window used to be fixed; the app's Recently Posted filter can now set it. Excludes the caller's own listings — use 'Get my listings' for those. Also accepts categoryId/itemCondition/priceRange/address/state/area as additional filters (no search). Also excludes listings the caller previously had a purchase REFUNDED for. Also excludes any listing whose seller is currently deactivated (2026-09-19, explicit instruction) — the listing itself stays active, it just stops surfacing here while the seller is deactivated; admin views are unaffected."
           },
           "response": []
         },
