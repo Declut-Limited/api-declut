@@ -1740,7 +1740,7 @@
                 }
               ]
             },
-            "description": ""
+            "description": "\n\n2026-10-10: on a paid transaction (not pending_payment/cancelled), the other party now carries `phoneNumber` — the buyer's number when the seller asks, the seller's when the buyer asks. Never your own, never on admin reads. Backs the mobile app's Contact Buyer."
           },
           "response": []
         },
@@ -1785,7 +1785,7 @@
                 }
               ]
             },
-            "description": "Buyer-only view of the caller's own purchases (distinct from \"List my transactions\", which mixes buyer and seller roles). Each result's populated listing includes mainImageUrl."
+            "description": "Buyer-only view of the caller's own purchases (distinct from \"List my transactions\", which mixes buyer and seller roles). Each result's populated listing includes mainImageUrl.\n\n2026-10-10: on a paid transaction (not pending_payment/cancelled), the other party now carries `phoneNumber` — the buyer's number when the seller asks, the seller's when the buyer asks. Never your own, never on admin reads. Backs the mobile app's Contact Buyer."
           },
           "response": []
         },
@@ -1811,7 +1811,7 @@
                 "{{transactionReference}}"
               ]
             },
-            "description": "Looks up by the human TXN-YYYY-##### reference instead of the internal id — used by the app's payment-callback deep-link route (cold-launch/backgrounded-app case), since Paystack's redirect carries its own reference, not the transaction's id. Same ownership check and response shape as GET /transactions/:id. Must be registered before :id in the controller — otherwise Nest would match \"by-reference\" as the id."
+            "description": "Looks up by the human TXN-YYYY-##### reference instead of the internal id — used by the app's payment-callback deep-link route (cold-launch/backgrounded-app case), since Paystack's redirect carries its own reference, not the transaction's id. Same ownership check and response shape as GET /transactions/:id. Must be registered before :id in the controller — otherwise Nest would match \"by-reference\" as the id.\n\n2026-10-10: on a paid transaction (not pending_payment/cancelled), the other party now carries `phoneNumber` — the buyer's number when the seller asks, the seller's when the buyer asks. Never your own, never on admin reads. Backs the mobile app's Contact Buyer."
           },
           "response": []
         },
@@ -1840,7 +1840,7 @@
                     "{{transactionId}}"
                   ]
                 },
-                "description": "Response now includes progress: the transaction's own full audit-log timeline, oldest-first, each entry {event, label, oldState, newState, createdAt} — backs a progress/timeline UI. Buyer-or-seller ownership enforced (403 otherwise)."
+                "description": "Response now includes progress: the transaction's own full audit-log timeline, oldest-first, each entry {event, label, oldState, newState, createdAt} — backs a progress/timeline UI. Buyer-or-seller ownership enforced (403 otherwise).\n\n2026-10-10: on a paid transaction (not pending_payment/cancelled), the other party now carries `phoneNumber` — the buyer's number when the seller asks, the seller's when the buyer asks. Never your own, never on admin reads. Backs the mobile app's Contact Buyer."
               },
               "response": []
             },

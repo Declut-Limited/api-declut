@@ -10,6 +10,9 @@ export interface PopulatedParty {
   accountStatus: string;
   slug?: string;
   company?: string;
+  // Populated so a user-facing transaction read can hand the other party's number to the
+  // counterpart (see TransactionsService.toResponseShape()) — never output by shapeParty() itself.
+  phone?: string;
 }
 
 // rolePlayed is derived from which field is being shaped, not stored.

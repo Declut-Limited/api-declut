@@ -89,7 +89,7 @@ interface PaystackWebhookPayload {
   data?: { reference?: string; transfer_code?: string; id?: number | string };
 }
 
-const PARTY_POPULATE_FIELDS = 'name email accountStatus slug company';
+const PARTY_POPULATE_FIELDS = 'name email accountStatus slug company phone';
 const LISTING_POPULATE_FIELDS = 'title mainImageUrl slug';
 // Detail-view-only (GET /admin/transactions/:idOrSlug) — deliberately not
 // used by the list/user-facing paths above, same "detail view gets extra
@@ -3629,11 +3629,26 @@ export class TransactionsService {
   ) {
     const buyer = transaction.buyer as unknown as PopulatedParty | null;
     const seller = transaction.seller as unknown as PopulatedParty | null;
-    void requesterId;
 
     const obj = transaction.toObject() as unknown as Record<string, unknown>;
-    obj.buyer = shapeParty(buyer, 'buyer');
-    obj.seller = shapeParty(seller, 'seller');
+    const shapedBuyer = shapeParty(buyer, 'buyer');
+    const shapedSeller = shapeParty(seller, 'seller');
+    // The other party's phone number, as `phoneNumber` (2026-10-10, explicit instruction — the
+    // mobile app's Contact Buyer calls it). Only the counterpart's — never your own echoed back,
+    // never on admin reads — and only once money has actually moved, so an abandoned or unpaid
+    // checkout never hands a seller the would-be buyer's number.
+    const paid = ![
+      TransactionStatus.PENDING_PAYMENT,
+      TransactionStatus.CANCELLED,
+    ].includes(transaction.status);
+    if (paid && shapedBuyer && seller?._id?.toString() === requesterId) {
+      shapedBuyer.phoneNumber = buyer?.phone ?? null;
+    }
+    if (paid && shapedSeller && buyer?._id?.toString() === requesterId) {
+      shapedSeller.phoneNumber = seller?.phone ?? null;
+    }
+    obj.buyer = shapedBuyer;
+    obj.seller = shapedSeller;
     // Referral-link fields are only ever surfaced via the referral module's
     // own admin views — never on an ordinary transaction read.
     delete obj.referralCampaign;
