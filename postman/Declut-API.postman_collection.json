@@ -2496,7 +2496,7 @@
                 "reviews"
               ]
             },
-            "description": "Buyer reviews the seller of a listing they bought. Requires a COMPLETED transaction for this exact listing. One review per listing (a listing is only ever bought once).",
+            "description": "Buyer reviews the seller of a listing they bought. Requires a COMPLETED transaction for this exact listing. One review per listing (a listing is only ever bought once). 2026-10-10: the response is now the same shape as 'Get my review for a listing' (populated reviewer/listing) instead of the raw document; and once the review is saved, a failure recalculating the seller's rating/trust score is logged rather than returned as an error.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"listingId\": \"{{listingId}}\",\n  \"rating\": 5,\n  \"comment\": \"Great transaction, item as described!\"\n}",

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -42,6 +43,8 @@ interface PopulatedReviewListing {
 
 @Injectable()
 export class ReviewsService {
+  private readonly logger = new Logger(ReviewsService.name);
+
   constructor(
     @InjectModel(Review.name) private reviewModel: Model<ReviewDocument>,
     private readonly transactionsService: TransactionsService,
@@ -82,7 +85,17 @@ export class ReviewsService {
       throw err;
     }
 
-    await this.recalculate(purchase.sellerId);
+    // The review is already saved at this point — a failure updating the seller's rating/trust
+    // score must not turn this into an error response (2026-10-10): the app would show "could not
+    // submit", and a retry would then hit the 409 above for a review that does exist.
+    try {
+      await this.recalculate(purchase.sellerId);
+    } catch (err) {
+      this.logger.error(
+        `Rating recalculation failed for seller ${purchase.sellerId} after review ${review._id.toString()}`,
+        err as Error,
+      );
+    }
 
     await this.notificationsService.notifyUser(purchase.sellerId, {
       title: 'New review received',
@@ -90,7 +103,13 @@ export class ReviewsService {
       data: { type: 'review_received', reviewId: review._id.toString() },
     });
 
-    return review.toObject();
+    // Same shape as GET /reviews/listing/:listingId (2026-10-10) — it used to be the raw document,
+    // so the app couldn't treat the two alike.
+    await review.populate([
+      { path: 'reviewer', select: REVIEWER_POPULATE_FIELDS },
+      { path: 'listing', select: REVIEW_LISTING_POPULATE_FIELDS },
+    ]);
+    return this.shapeReview(review);
   }
 
   // The caller's own reviews left for this seller — potentially more than
