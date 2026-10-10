@@ -1253,6 +1253,32 @@
               "response": []
             },
             {
+              "name": "Get delist reason",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/listings/{{listingId}}/delist-reason",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "listings",
+                    "{{listingId}}",
+                    "delist-reason"
+                  ]
+                },
+                "description": "Added 2026-10-10. Owner-only (403 for anyone else), raw listing id only. Returns { reason, note, delistedAt } from the latest ListingDelist record — backs the app's Delist Details screen. 400 if the listing isn't currently delisted. A listing delisted before this record existed returns all nulls (the app shows default copy). Delist records are their own collection, never cleared on relist."
+              },
+              "response": []
+            },
+            {
               "name": "Register listing view",
               "request": {
                 "method": "POST",
@@ -4274,8 +4300,22 @@
                             "key": "Authorization",
                             "value": "Bearer {{adminAccessToken}}",
                             "type": "text"
+                          },
+                          {
+                            "key": "Content-Type",
+                            "value": "application/json",
+                            "type": "text"
                           }
                         ],
+                        "body": {
+                          "mode": "raw",
+                          "raw": "{\n  \"reason\": \"Prohibited item condition\",\n  \"note\": \"The listing didn't meet our marketplace guidelines.\"\n}",
+                          "options": {
+                            "raw": {
+                              "language": "json"
+                            }
+                          }
+                        },
                         "url": {
                           "raw": "{{baseUrl}}/admin/listings/{{listingId}}/delist",
                           "host": [
@@ -4288,7 +4328,7 @@
                             "delist"
                           ]
                         },
-                        "description": "Admin-initiated hide, distinct from flag/archive. Only an active listing can be delisted."
+                        "description": "Admin-initiated hide, distinct from flag/archive. Only an active listing can be delisted. As of 2026-10-10 the body is required: `reason` must be one of Prohibited item | Prohibited item condition | Counterfeit or fake item | Misleading description or photos | Inappropriate content | Duplicate listing | Suspected scam or fraud | Other policy violation (400 otherwise); `note` is optional (max 500 chars). Saved as its own ListingDelist record (not on the listing), which the seller reads via GET /listings/:id/delist-reason. A dispute-driven delist (delist-and-refund) records reason 'Buyer report upheld' automatically. Relist doesn't delete the record."
                       },
                       "response": []
                     }

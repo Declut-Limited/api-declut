@@ -14,6 +14,12 @@ import {
   MediaAsset,
 } from './schemas/listing.schema';
 import {
+  ListingDelist,
+  ListingDelistDocument,
+  ListingDelistSource,
+} from './schemas/listing-delist.schema';
+import { DISPUTE_DELIST_REASON } from '../admin/dto/delist-listing.dto';
+import {
   ListingView,
   ListingViewDocument,
 } from './schemas/listing-view.schema';
@@ -74,6 +80,8 @@ export class ListingsService {
     @InjectModel(Listing.name) private listingModel: Model<ListingDocument>,
     @InjectModel(ListingView.name)
     private listingViewModel: Model<ListingViewDocument>,
+    @InjectModel(ListingDelist.name)
+    private listingDelistModel: Model<ListingDelistDocument>,
     @InjectModel(Transaction.name)
     private transactionModel: Model<TransactionDocument>,
     @InjectModel(User.name) private userModel: Model<UserDocument>,
@@ -1384,7 +1392,12 @@ export class ListingsService {
     return listing;
   }
 
-  async delist(id: string, adminId: string): Promise<ListingDocument> {
+  async delist(
+    id: string,
+    adminId: string,
+    reason: string,
+    note?: string,
+  ): Promise<ListingDocument> {
     const listing = await this.adminFindById(id);
     if (listing.status !== ListingStatus.ACTIVE) {
       throw new BadRequestException('Only an active listing can be delisted');
@@ -1392,6 +1405,15 @@ export class ListingsService {
     const oldState = listing.status;
     listing.status = ListingStatus.DELISTED;
     await listing.save();
+    const delistNote = note?.trim() || null;
+    await this.listingDelistModel.create({
+      listing: listing._id,
+      seller: listing.seller,
+      delistedBy: adminId,
+      source: ListingDelistSource.ADMIN,
+      reason,
+      note: delistNote,
+    });
     await this.auditLogService.record({
       entityType: 'listing',
       entityId: id,
@@ -1399,6 +1421,7 @@ export class ListingsService {
       actor: adminId,
       oldState,
       newState: listing.status,
+      metadata: { reason, note: delistNote },
     });
 
     await this.notificationsService.notify({
@@ -1429,6 +1452,14 @@ export class ListingsService {
     const oldState = listing.status;
     listing.status = ListingStatus.DELISTED;
     await listing.save();
+    await this.listingDelistModel.create({
+      listing: listing._id,
+      seller: listing.seller,
+      delistedBy: adminId,
+      source: ListingDelistSource.DISPUTE,
+      reason: DISPUTE_DELIST_REASON,
+      note: "A buyer's report on this listing was reviewed and upheld by our team.",
+    });
     await this.auditLogService.record({
       entityType: 'listing',
       entityId: id,
@@ -1450,6 +1481,34 @@ export class ListingsService {
       listing.seller.toString(),
       { status: listing.status, oldStatus: oldState },
     );
+  }
+
+  // Seller-facing — backs the app's Delist Details screen. Owner-only
+  // (findOwned 403s anyone else), and only while the listing is actually
+  // delisted: a relisted listing's old delist records stay on file but
+  // aren't served here. A delisted listing with no record (delisted before
+  // 2026-10-10) returns nulls so the app falls back to its default copy.
+  async getDelistReason(
+    id: string,
+    userId: string,
+  ): Promise<{
+    reason: string | null;
+    note: string | null;
+    delistedAt: Date | null;
+  }> {
+    const listing = await this.findOwned(id, userId);
+    if (listing.status !== ListingStatus.DELISTED) {
+      throw new BadRequestException('This listing is not delisted');
+    }
+    const latest = await this.listingDelistModel
+      .findOne({ listing: listing._id })
+      .sort({ createdAt: -1 })
+      .exec();
+    return {
+      reason: latest?.reason ?? null,
+      note: latest?.note ?? null,
+      delistedAt: latest?.createdAt ?? null,
+    };
   }
 
   async relist(id: string, adminId: string): Promise<ListingDocument> {

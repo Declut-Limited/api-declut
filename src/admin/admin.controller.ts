@@ -21,6 +21,7 @@ import {
 } from './dto/admin-list.dto';
 import { SuspendUserDto } from './dto/suspend-user.dto';
 import { BanUserDto } from './dto/ban-user.dto';
+import { DelistListingDto } from './dto/delist-listing.dto';
 import { ReactivateAccountDto } from './dto/reactivate-account.dto';
 import { UnsuspendUserDto } from './dto/unsuspend-user.dto';
 import { EmailSellerDto } from './dto/email-seller.dto';
@@ -250,8 +251,9 @@ export class AdminController {
   delistListing(
     @CurrentAdmin() admin: AdminAccessTokenPayload,
     @Param('id') id: string,
+    @Body() dto: DelistListingDto,
   ) {
-    return this.adminService.delistListing(id, admin.sub);
+    return this.adminService.delistListing(id, admin.sub, dto);
   }
 
   @Patch('listings/:id/relist')

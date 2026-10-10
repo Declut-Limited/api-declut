@@ -87,6 +87,16 @@ export class ListingsController {
     return this.listingsService.findByIdForDisplay(idOrSlug, user.sub);
   }
 
+  // Owner-only — why an admin delisted this listing (latest delist record).
+  // Backs the app's Delist Details screen. Added 2026-10-10.
+  @Get(':id/delist-reason')
+  getDelistReason(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param('id') id: string,
+  ) {
+    return this.listingsService.getDelistReason(id, user.sub);
+  }
+
   // Registers a view — one counted per (viewer, listing) per hour; repeat
   // opens within the window don't increment. Called separately from the
   // detail GET above so the client controls exactly when a "view" happened.

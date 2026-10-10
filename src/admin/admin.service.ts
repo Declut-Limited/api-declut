@@ -39,6 +39,7 @@ import {
 import { SuspendUserDto } from './dto/suspend-user.dto';
 import { BanUserDto } from './dto/ban-user.dto';
 import { EmailSellerDto } from './dto/email-seller.dto';
+import { DelistListingDto } from './dto/delist-listing.dto';
 import { CreateTransactionNoteDto } from './dto/create-transaction-note.dto';
 import { UpdateTransactionNoteDto } from './dto/update-transaction-note.dto';
 import { SendInspectionReminderDto } from './dto/send-inspection-reminder.dto';
@@ -615,8 +616,8 @@ export class AdminService {
     return { sent: true };
   }
 
-  delistListing(id: string, adminId: string) {
-    return this.listingsService.delist(id, adminId);
+  delistListing(id: string, adminId: string, dto: DelistListingDto) {
+    return this.listingsService.delist(id, adminId, dto.reason, dto.note);
   }
 
   relistListing(id: string, adminId: string) {

@@ -3,6 +3,10 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { Listing, ListingSchema } from './schemas/listing.schema';
 import { ListingView, ListingViewSchema } from './schemas/listing-view.schema';
 import {
+  ListingDelist,
+  ListingDelistSchema,
+} from './schemas/listing-delist.schema';
+import {
   Transaction,
   TransactionSchema,
 } from '../transactions/schemas/transaction.schema';
@@ -20,6 +24,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     MongooseModule.forFeature([
       { name: Listing.name, schema: ListingSchema },
       { name: ListingView.name, schema: ListingViewSchema },
+      { name: ListingDelist.name, schema: ListingDelistSchema },
       // Registered directly (not via TransactionsModule, which already
       // imports ListingsModule and would cycle) — same workaround
       // UsersModule/BankAccountsModule already use for this exact pair.
