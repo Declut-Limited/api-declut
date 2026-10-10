@@ -14,6 +14,7 @@ import { EmailService } from '../email/email.service';
 import { FcmService, PushNotificationPayload } from './fcm.service';
 import { NotificationsGateway } from './notifications.gateway';
 import { AppRealtimeService } from './app-realtime.service';
+import { NotificationActionsService } from './notification-actions.service';
 import { Admin, AdminDocument } from '../admin-auth/schemas/admin.schema';
 import {
   Notification,
@@ -78,6 +79,7 @@ export class NotificationsService {
     // forwardRef()s NotificationsService — this closes the loop.
     @Inject(forwardRef(() => AuditLogService))
     private readonly auditLogService: AuditLogService,
+    private readonly notificationActionsService: NotificationActionsService,
   ) {}
 
   async registerToken(userId: string, token: string): Promise<void> {
@@ -145,10 +147,25 @@ export class NotificationsService {
         : undefined,
     });
 
+    // Where the app should open on a tap (2026-10-10) — users only; see NotificationActionsService.
+    // A lookup failure just means no link, never a failed notification.
+    const action =
+      params.recipientType === NotificationRecipientType.USER
+        ? await this.notificationActionsService
+            .resolveOne(params.recipientId, params)
+            .catch(() => null)
+        : null;
+
     const channelUpdate: Record<string, ChannelOutcome> = {};
 
     if (channels.includes('push')) {
-      channelUpdate.push = await this.attemptPush(params);
+      channelUpdate.push = await this.attemptPush({
+        ...params,
+        data: {
+          ...params.data,
+          ...this.notificationActionsService.toPushData(action),
+        },
+      });
     }
     if (channels.includes('email')) {
       channelUpdate.email = await this.attemptEmail(params);
@@ -190,6 +207,7 @@ export class NotificationsService {
         title: params.title,
         message: params.body,
         data: params.data,
+        action,
         channels: channelUpdate,
         read: false,
         createdAt: doc.createdAt,
@@ -241,6 +259,29 @@ export class NotificationsService {
       this.notificationModel.countDocuments({ ...baseFilter, read: false }),
     ]);
     return { results, total, unreadCount, page, limit };
+  }
+
+  // GET /notifications (users only): listForRecipient plus each row's `action` — where the app
+  // opens on a tap, or null (2026-10-10). The admin list is unchanged.
+  async listForUser(userId: string, page: number, limit: number, read?: boolean) {
+    const result = await this.listForRecipient(
+      NotificationRecipientType.USER,
+      userId,
+      page,
+      limit,
+      read,
+    );
+    const actions = await this.notificationActionsService.resolve(
+      userId,
+      result.results,
+    );
+    return {
+      ...result,
+      results: result.results.map((n, i) => ({
+        ...n.toJSON(),
+        action: actions[i],
+      })),
+    };
   }
 
   // Lightweight badge count — no rows fetched, just the number.

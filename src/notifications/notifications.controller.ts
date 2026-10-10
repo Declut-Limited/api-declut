@@ -35,8 +35,7 @@ export class NotificationsController {
     @CurrentUser() user: AccessTokenPayload,
     @Query() dto: ListNotificationsDto,
   ) {
-    return this.notificationsService.listForRecipient(
-      NotificationRecipientType.USER,
+    return this.notificationsService.listForUser(
       user.sub,
       dto.page ?? 1,
       dto.limit ?? 20,

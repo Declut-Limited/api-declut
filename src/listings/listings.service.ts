@@ -1471,6 +1471,8 @@ export class ListingsService {
       // `listing_unlisted` type key itself is unchanged — the app and saved settings key off it.
       title: 'Your listing was delisted',
       body: `Your listing "${listing.title}" was delisted by an admin.`,
+      // Lets the app's notification link open the delist reason (2026-10-10).
+      data: { listingId: id },
     });
     this.appRealtimeService.emitListingStatusChange(
       id,
@@ -1516,6 +1518,8 @@ export class ListingsService {
       type: 'listing_unlisted',
       title: 'Your listing was delisted',
       body: `Your listing "${listing.title}" was delisted after a buyer's report was upheld.`,
+      // Lets the app's notification link open the delist reason (2026-10-10).
+      data: { listingId: id },
     });
     this.appRealtimeService.emitListingStatusChange(
       id,

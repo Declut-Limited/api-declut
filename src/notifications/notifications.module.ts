@@ -14,6 +14,12 @@ import {
   NotificationBroadcastSchema,
 } from './schemas/notification-broadcast.schema';
 import { NotificationsService } from './notifications.service';
+import { NotificationActionsService } from './notification-actions.service';
+import {
+  Transaction,
+  TransactionSchema,
+} from '../transactions/schemas/transaction.schema';
+import { Report, ReportSchema } from '../reports/schemas/report.schema';
 import { NotificationsGateway } from './notifications.gateway';
 import { UserEventsGateway } from './user-events.gateway';
 import { AppRealtimeService } from './app-realtime.service';
@@ -36,6 +42,10 @@ import { NotificationSettingsModule } from '../notification-settings/notificatio
       // Registered directly (not via UsersModule/AdminAuthModule) — same workaround CategoriesService/TrustScoreService/AuditLogService already use — needed here for the bulk-broadcast processor's cursor.
       { name: User.name, schema: UserSchema },
       { name: Admin.name, schema: AdminSchema },
+      // Same direct-registration workaround, for NotificationActionsService's lookups — the
+      // Transactions/Reports modules both import this one, so importing them back would cycle.
+      { name: Transaction.name, schema: TransactionSchema },
+      { name: Report.name, schema: ReportSchema },
     ]),
     BullModule.registerQueue({ name: BROADCAST_QUEUE }),
     UsersModule,
@@ -55,6 +65,7 @@ import { NotificationSettingsModule } from '../notification-settings/notificatio
   ],
   providers: [
     NotificationsService,
+    NotificationActionsService,
     NotificationsGateway,
     UserEventsGateway,
     AppRealtimeService,

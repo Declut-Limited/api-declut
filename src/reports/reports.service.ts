@@ -329,6 +329,8 @@ export class ReportsService {
         type: 'report_resolved',
         title: 'Your report has been resolved',
         body: `Your report (${report.slug}) has been resolved.`,
+        // Lets the app's notification link open the purchase it was about (2026-10-10).
+        data: { reportId: report._id.toString() },
       });
     }
 

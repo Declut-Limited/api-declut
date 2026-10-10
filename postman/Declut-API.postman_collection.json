@@ -2845,7 +2845,7 @@
                 }
               ]
             },
-            "description": "Paginated (page/limit query params). Returns { results, total, unreadCount, page, limit }. read=true/false narrows results/total; unreadCount is always the true unread total regardless of the filter."
+            "description": "Paginated (page/limit query params). Returns { results, total, unreadCount, page, limit }. read=true/false narrows results/total; unreadCount is always the true unread total regardless of the filter. 2026-10-10: each result also has `action` — where the app opens on a tap, or null — { screen, label, params }. screen is one of purchase { listingId, transactionId } (buyer's purchase view), transaction { transactionId } (seller's transaction view), report { listingId } (seller's report view), delist { listingId }, campaign { idOrCode }, participation { idOrCode }; label is the link text (e.g. 'Open transaction'). Worked out when read, so older notifications get it too. The same object rides on the realtime 'notification' event, and on push as flat data strings actionScreen / actionLabel / actionParams (JSON)."
           },
           "response": []
         },
