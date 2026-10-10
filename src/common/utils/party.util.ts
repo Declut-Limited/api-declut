@@ -13,6 +13,7 @@ export interface PopulatedParty {
   // Populated so a user-facing transaction read can hand the other party's number to the
   // counterpart (see TransactionsService.toResponseShape()) — never output by shapeParty() itself.
   phone?: string;
+  profileImage?: string;
 }
 
 // rolePlayed is derived from which field is being shaped, not stored.
@@ -31,5 +32,8 @@ export function shapeParty(
     rolePlayed,
     slug: user.slug,
     company: user.company,
+    // Only when the caller's populate selected it (2026-10-10 — transaction reads do, for the
+    // seller's buyer card); absent otherwise rather than null.
+    ...(user.profileImage !== undefined && { profileImage: user.profileImage }),
   };
 }

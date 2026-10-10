@@ -98,7 +98,8 @@ const REPORT_UNLOCK_AFTER_ARRIVAL_MINUTES = 45;
 const ARRIVAL_REMINDER_COOLDOWN_MINUTES = 15;
 const MINUTE_MS = 60 * 1000;
 
-const PARTY_POPULATE_FIELDS = 'name email accountStatus slug company phone';
+const PARTY_POPULATE_FIELDS =
+  'name email accountStatus slug company phone profileImage';
 const LISTING_POPULATE_FIELDS = 'title mainImageUrl slug';
 // Detail-view-only (GET /admin/transactions/:idOrSlug) — deliberately not
 // used by the list/user-facing paths above, same "detail view gets extra
