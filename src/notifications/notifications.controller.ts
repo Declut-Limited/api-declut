@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -72,5 +73,32 @@ export class NotificationsController {
       id,
     );
     return { read: true };
+  }
+
+  @Patch(':id/unread')
+  async markUnread(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param('id') id: string,
+  ) {
+    await this.notificationsService.markUnread(
+      NotificationRecipientType.USER,
+      user.sub,
+      id,
+    );
+    return { read: false };
+  }
+
+  // Hides it from the caller's list — see NotificationsService.hideForRecipient().
+  @Delete(':id')
+  async remove(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param('id') id: string,
+  ) {
+    await this.notificationsService.hideForRecipient(
+      NotificationRecipientType.USER,
+      user.sub,
+      id,
+    );
+    return { deleted: true };
   }
 }

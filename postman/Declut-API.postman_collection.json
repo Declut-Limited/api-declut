@@ -2933,6 +2933,57 @@
                 "description": "Scoped to the caller — marking another user's notification is a no-op, not a 403/404 leak."
               },
               "response": []
+            },
+            {
+              "name": "Mark notification unread",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/notifications/{{notificationId}}/unread",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "notifications",
+                    "{{notificationId}}",
+                    "unread"
+                  ]
+                },
+                "description": "Sets read back to false (and clears readAt). Returns { read: false }. Scoped to the caller like 'Mark notification read' — another user's id is a no-op. Backs the mobile app's 'Mark as unread'. Added 2026-10-10."
+              },
+              "response": []
+            },
+            {
+              "name": "Delete notification",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/notifications/{{notificationId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "notifications",
+                    "{{notificationId}}"
+                  ]
+                },
+                "description": "Removes it from the caller's list, the unread count and 'mark all read'. Returns { deleted: true }. Hidden, not removed: sets hiddenByRecipientAt, so the admin transaction communication log still shows the attempt. Scoped to the caller — another user's id is a no-op. Backs the mobile app's 'Delete Notification'. Added 2026-10-10."
+              },
+              "response": []
             }
           ]
         }

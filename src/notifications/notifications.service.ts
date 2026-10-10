@@ -245,6 +245,8 @@ export class NotificationsService {
     const baseFilter = {
       recipientType,
       recipient: new Types.ObjectId(recipientId),
+      // Ones the recipient deleted (hideForRecipient) — gone from the list and every count.
+      hiddenByRecipientAt: { $exists: false },
     };
     const listFilter =
       read === undefined ? baseFilter : { ...baseFilter, read };
@@ -293,6 +295,7 @@ export class NotificationsService {
       recipientType,
       recipient: new Types.ObjectId(recipientId),
       read: false,
+      hiddenByRecipientAt: { $exists: false },
     });
   }
 
@@ -312,6 +315,42 @@ export class NotificationsService {
     );
   }
 
+  // The app's "Mark as unread" (2026-10-10, explicit instruction) — markRead's counterpart.
+  async markUnread(
+    recipientType: NotificationRecipientType,
+    recipientId: string,
+    notificationId: string,
+  ): Promise<void> {
+    if (!Types.ObjectId.isValid(notificationId)) return;
+    await this.notificationModel.updateOne(
+      {
+        _id: notificationId,
+        recipientType,
+        recipient: new Types.ObjectId(recipientId),
+      },
+      { $set: { read: false }, $unset: { readAt: 1 } },
+    );
+  }
+
+  // The app's "Delete Notification" (2026-10-10, explicit instruction). Hidden from the recipient
+  // only, never removed: the admin transaction communication log (findForTransaction) still reads
+  // every attempt. Scoped to the caller like markRead — someone else's id is a no-op.
+  async hideForRecipient(
+    recipientType: NotificationRecipientType,
+    recipientId: string,
+    notificationId: string,
+  ): Promise<void> {
+    if (!Types.ObjectId.isValid(notificationId)) return;
+    await this.notificationModel.updateOne(
+      {
+        _id: notificationId,
+        recipientType,
+        recipient: new Types.ObjectId(recipientId),
+      },
+      { $set: { hiddenByRecipientAt: new Date() } },
+    );
+  }
+
   // Marks every unread notification for this recipient as read in one go —
   // backs the mobile app's "mark all as read" header button. Returns how many
   // changed. Added 2026-10-09, explicit instruction.
@@ -324,6 +363,7 @@ export class NotificationsService {
         recipientType,
         recipient: new Types.ObjectId(recipientId),
         read: false,
+        hiddenByRecipientAt: { $exists: false },
       },
       { $set: { read: true, readAt: new Date() } },
     );

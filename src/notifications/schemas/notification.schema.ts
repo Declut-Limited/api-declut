@@ -72,6 +72,11 @@ export class Notification {
   @Prop()
   readAt?: Date;
 
+  // Set when the recipient deletes it from their list (2026-10-10) — kept, not removed, so the
+  // admin transaction communication log still has it. See hideForRecipient().
+  @Prop()
+  hiddenByRecipientAt?: Date;
+
   createdAt: Date;
 }
 
