@@ -278,6 +278,37 @@ export class Transaction {
   @Prop()
   arrivedForInspectionAt?: Date;
 
+  // Where the buyer's phone said they were when they marked arrived (2026-10-10, explicit
+  // instruction) — evidence for a later dispute, never shown to the seller (stripped in
+  // toResponseShape). Absent when the buyer declined location twice; the arrival still counts.
+  @Prop({
+    type: {
+      lat: { type: Number, required: true },
+      lng: { type: Number, required: true },
+      accuracyMeters: { type: Number },
+    },
+    _id: false,
+  })
+  buyerArrivalLocation?: { lat: number; lng: number; accuracyMeters?: number };
+
+  // The seller's side of the meetup (2026-10-10, explicit instruction): set once by
+  // confirmBuyerArrival(). confirmReceipt() needs it; reportPurchase() needs it OR
+  // REPORT_UNLOCK_AFTER_ARRIVAL_MINUTES since the buyer marked arrived.
+  @Prop({ default: false })
+  sellerConfirmedArrival: boolean;
+
+  @Prop()
+  sellerConfirmedArrivalAt?: Date;
+
+  // Last "Remind Seller" push (remindSellerOfArrival) — rate-limits the next one.
+  @Prop()
+  sellerArrivalReminderSentAt?: Date;
+
+  // When the buyer was told they can now report (the seller hadn't confirmed in time) — so the
+  // sweep sends that push only once. See notifyUnconfirmedArrivals().
+  @Prop()
+  arrivalReportUnlockNotifiedAt?: Date;
+
   createdAt: Date;
   updatedAt: Date;
 }

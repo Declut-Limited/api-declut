@@ -15,13 +15,15 @@ import { Report, ReportDocument } from '../reports/schemas/report.schema';
 //   delist        seller's delist reason     { listingId }
 //   campaign      referral campaign detail   { idOrCode }
 //   participation my campaign participation  { idOrCode }
+//   myListing     seller's own listing view  { listingId } (2026-10-10 — where they confirm arrival)
 export type NotificationActionScreen =
   | 'purchase'
   | 'transaction'
   | 'report'
   | 'delist'
   | 'campaign'
-  | 'participation';
+  | 'participation'
+  | 'myListing';
 
 export interface NotificationAction {
   screen: NotificationActionScreen;
@@ -63,6 +65,13 @@ const TRANSACTION_LABELS: Record<string, { buyer: string; seller: string }> = {
     seller: 'Open transaction',
   },
   purchase_reported: { buyer: 'View report', seller: 'Respond to report' },
+  inspection_started: { buyer: 'Open transaction', seller: 'Confirm arrival' },
+  arrival_reminder: { buyer: 'Open transaction', seller: 'Confirm arrival' },
+  arrival_confirmed: { buyer: 'Inspect item', seller: 'Open transaction' },
+  arrival_report_unlocked: {
+    buyer: 'Report a problem',
+    seller: 'Open transaction',
+  },
   dispute_raised: { buyer: 'Open dispute', seller: 'Open dispute' },
   funds_released: { buyer: 'View details', seller: 'View details' },
   admin_released: { buyer: 'View details', seller: 'View details' },
@@ -156,14 +165,22 @@ export class NotificationActionsService {
         if (tx.seller.toString() === recipientId) {
           const label =
             TRANSACTION_LABELS[n.type]?.seller ?? DEFAULT_TRANSACTION_LABEL;
-          // A buyer's report is answered from the seller's report screen, not the transaction.
-          return n.type === 'purchase_reported'
-            ? { screen: 'report', label, params: { listingId } }
-            : {
-                screen: 'transaction',
-                label,
-                params: { transactionId: data.transactionId },
-              };
+          // A buyer's report is answered from the seller's report screen, and a buyer's arrival
+          // is confirmed from the seller's own listing page — not the transaction view.
+          if (n.type === 'purchase_reported') {
+            return { screen: 'report', label, params: { listingId } };
+          }
+          if (
+            n.type === 'inspection_started' ||
+            n.type === 'arrival_reminder'
+          ) {
+            return { screen: 'myListing', label, params: { listingId } };
+          }
+          return {
+            screen: 'transaction',
+            label,
+            params: { transactionId: data.transactionId },
+          };
         }
         return null;
       }

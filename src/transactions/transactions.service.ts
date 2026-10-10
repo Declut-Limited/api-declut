@@ -89,6 +89,15 @@ interface PaystackWebhookPayload {
   data?: { reference?: string; transfer_code?: string; id?: number | string };
 }
 
+// Meetup arrival (2026-10-10, explicit instruction). Once the buyer marks arrived, the seller has
+// ARRIVAL_DEADLINE_MINUTES to confirm (shown to both as the "arrival deadline"). If they haven't
+// confirmed REPORT_UNLOCK_AFTER_ARRIVAL_MINUTES after the buyer arrived, the buyer is pushed and
+// can report the purchase. "Remind Seller" is limited to one push per cooldown.
+const ARRIVAL_DEADLINE_MINUTES = 60;
+const REPORT_UNLOCK_AFTER_ARRIVAL_MINUTES = 45;
+const ARRIVAL_REMINDER_COOLDOWN_MINUTES = 15;
+const MINUTE_MS = 60 * 1000;
+
 const PARTY_POPULATE_FIELDS = 'name email accountStatus slug company phone';
 const LISTING_POPULATE_FIELDS = 'title mainImageUrl slug';
 // Detail-view-only (GET /admin/transactions/:idOrSlug) — deliberately not
@@ -659,10 +668,16 @@ export class TransactionsService {
     }
     // Explicit instruction, 2026-09-27: the buyer must have marked
     // themselves as arrived for inspection before they can confirm receipt —
-    // see markArrivedForInspection().
+    // see markArrivedForInspection(). And since 2026-10-10 the seller must
+    // have confirmed that arrival too (confirmBuyerArrival()).
     if (!transaction.markedAsArrived) {
       throw new BadRequestException(
         'You must mark yourself as arrived for inspection before confirming receipt',
+      );
+    }
+    if (!transaction.sellerConfirmedArrival) {
+      throw new BadRequestException(
+        'The seller needs to confirm your arrival before you can confirm the item',
       );
     }
 
@@ -838,7 +853,13 @@ export class TransactionsService {
   // once the inspection window has already ended (inspectionPeriodEnded) —
   // same "must act while the window is still open" rule
   // addInspectionExtension() already enforces.
-  async markArrivedForInspection(transactionId: string, buyerId: string) {
+  // 2026-10-10: also stores the buyer's location when the app sends one (evidence for a later
+  // dispute), and the seller's push now asks them to confirm the arrival (confirmBuyerArrival).
+  async markArrivedForInspection(
+    transactionId: string,
+    buyerId: string,
+    location?: { lat: number; lng: number; accuracyMeters?: number },
+  ) {
     const transaction = await this.findRaw(transactionId);
     if (transaction.buyer.toString() !== buyerId) {
       throw new ForbiddenException(
@@ -865,6 +886,7 @@ export class TransactionsService {
     transaction.markedAsArrived = true;
     transaction.arrivedForInspectionAt = new Date();
     transaction.inspectionStatus = InspectionStatus.COMPLETED;
+    if (location) transaction.buyerArrivalLocation = location;
     await transaction.save();
 
     await this.audit(
@@ -879,15 +901,193 @@ export class TransactionsService {
       recipientType: NotificationRecipientType.USER,
       recipientId: transaction.seller.toString(),
       type: 'inspection_started',
-      title: 'Buyer has arrived for inspection',
-      body: 'The buyer has arrived at the meetup to inspect the item.',
+      title: 'Buyer is waiting for you',
+      body: "The buyer says they've arrived at the agreed location. Confirm once you've met them.",
       data: { transactionId },
     });
+    this.appRealtimeService.emitTransactionUpdate(
+      transaction.seller.toString(),
+      {
+        transactionId,
+        status: transaction.status,
+      },
+    );
 
     return {
       markedAsArrived: transaction.markedAsArrived,
       arrivedForInspectionAt: transaction.arrivedForInspectionAt,
+      arrivalDeadlineAt: this.arrivalDeadlineAt(transaction),
     };
+  }
+
+  // Seller-only, one-time (2026-10-10, explicit instruction): the seller confirms the buyer really
+  // is at the meetup. Unlocks the buyer's confirmReceipt() and reportPurchase().
+  async confirmBuyerArrival(transactionId: string, sellerId: string) {
+    const transaction = await this.findRaw(transactionId);
+    if (transaction.seller.toString() !== sellerId) {
+      throw new ForbiddenException(
+        "Only the seller can confirm the buyer's arrival",
+      );
+    }
+    if (transaction.status !== TransactionStatus.ESCROW_ACTIVE) {
+      throw new BadRequestException(
+        `Transaction is ${transaction.status} — arrival can't be confirmed`,
+      );
+    }
+    if (!transaction.markedAsArrived) {
+      throw new BadRequestException(
+        "The buyer hasn't marked themselves as arrived yet",
+      );
+    }
+    if (transaction.sellerConfirmedArrival) {
+      throw new BadRequestException(
+        "You have already confirmed the buyer's arrival",
+      );
+    }
+
+    transaction.sellerConfirmedArrival = true;
+    transaction.sellerConfirmedArrivalAt = new Date();
+    await transaction.save();
+
+    await this.audit(
+      transactionId,
+      'seller_confirmed_arrival',
+      sellerId,
+      'awaiting_seller_confirmation',
+      'arrival_confirmed',
+    );
+
+    await this.notificationsService.notify({
+      recipientType: NotificationRecipientType.USER,
+      recipientId: transaction.buyer.toString(),
+      type: 'arrival_confirmed',
+      title: 'The seller confirmed your arrival',
+      body: 'You can now inspect the item. Pay the seller if it is fine, or report a problem.',
+      data: { transactionId },
+    });
+    this.appRealtimeService.emitTransactionUpdate(
+      transaction.buyer.toString(),
+      {
+        transactionId,
+        status: transaction.status,
+      },
+    );
+
+    return {
+      sellerConfirmedArrival: transaction.sellerConfirmedArrival,
+      sellerConfirmedArrivalAt: transaction.sellerConfirmedArrivalAt,
+    };
+  }
+
+  // Buyer-only (2026-10-10, explicit instruction): "Remind Seller" while waiting on
+  // confirmBuyerArrival(). One push per ARRIVAL_REMINDER_COOLDOWN_MINUTES.
+  async remindSellerOfArrival(transactionId: string, buyerId: string) {
+    const transaction = await this.findRaw(transactionId);
+    if (transaction.buyer.toString() !== buyerId) {
+      throw new ForbiddenException('Only the buyer can remind the seller');
+    }
+    if (transaction.status !== TransactionStatus.ESCROW_ACTIVE) {
+      throw new BadRequestException(
+        `Transaction is ${transaction.status} — there's nothing to remind the seller about`,
+      );
+    }
+    if (!transaction.markedAsArrived) {
+      throw new BadRequestException(
+        'Mark yourself as arrived before reminding the seller',
+      );
+    }
+    if (transaction.sellerConfirmedArrival) {
+      throw new BadRequestException(
+        'The seller has already confirmed your arrival',
+      );
+    }
+    const lastSent = transaction.sellerArrivalReminderSentAt?.getTime();
+    const nextAllowedAt = lastSent
+      ? new Date(lastSent + ARRIVAL_REMINDER_COOLDOWN_MINUTES * MINUTE_MS)
+      : null;
+    if (nextAllowedAt && nextAllowedAt.getTime() > Date.now()) {
+      throw new BadRequestException(
+        `You can remind the seller again at ${nextAllowedAt.toISOString()}`,
+      );
+    }
+
+    transaction.sellerArrivalReminderSentAt = new Date();
+    await transaction.save();
+
+    await this.notificationsService.notify({
+      recipientType: NotificationRecipientType.USER,
+      recipientId: transaction.seller.toString(),
+      type: 'arrival_reminder',
+      title: 'The buyer is still waiting for you',
+      body: "The buyer marked themselves as arrived. Confirm once you've met them.",
+      data: { transactionId },
+    });
+
+    return {
+      sellerArrivalReminderSentAt: transaction.sellerArrivalReminderSentAt,
+      nextReminderAt: new Date(
+        transaction.sellerArrivalReminderSentAt.getTime() +
+          ARRIVAL_REMINDER_COOLDOWN_MINUTES * MINUTE_MS,
+      ),
+    };
+  }
+
+  // Every minute (2026-10-10, explicit instruction): buyers who marked arrived
+  // REPORT_UNLOCK_AFTER_ARRIVAL_MINUTES ago with no seller confirmation get one push saying they
+  // can now report the purchase. reportPurchase() lets them regardless — this is only the nudge.
+  @Cron(CronExpression.EVERY_MINUTE)
+  async notifyUnconfirmedArrivals(): Promise<void> {
+    const cutoff = new Date(
+      Date.now() - REPORT_UNLOCK_AFTER_ARRIVAL_MINUTES * MINUTE_MS,
+    );
+    const due = await this.transactionModel.find({
+      status: TransactionStatus.ESCROW_ACTIVE,
+      markedAsArrived: true,
+      sellerConfirmedArrival: { $ne: true },
+      arrivedForInspectionAt: { $lte: cutoff },
+      arrivalReportUnlockNotifiedAt: { $exists: false },
+    });
+    for (const transaction of due) {
+      // Claimed first, so an overlapping run (or a crash after the push) never sends it twice.
+      const claimed = await this.transactionModel.updateOne(
+        {
+          _id: transaction._id,
+          arrivalReportUnlockNotifiedAt: { $exists: false },
+        },
+        { $set: { arrivalReportUnlockNotifiedAt: new Date() } },
+      );
+      if (claimed.modifiedCount === 0) continue;
+      const transactionId = transaction._id.toString();
+      await this.notificationsService.notify({
+        recipientType: NotificationRecipientType.USER,
+        recipientId: transaction.buyer.toString(),
+        type: 'arrival_report_unlocked',
+        title: "The seller hasn't confirmed your arrival",
+        body: `It's been ${REPORT_UNLOCK_AFTER_ARRIVAL_MINUTES} minutes. If something's wrong, you can now report this purchase.`,
+        data: { transactionId },
+      });
+      this.appRealtimeService.emitTransactionUpdate(
+        transaction.buyer.toString(),
+        { transactionId, status: transaction.status },
+      );
+    }
+  }
+
+  // The seller's confirmation, or REPORT_UNLOCK_AFTER_ARRIVAL_MINUTES since the buyer arrived.
+  private canReportAfterArrival(transaction: TransactionDocument): boolean {
+    if (transaction.sellerConfirmedArrival) return true;
+    const arrivedAt = transaction.arrivedForInspectionAt?.getTime();
+    return (
+      !!arrivedAt &&
+      Date.now() >= arrivedAt + REPORT_UNLOCK_AFTER_ARRIVAL_MINUTES * MINUTE_MS
+    );
+  }
+
+  private arrivalDeadlineAt(transaction: TransactionDocument): Date | null {
+    const arrivedAt = transaction.arrivedForInspectionAt?.getTime();
+    return arrivedAt
+      ? new Date(arrivedAt + ARRIVAL_DEADLINE_MINUTES * MINUTE_MS)
+      : null;
   }
 
   // Buyer-initiated, self-serve, one-time. Must be requested WHILE the
@@ -1133,6 +1333,14 @@ export class TransactionsService {
     if (!transaction.markedAsArrived) {
       throw new BadRequestException(
         'You must mark yourself as arrived for inspection before filing a report',
+      );
+    }
+    // 2026-10-10: also needs the seller's confirmation — unless they've let
+    // REPORT_UNLOCK_AFTER_ARRIVAL_MINUTES pass without it, so a buyer whose
+    // seller never shows (or never taps confirm) isn't stuck.
+    if (!this.canReportAfterArrival(transaction)) {
+      throw new BadRequestException(
+        `The seller hasn't confirmed your arrival yet — you can report this purchase once they do, or ${REPORT_UNLOCK_AFTER_ARRIVAL_MINUTES} minutes after you arrived`,
       );
     }
 
@@ -3654,6 +3862,23 @@ export class TransactionsService {
     delete obj.referralCampaign;
     delete obj.referralParticipant;
     delete obj.referral;
+    // Dispute evidence for admins only — never shown to either party (2026-10-10).
+    delete obj.buyerArrivalLocation;
+    // Arrival timings worked out here so the app never hard-codes them (2026-10-10):
+    // arrivalDeadlineAt — the seller's confirm-by time shown to both sides;
+    // reportUnlocksAt — when the buyer may report without the seller's confirmation;
+    // nextArrivalReminderAt — when "Remind Seller" works again (null = now).
+    const arrivedAt = transaction.arrivedForInspectionAt?.getTime();
+    obj.arrivalDeadlineAt = this.arrivalDeadlineAt(transaction);
+    obj.reportUnlocksAt = arrivedAt
+      ? new Date(arrivedAt + REPORT_UNLOCK_AFTER_ARRIVAL_MINUTES * MINUTE_MS)
+      : null;
+    const reminderReadyAt = transaction.sellerArrivalReminderSentAt
+      ? transaction.sellerArrivalReminderSentAt.getTime() +
+        ARRIVAL_REMINDER_COOLDOWN_MINUTES * MINUTE_MS
+      : 0;
+    obj.nextArrivalReminderAt =
+      reminderReadyAt > Date.now() ? new Date(reminderReadyAt) : null;
     return obj;
   }
 

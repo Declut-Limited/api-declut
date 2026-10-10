@@ -20,6 +20,7 @@ import { TransactionsService } from './transactions.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { ListTransactionsDto } from './dto/list-transactions.dto';
 import { ListPurchasesDto } from './dto/list-purchases.dto';
+import { MarkArrivedDto } from './dto/mark-arrived.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AccessTokenPayload } from '../auth/interfaces/jwt-payload.interface';
@@ -133,13 +134,44 @@ export class TransactionsController {
   // and before filing a report (POST /reports names this transaction) — even
   // a "the seller never showed up" complaint requires marking arrived first.
   // Can't be called once the inspection window has already ended.
+  // Optional body (2026-10-10): the buyer's location, kept as dispute evidence.
   @UseGuards(JwtAuthGuard)
   @Post(':id/mark-arrived-for-inspection')
   markArrivedForInspection(
     @CurrentUser() user: AccessTokenPayload,
     @Param('id') id: string,
+    @Body() dto: MarkArrivedDto,
   ) {
-    return this.transactionsService.markArrivedForInspection(id, user.sub);
+    const location =
+      dto?.lat !== undefined && dto?.lng !== undefined
+        ? { lat: dto.lat, lng: dto.lng, accuracyMeters: dto.accuracyMeters }
+        : undefined;
+    return this.transactionsService.markArrivedForInspection(
+      id,
+      user.sub,
+      location,
+    );
+  }
+
+  // Seller-only, one-time (2026-10-10): confirms the buyer really is at the meetup — unlocks the
+  // buyer's confirm-transaction and reporting.
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/confirm-arrival')
+  confirmBuyerArrival(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param('id') id: string,
+  ) {
+    return this.transactionsService.confirmBuyerArrival(id, user.sub);
+  }
+
+  // Buyer-only (2026-10-10): "Remind Seller" while waiting on confirm-arrival. Once per 15 minutes.
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/remind-seller')
+  remindSellerOfArrival(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param('id') id: string,
+  ) {
+    return this.transactionsService.remindSellerOfArrival(id, user.sub);
   }
 
   // Buyer-only, one-time — only usable once the inspection window has

@@ -1944,7 +1944,7 @@
                     "{{transactionId}}"
                   ]
                 },
-                "description": "Response now includes progress: the transaction's own full audit-log timeline, oldest-first, each entry {event, label, oldState, newState, createdAt} — backs a progress/timeline UI. Buyer-or-seller ownership enforced (403 otherwise).\n\n2026-10-10: on a paid transaction (not pending_payment/cancelled), the other party now carries `phoneNumber` — the buyer's number when the seller asks, the seller's when the buyer asks. Never your own, never on admin reads. Backs the mobile app's Contact Buyer."
+                "description": "Response now includes progress: the transaction's own full audit-log timeline, oldest-first, each entry {event, label, oldState, newState, createdAt} — backs a progress/timeline UI. Buyer-or-seller ownership enforced (403 otherwise).\n\n2026-10-10: on a paid transaction (not pending_payment/cancelled), the other party now carries `phoneNumber` — the buyer's number when the seller asks, the seller's when the buyer asks. Never your own, never on admin reads. Backs the mobile app's Contact Buyer. 2026-10-10: also returns sellerConfirmedArrival, sellerConfirmedArrivalAt, sellerArrivalReminderSentAt, and three worked-out times — arrivalDeadlineAt (60 min after the buyer marked arrived; the seller's confirm-by time), reportUnlocksAt (45 min after; when the buyer may report without the seller's confirmation) and nextArrivalReminderAt (when remind-seller works again, null = now). buyerArrivalLocation is never returned here."
               },
               "response": []
             },
@@ -1961,6 +1961,11 @@
                         "key": "Authorization",
                         "value": "Bearer {{accessToken}}",
                         "type": "text"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json",
+                        "type": "text"
                       }
                     ],
                     "url": {
@@ -1974,7 +1979,80 @@
                         "mark-arrived-for-inspection"
                       ]
                     },
-                    "description": "Buyer-only, one-time — the buyer's own attestation that they've physically arrived at the meetup to inspect the item. No body. Only valid while status is escrow_active and the inspection window hasn't already ended (inspectionPeriodEnded). Sets markedAsArrived/arrivedForInspectionAt and moves inspectionStatus to completed (status stays escrow_active, inspectionOutcome stays pending — the actual outcome is still decided by confirm-transaction or a report). Required before both confirm-transaction and POST /reports naming this transaction — even a \"the seller never showed up\" complaint requires marking arrived first. Notifies the seller."
+                    "description": "Buyer-only, one-time — the buyer's own attestation that they've physically arrived at the meetup to inspect the item. Optional body (2026-10-10): { lat, lng, accuracyMeters } — the buyer's phone location, stored as buyerArrivalLocation for disputes (admin reads only, never returned to buyer or seller). The app sends nothing if the buyer declines location twice; the arrival still counts. Only valid while status is escrow_active and the inspection window hasn't already ended (inspectionPeriodEnded). Sets markedAsArrived/arrivedForInspectionAt and moves inspectionStatus to completed (status stays escrow_active, inspectionOutcome stays pending). Returns { markedAsArrived, arrivedForInspectionAt, arrivalDeadlineAt } — arrivalDeadlineAt is 60 minutes later, the seller's confirm-by time. Pushes the seller (inspection_started, 'Buyer is waiting for you') and pings them over the socket. 2026-10-10: confirm-transaction now also needs the seller's confirm-arrival; POST /reports naming this transaction needs confirm-arrival OR 45 minutes since arrival.",
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"lat\": 6.5965,\n  \"lng\": 3.3421,\n  \"accuracyMeters\": 12\n}",
+                      "options": {
+                        "raw": {
+                          "language": "json"
+                        }
+                      }
+                    }
+                  },
+                  "response": []
+                }
+              ]
+            },
+            {
+              "name": "confirm-arrival",
+              "description": "",
+              "item": [
+                {
+                  "name": "Confirm buyer arrival",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{accessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/transactions/{{transactionId}}/confirm-arrival",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "transactions",
+                        "{{transactionId}}",
+                        "confirm-arrival"
+                      ]
+                    },
+                    "description": "Seller-only, one-time (2026-10-10). Confirms the buyer really is at the meetup. No body. Needs status escrow_active and the buyer's mark-arrived-for-inspection first. Sets sellerConfirmedArrival/sellerConfirmedArrivalAt, unlocking the buyer's confirm-transaction and reporting. Pushes the buyer (arrival_confirmed) and pings them over the socket. Returns { sellerConfirmedArrival, sellerConfirmedArrivalAt }."
+                  },
+                  "response": []
+                }
+              ]
+            },
+            {
+              "name": "remind-seller",
+              "description": "",
+              "item": [
+                {
+                  "name": "Remind seller of arrival",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{accessToken}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{baseUrl}}/transactions/{{transactionId}}/remind-seller",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "transactions",
+                        "{{transactionId}}",
+                        "remind-seller"
+                      ]
+                    },
+                    "description": "Buyer-only (2026-10-10) — the app's 'Remind Seller'. No body. Needs status escrow_active, the buyer marked arrived, and the seller not yet confirmed. One push per 15 minutes (400 with the next allowed time otherwise). Pushes the seller (arrival_reminder). Returns { sellerArrivalReminderSentAt, nextReminderAt }."
                   },
                   "response": []
                 }
@@ -2845,7 +2923,7 @@
                 }
               ]
             },
-            "description": "Paginated (page/limit query params). Returns { results, total, unreadCount, page, limit }. read=true/false narrows results/total; unreadCount is always the true unread total regardless of the filter. 2026-10-10: each result also has `action` — where the app opens on a tap, or null — { screen, label, params }. screen is one of purchase { listingId, transactionId } (buyer's purchase view), transaction { transactionId } (seller's transaction view), report { listingId } (seller's report view), delist { listingId }, campaign { idOrCode }, participation { idOrCode }; label is the link text (e.g. 'Open transaction'). Worked out when read, so older notifications get it too. The same object rides on the realtime 'notification' event, and on push as flat data strings actionScreen / actionLabel / actionParams (JSON)."
+            "description": "Paginated (page/limit query params). Returns { results, total, unreadCount, page, limit }. read=true/false narrows results/total; unreadCount is always the true unread total regardless of the filter. 2026-10-10: each result also has `action` — where the app opens on a tap, or null — { screen, label, params }. screen is one of purchase { listingId, transactionId } (buyer's purchase view), transaction { transactionId } (seller's transaction view), report { listingId } (seller's report view), delist { listingId }, campaign { idOrCode }, participation { idOrCode }; label is the link text (e.g. 'Open transaction'). Worked out when read, so older notifications get it too. The same object rides on the realtime 'notification' event, and on push as flat data strings actionScreen / actionLabel / actionParams (JSON). 2026-10-10: new screen myListing { listingId } — the seller's own listing page; inspection_started and arrival_reminder lead there ('Confirm arrival'). New types arrival_confirmed (buyer, 'Inspect item'), arrival_reminder (seller) and arrival_report_unlocked (buyer, 'Report a problem')."
           },
           "response": []
         },
