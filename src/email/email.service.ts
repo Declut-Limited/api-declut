@@ -106,9 +106,6 @@ export class EmailService {
   }
 }
 
-// Shared with AuthService.forgotPassword(), which echoes this back in the
-// response as a dev-only fallback while Mailtrap's demo sending domain
-// can't deliver to arbitrary recipients — see the comment there.
 export function buildOtpEmailBody(
   name: string,
   otp: string,

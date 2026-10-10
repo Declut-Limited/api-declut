@@ -478,10 +478,9 @@ export class AdminAuthService {
   }
 
   // Link-based reset, not the regular-user OTP flow: generate a random raw token, store only its SHA-256 hash + a short expiry, email the raw token as a link. Deliberately NOT anti-enumeration, unlike the regular-User flow: Admin accounts are never self-registered (only created by another admin via createSubAdmin), so there's no public signup surface an attacker could probe — and a generic "if that email is registered..." response just left a real admin unable to tell whether their own reset email actually went out. Explicit instruction: verify the email exists first, then send and report honestly either way.
-  async forgotPassword(dto: AdminForgotPasswordDto): Promise<{
-    message: string;
-    emailPreview: { subject: string; html: string };
-  }> {
+  async forgotPassword(
+    dto: AdminForgotPasswordDto,
+  ): Promise<{ message: string }> {
     const admin = await this.adminModel.findOne({
       email: dto.email.toLowerCase(),
     });
@@ -516,9 +515,8 @@ export class AdminAuthService {
       html,
     });
 
-    // Message is deliberately generic — the email address that received the
-    // link isn't echoed back in the response body.
-    return { message: 'Successful', emailPreview: { subject, html } };
+    // The link is only ever emailed — returning it would hand anyone who knows an admin's email the reset token.
+    return { message: 'Successful' };
   }
 
   async verifyResetToken(token: string): Promise<{ valid: boolean }> {

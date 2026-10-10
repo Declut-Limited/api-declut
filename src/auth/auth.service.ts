@@ -28,7 +28,7 @@ import {
   hashRefreshToken,
   refreshTokenMatches,
 } from './refresh-token-hash.util';
-import { EmailService, buildOtpEmailBody } from '../email/email.service';
+import { EmailService } from '../email/email.service';
 import { WaitlistService } from '../waitlist/waitlist.service';
 import { ReferralsService } from '../referrals/referrals.service';
 import { RegisterDto } from './dto/register.dto';
@@ -278,10 +278,10 @@ export class AuthService {
   // response shape/timing as a real one — stops enumeration via forgot-password.
   private static readonly INERT_SUBJECT = '000000000000000000000000';
 
+  // The code is only ever emailed (and logged outside production), never returned — returning it let anyone reset any account by email alone.
   async forgotPassword(dto: ForgotPasswordDto): Promise<{
     otpToken: string;
     message: string;
-    emailPreview: { subject: string; html: string };
   }> {
     const user = await this.usersService.findByEmailWithPassword(dto.email);
     const message =
@@ -300,11 +300,7 @@ export class AuthService {
         expiresIn: this.otpExpiry(),
         saltRounds: this.saltRounds(),
       });
-      return {
-        otpToken,
-        message,
-        emailPreview: buildOtpEmailBody('there', otp, this.otpExpiryMinutes()),
-      };
+      return { otpToken, message };
     }
 
     const otp = this.passwordResetTokens.generateOtp();
@@ -316,9 +312,13 @@ export class AuthService {
       saltRounds: this.saltRounds(),
     });
 
-    // Don't let a real-delivery failure (e.g. Mailtrap's demo sending
-    // domain rejecting a non-account-owner recipient) block the response —
-    // emailPreview below covers retrieving the OTP either way.
+    if (this.config.get<string>('NODE_ENV') !== 'production') {
+      this.logger.log(
+        `[DEV ONLY] Password reset OTP for user ${user._id.toString()}: ${otp}`,
+      );
+    }
+
+    // A delivery failure mustn't change the response (no enumeration); resend-otp retries it.
     try {
       await this.emailService.sendOtpEmail(
         user.email,
@@ -327,16 +327,10 @@ export class AuthService {
         this.otpExpiryMinutes(),
       );
     } catch (err) {
-      this.logger.warn(
-        `sendOtpEmail failed, continuing since emailPreview covers it: ${(err as Error).message}`,
-      );
+      this.logger.warn(`sendOtpEmail failed: ${(err as Error).message}`);
     }
 
-    return {
-      otpToken,
-      message,
-      emailPreview: buildOtpEmailBody(user.name, otp, this.otpExpiryMinutes()),
-    };
+    return { otpToken, message };
   }
 
   async resendOtp(

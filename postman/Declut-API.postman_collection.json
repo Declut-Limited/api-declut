@@ -412,7 +412,7 @@
                     "forgot-password"
                   ]
                 },
-                "description": "Same response whether or not the email exists.",
+                "description": "Same response whether or not the email exists. Returns { otpToken, message } only — the code is emailed, never returned.",
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"email\": \"damolaidowudavid+2@gmail.com\"\n}",
@@ -6924,7 +6924,7 @@
                         "forgot-password"
                       ]
                     },
-                    "description": "Verifies the email against the Admin collection first. 404s with \"No admin account found with that email address\" if it doesn't match; otherwise emails a reset link (ADMIN_APP_URL/reset-password/{token}) and returns \"Password reset link sent to {email}\".",
+                    "description": "Verifies the email against the Admin collection first. 404s with \"No admin account found with that email address\" if it doesn't match; otherwise emails a reset link (ADMIN_APP_URL/reset-password/{token}) and returns { message: \"Successful\" } — the link is never returned in the response.",
                     "body": {
                       "mode": "raw",
                       "raw": "{\n  \"email\": \"admin@declut.com\"\n}",
