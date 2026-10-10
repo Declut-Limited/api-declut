@@ -265,7 +265,12 @@ export class NotificationsService {
 
   // GET /notifications (users only): listForRecipient plus each row's `action` — where the app
   // opens on a tap, or null (2026-10-10). The admin list is unchanged.
-  async listForUser(userId: string, page: number, limit: number, read?: boolean) {
+  async listForUser(
+    userId: string,
+    page: number,
+    limit: number,
+    read?: boolean,
+  ) {
     const result = await this.listForRecipient(
       NotificationRecipientType.USER,
       userId,

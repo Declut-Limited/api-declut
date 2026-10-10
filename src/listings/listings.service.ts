@@ -727,7 +727,9 @@ export class ListingsService {
     const limit = dto.limit ?? 20;
 
     const since = new Date();
-    since.setDate(since.getDate() - (dto.postedWithinDays ?? RECENT_LISTINGS_DAYS));
+    since.setDate(
+      since.getDate() - (dto.postedWithinDays ?? RECENT_LISTINGS_DAYS),
+    );
     const [refundedListingIds, deactivatedSellerIds] = await Promise.all([
       this.getRefundedListingIds(currentUserId),
       this.getDeactivatedSellerIds(),

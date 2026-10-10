@@ -50,18 +50,36 @@ interface NotificationLike {
 // Link text per transaction notification type, by the recipient's side of the deal. Any other
 // type that carries a transactionId falls back to DEFAULT_TRANSACTION_LABEL.
 const TRANSACTION_LABELS: Record<string, { buyer: string; seller: string }> = {
-  payment_received: { buyer: 'View escrow details', seller: 'Open transaction' },
-  inspection_extended: { buyer: 'Extend or inspect', seller: 'Open transaction' },
-  inspection_reminder: { buyer: 'Extend or inspect', seller: 'Open transaction' },
+  payment_received: {
+    buyer: 'View escrow details',
+    seller: 'Open transaction',
+  },
+  inspection_extended: {
+    buyer: 'Extend or inspect',
+    seller: 'Open transaction',
+  },
+  inspection_reminder: {
+    buyer: 'Extend or inspect',
+    seller: 'Open transaction',
+  },
   purchase_reported: { buyer: 'View report', seller: 'Respond to report' },
   dispute_raised: { buyer: 'Open dispute', seller: 'Open dispute' },
   funds_released: { buyer: 'View details', seller: 'View details' },
   admin_released: { buyer: 'View details', seller: 'View details' },
   admin_refunded: { buyer: 'View details', seller: 'View details' },
   seller_refunded_report: { buyer: 'View details', seller: 'View details' },
-  purchase_cancelled_refunded: { buyer: 'View details', seller: 'View details' },
-  listing_unavailable_after_payment: { buyer: 'View details', seller: 'View details' },
-  inspection_expired_refunded: { buyer: 'View details', seller: 'View details' },
+  purchase_cancelled_refunded: {
+    buyer: 'View details',
+    seller: 'View details',
+  },
+  listing_unavailable_after_payment: {
+    buyer: 'View details',
+    seller: 'View details',
+  },
+  inspection_expired_refunded: {
+    buyer: 'View details',
+    seller: 'View details',
+  },
 };
 const DEFAULT_TRANSACTION_LABEL = 'Open transaction';
 
@@ -130,7 +148,8 @@ export class NotificationActionsService {
         if (tx.buyer.toString() === recipientId) {
           return {
             screen: 'purchase',
-            label: TRANSACTION_LABELS[n.type]?.buyer ?? DEFAULT_TRANSACTION_LABEL,
+            label:
+              TRANSACTION_LABELS[n.type]?.buyer ?? DEFAULT_TRANSACTION_LABEL,
             params: { listingId, transactionId: data.transactionId },
           };
         }
