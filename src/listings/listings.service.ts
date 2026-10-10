@@ -97,10 +97,12 @@ export class ListingsService {
     dto: CreateListingDto,
   ): Promise<ListingDocument> {
     await this.categoriesService.findById(dto.categoryId);
-    const { hasDefect, defectDescription } = this.resolveDefectFields(dto, {
-      hasDefect: false,
-      defectDescription: null,
-    });
+    const { hasDefect, defectDescription, defectImages } =
+      this.resolveDefectFields(dto, {
+        hasDefect: false,
+        defectDescription: null,
+        defectImages: [],
+      });
     const slug = await this.counterService.nextSlug('listing', 'LST', 4);
     const images = this.resolveMediaAssets(dto.images);
     const listing = await this.listingModel.create({
@@ -123,6 +125,7 @@ export class ListingsService {
       area: dto.area,
       hasDefect,
       defectDescription,
+      defectImages,
       specs: dto.brand ? { brand: dto.brand } : undefined,
       slug,
       priceHistory: [{ price: dto.price, changedAt: new Date() }],
@@ -360,28 +363,47 @@ export class ListingsService {
       };
       changedFields.push('location');
     }
-    if (dto.hasDefect !== undefined || dto.defectDescription !== undefined) {
-      const { hasDefect, defectDescription } = this.resolveDefectFields(dto, {
-        hasDefect: listing.hasDefect,
-        defectDescription: listing.defectDescription,
-      });
+    if (
+      dto.hasDefect !== undefined ||
+      dto.defectDescription !== undefined ||
+      dto.defectImages !== undefined
+    ) {
+      const { hasDefect, defectDescription, defectImages } =
+        this.resolveDefectFields(dto, {
+          hasDefect: listing.hasDefect,
+          defectDescription: listing.defectDescription,
+          defectImages: listing.defectImages ?? [],
+        });
       listing.hasDefect = hasDefect;
       listing.defectDescription = defectDescription;
-      changedFields.push('hasDefect', 'defectDescription');
+      listing.defectImages = defectImages;
+      changedFields.push('hasDefect', 'defectDescription', 'defectImages');
     }
 
     await listing.save();
     return changedFields;
   }
 
-  // Shared by create() and applyUpdate() — hasDefect:false always clears defectDescription; hasDefect:true requires one (falling back to what's already stored, if any).
+  // Shared by create() and applyUpdate() — hasDefect:false always clears defectDescription and defectImages; hasDefect:true requires a description and 1–3 defect images (each falling back to what's already stored, if any).
   private resolveDefectFields(
-    dto: { hasDefect?: boolean; defectDescription?: string | null },
-    current: { hasDefect: boolean; defectDescription: string | null },
-  ): { hasDefect: boolean; defectDescription: string | null } {
+    dto: {
+      hasDefect?: boolean;
+      defectDescription?: string | null;
+      defectImages?: MediaAssetDto[];
+    },
+    current: {
+      hasDefect: boolean;
+      defectDescription: string | null;
+      defectImages: MediaAsset[];
+    },
+  ): {
+    hasDefect: boolean;
+    defectDescription: string | null;
+    defectImages: MediaAsset[];
+  } {
     const hasDefect = dto.hasDefect ?? current.hasDefect;
     if (!hasDefect) {
-      return { hasDefect: false, defectDescription: null };
+      return { hasDefect: false, defectDescription: null, defectImages: [] };
     }
 
     const defectDescription =
@@ -393,7 +415,16 @@ export class ListingsService {
         'defectDescription is required when hasDefect is true',
       );
     }
-    return { hasDefect: true, defectDescription };
+    const defectImages =
+      dto.defectImages !== undefined
+        ? this.resolveMediaAssets(dto.defectImages)
+        : current.defectImages;
+    if (defectImages.length === 0) {
+      throw new BadRequestException(
+        'At least one defect image is required when hasDefect is true',
+      );
+    }
+    return { hasDefect: true, defectDescription, defectImages };
   }
 
   // sortOrder defaults to array index, isPrimary to false, createdAt to now — only when the client didn't already supply them.
@@ -791,11 +822,17 @@ export class ListingsService {
 
     if (dto.categoryId) filter.category = new Types.ObjectId(dto.categoryId);
 
-    const conditions: ListingCondition[] = [];
-    if (dto.itemCondition?.new) conditions.push(ListingCondition.NEW);
-    if (dto.itemCondition?.neatlyUsed) {
-      conditions.push(ListingCondition.NEATLY_USED);
-    }
+    const conditionFlags: [boolean | undefined, ListingCondition][] = [
+      [dto.itemCondition?.new, ListingCondition.NEW],
+      [dto.itemCondition?.likeNew, ListingCondition.LIKE_NEW],
+      [dto.itemCondition?.veryGood, ListingCondition.VERY_GOOD],
+      [dto.itemCondition?.good, ListingCondition.GOOD],
+      [dto.itemCondition?.fair, ListingCondition.FAIR],
+      [dto.itemCondition?.needsRepair, ListingCondition.NEEDS_REPAIR],
+    ];
+    const conditions = conditionFlags
+      .filter(([on]) => on)
+      .map(([, condition]) => condition);
     if (conditions.length > 0) filter.condition = { $in: conditions };
 
     if (
@@ -975,8 +1012,9 @@ export class ListingsService {
   // Lean row shape for the admin listings table — drops fields that only
   // matter on the detail view (location, views, saves, priceHistory,
   // condition, video, description, images, address, defectDescription,
-  // hasDefect — the last six removed 2026-09-17, explicit instruction) and
-  // trims category/seller down to what a table row needs.
+  // hasDefect — the last six removed 2026-09-17, explicit instruction —
+  // plus defectImages, added 2026-10-10) and trims category/seller down to
+  // what a table row needs.
   private shapeAdminListingRow(
     listing: ListingDocument,
   ): Record<string, unknown> {
@@ -992,6 +1030,7 @@ export class ListingsService {
     delete obj.address;
     delete obj.defectDescription;
     delete obj.hasDefect;
+    delete obj.defectImages;
 
     const category = obj.category as
       { _id: Types.ObjectId; title?: string } | undefined;

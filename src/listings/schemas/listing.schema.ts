@@ -3,9 +3,15 @@ import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 
 export type ListingDocument = HydratedDocument<Listing>;
 
+// Six grades, best to worst (2026-10-10, replacing new/neatly_used — old
+// neatly_used listings were moved to good by scripts/migrate-listing-conditions.ts).
 export enum ListingCondition {
   NEW = 'new',
-  NEATLY_USED = 'neatly_used',
+  LIKE_NEW = 'like_new',
+  VERY_GOOD = 'very_good',
+  GOOD = 'good',
+  FAIR = 'fair',
+  NEEDS_REPAIR = 'needs_repair',
 }
 
 export enum ListingStatus {
@@ -144,6 +150,16 @@ export class Listing {
 
   @Prop({ type: String, default: null })
   defectDescription: string | null;
+
+  // Photos of the defects (2026-10-10) — same MediaAsset shape as images, 1–3
+  // required while hasDefect is true, always emptied when it's false (see
+  // ListingsService.resolveDefectFields()).
+  @Prop({
+    type: [MediaAsset],
+    default: [],
+    validate: (v: MediaAsset[]) => v.length <= 3,
+  })
+  defectImages: MediaAsset[];
 
   @Prop({ type: String, enum: ListingStatus, default: ListingStatus.ACTIVE })
   status: ListingStatus;

@@ -862,10 +862,34 @@
                   "description": "Matches Listing.condition = new."
                 },
                 {
-                  "key": "itemCondition[neatlyUsed]",
+                  "key": "itemCondition[likeNew]",
                   "value": "true",
                   "disabled": true,
-                  "description": "Matches Listing.condition in [like_new, good] — fair/poor are excluded."
+                  "description": "Matches Listing.condition = like_new. Any true itemCondition flags are OR-ed together."
+                },
+                {
+                  "key": "itemCondition[veryGood]",
+                  "value": "true",
+                  "disabled": true,
+                  "description": "Matches Listing.condition = very_good. Any true itemCondition flags are OR-ed together."
+                },
+                {
+                  "key": "itemCondition[good]",
+                  "value": "true",
+                  "disabled": true,
+                  "description": "Matches Listing.condition = good. Any true itemCondition flags are OR-ed together."
+                },
+                {
+                  "key": "itemCondition[fair]",
+                  "value": "true",
+                  "disabled": true,
+                  "description": "Matches Listing.condition = fair. Any true itemCondition flags are OR-ed together."
+                },
+                {
+                  "key": "itemCondition[needsRepair]",
+                  "value": "true",
+                  "disabled": true,
+                  "description": "Matches Listing.condition = needs_repair. Any true itemCondition flags are OR-ed together."
                 },
                 {
                   "key": "priceRange[min]",
@@ -1018,10 +1042,34 @@
                   "description": "Matches Listing.condition = new."
                 },
                 {
-                  "key": "itemCondition[neatlyUsed]",
+                  "key": "itemCondition[likeNew]",
                   "value": "true",
                   "disabled": true,
-                  "description": "Matches Listing.condition in [like_new, good] — fair/poor are excluded."
+                  "description": "Matches Listing.condition = like_new. Any true itemCondition flags are OR-ed together."
+                },
+                {
+                  "key": "itemCondition[veryGood]",
+                  "value": "true",
+                  "disabled": true,
+                  "description": "Matches Listing.condition = very_good. Any true itemCondition flags are OR-ed together."
+                },
+                {
+                  "key": "itemCondition[good]",
+                  "value": "true",
+                  "disabled": true,
+                  "description": "Matches Listing.condition = good. Any true itemCondition flags are OR-ed together."
+                },
+                {
+                  "key": "itemCondition[fair]",
+                  "value": "true",
+                  "disabled": true,
+                  "description": "Matches Listing.condition = fair. Any true itemCondition flags are OR-ed together."
+                },
+                {
+                  "key": "itemCondition[needsRepair]",
+                  "value": "true",
+                  "disabled": true,
+                  "description": "Matches Listing.condition = needs_repair. Any true itemCondition flags are OR-ed together."
                 },
                 {
                   "key": "priceRange[min]",
@@ -1105,10 +1153,34 @@
                   "description": "Matches Listing.condition = new."
                 },
                 {
-                  "key": "itemCondition[neatlyUsed]",
+                  "key": "itemCondition[likeNew]",
                   "value": "true",
                   "disabled": true,
-                  "description": "Matches Listing.condition in [like_new, good] — fair/poor are excluded."
+                  "description": "Matches Listing.condition = like_new. Any true itemCondition flags are OR-ed together."
+                },
+                {
+                  "key": "itemCondition[veryGood]",
+                  "value": "true",
+                  "disabled": true,
+                  "description": "Matches Listing.condition = very_good. Any true itemCondition flags are OR-ed together."
+                },
+                {
+                  "key": "itemCondition[good]",
+                  "value": "true",
+                  "disabled": true,
+                  "description": "Matches Listing.condition = good. Any true itemCondition flags are OR-ed together."
+                },
+                {
+                  "key": "itemCondition[fair]",
+                  "value": "true",
+                  "disabled": true,
+                  "description": "Matches Listing.condition = fair. Any true itemCondition flags are OR-ed together."
+                },
+                {
+                  "key": "itemCondition[needsRepair]",
+                  "value": "true",
+                  "disabled": true,
+                  "description": "Matches Listing.condition = needs_repair. Any true itemCondition flags are OR-ed together."
                 },
                 {
                   "key": "priceRange[min]",
@@ -1165,10 +1237,10 @@
                 "listings"
               ]
             },
-            "description": "categoryId is a real Category _id (GET /categories/all). condition: new|neatly_used. hasDefect requires defectDescription when true. images/video use Cloudinary's own upload-response shape (publicId/url/secureUrl), obtained via GET /media/upload-signature(/bulk) — sortOrder/isPrimary/createdAt are optional per item, defaulted server-side if omitted. images max 3, video is a single object (max 1). mainImageUrl is computed server-side from whichever image has isPrimary:true (falling back to the first) — never sent by the client. locationLabel is also computed server-side as `area, state` (area replaced city here — area is now required at creation).",
+            "description": "categoryId is a real Category _id (GET /categories/all). condition: new|like_new|very_good|good|fair|needs_repair (2026-10-10, neatly_used removed — existing ones moved to good). hasDefect requires defectDescription and 1–3 defectImages (same MediaAsset shape as images) when true; hasDefect false clears both. images/video use Cloudinary's own upload-response shape (publicId/url/secureUrl), obtained via GET /media/upload-signature(/bulk) — sortOrder/isPrimary/createdAt are optional per item, defaulted server-side if omitted. images max 3, video is a single object (max 1). mainImageUrl is computed server-side from whichever image has isPrimary:true (falling back to the first) — never sent by the client. locationLabel is also computed server-side as `area, state` (area replaced city here — area is now required at creation).",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Comfortable 3-seater sofa\",\n  \"description\": \"Barely used, no stains, smoke-free home.\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"price\": 45000,\n  \"brand\": \"Mouka\",\n  \"state\": \"Lagos\",\n  \"area\": \"Lekki Phase 1\",\n  \"address\": \"12 Admiralty Way\",\n  \"location\": {\n    \"lat\": 6.5244,\n    \"lng\": 3.3792\n  },\n  \"condition\": \"neatly_used\",\n  \"hasDefect\": false,\n  \"defectDescription\": null,\n  \"images\": [\n    {\n      \"publicId\": \"listings/file_au9f4o\",\n      \"url\": \"http://res.cloudinary.com/example/image/upload/v1/listings/file_au9f4o.jpg\",\n      \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/listings/file_au9f4o.jpg\",\n      \"sortOrder\": 0,\n      \"isPrimary\": true\n    },\n    {\n      \"publicId\": \"listings/file_bz2k9p\",\n      \"url\": \"http://res.cloudinary.com/example/image/upload/v1/listings/file_bz2k9p.jpg\",\n      \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/listings/file_bz2k9p.jpg\",\n      \"sortOrder\": 1,\n      \"isPrimary\": false\n    }\n  ],\n  \"video\": {\n    \"publicId\": \"listings/file_vid001\",\n    \"url\": \"http://res.cloudinary.com/example/video/upload/v1/listings/file_vid001.mp4\",\n    \"secureUrl\": \"https://res.cloudinary.com/example/video/upload/v1/listings/file_vid001.mp4\"\n  }\n}",
+              "raw": "{\n  \"title\": \"Comfortable 3-seater sofa\",\n  \"description\": \"Barely used, no stains, smoke-free home.\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"price\": 45000,\n  \"brand\": \"Mouka\",\n  \"state\": \"Lagos\",\n  \"area\": \"Lekki Phase 1\",\n  \"address\": \"12 Admiralty Way\",\n  \"location\": {\n    \"lat\": 6.5244,\n    \"lng\": 3.3792\n  },\n  \"condition\": \"good\",\n  \"hasDefect\": false,\n  \"defectDescription\": null,\n  \"images\": [\n    {\n      \"publicId\": \"listings/file_au9f4o\",\n      \"url\": \"http://res.cloudinary.com/example/image/upload/v1/listings/file_au9f4o.jpg\",\n      \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/listings/file_au9f4o.jpg\",\n      \"sortOrder\": 0,\n      \"isPrimary\": true\n    },\n    {\n      \"publicId\": \"listings/file_bz2k9p\",\n      \"url\": \"http://res.cloudinary.com/example/image/upload/v1/listings/file_bz2k9p.jpg\",\n      \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/listings/file_bz2k9p.jpg\",\n      \"sortOrder\": 1,\n      \"isPrimary\": false\n    }\n  ],\n  \"video\": {\n    \"publicId\": \"listings/file_vid001\",\n    \"url\": \"http://res.cloudinary.com/example/video/upload/v1/listings/file_vid001.mp4\",\n    \"secureUrl\": \"https://res.cloudinary.com/example/video/upload/v1/listings/file_vid001.mp4\"\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1333,7 +1405,7 @@
                 "description": "Owner-only, partial update — every field optional, same shape as Create listing (all fields shown here, send only what changed). categoryId must be a real Category _id. images/video use the same Cloudinary upload-response shape as Create listing — sending images recomputes mainImageUrl from whichever item is isPrimary:true. Changing area or state recomputes locationLabel (`area, state` — area replaced city here). Setting hasDefect:false clears defectDescription. locationLabel/mainImageUrl still can't be sent directly (both computed server-side). Only callable while the listing is active (400 otherwise).",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"title\": \"Comfortable 3-seater sofa (updated)\",\n  \"description\": \"Price reduced — barely used, no stains.\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"price\": 42000,\n  \"brand\": \"Mouka\",\n  \"state\": \"Lagos\",\n  \"area\": \"Lekki Phase 1\",\n  \"address\": \"12 Admiralty Way\",\n  \"location\": {\n    \"lat\": 6.5244,\n    \"lng\": 3.3792\n  },\n  \"condition\": \"neatly_used\",\n  \"hasDefect\": true,\n  \"defectDescription\": \"Small scuff on the left armrest\",\n  \"images\": [\n    {\n      \"publicId\": \"listings/file_au9f4o\",\n      \"url\": \"http://res.cloudinary.com/example/image/upload/v1/listings/file_au9f4o.jpg\",\n      \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/listings/file_au9f4o.jpg\",\n      \"sortOrder\": 0,\n      \"isPrimary\": true\n    },\n    {\n      \"publicId\": \"listings/file_bz2k9p\",\n      \"url\": \"http://res.cloudinary.com/example/image/upload/v1/listings/file_bz2k9p.jpg\",\n      \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/listings/file_bz2k9p.jpg\",\n      \"sortOrder\": 1,\n      \"isPrimary\": false\n    }\n  ],\n  \"video\": {\n    \"publicId\": \"listings/file_vid001\",\n    \"url\": \"http://res.cloudinary.com/example/video/upload/v1/listings/file_vid001.mp4\",\n    \"secureUrl\": \"https://res.cloudinary.com/example/video/upload/v1/listings/file_vid001.mp4\"\n  }\n}",
+                  "raw": "{\n  \"title\": \"Comfortable 3-seater sofa (updated)\",\n  \"description\": \"Price reduced — barely used, no stains.\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"price\": 42000,\n  \"brand\": \"Mouka\",\n  \"state\": \"Lagos\",\n  \"area\": \"Lekki Phase 1\",\n  \"address\": \"12 Admiralty Way\",\n  \"location\": {\n    \"lat\": 6.5244,\n    \"lng\": 3.3792\n  },\n  \"condition\": \"good\",\n  \"hasDefect\": true,\n  \"defectDescription\": \"Small scuff on the left armrest\",\n  \"defectImages\": [\n    {\n      \"publicId\": \"listings/file_def001\",\n      \"url\": \"http://res.cloudinary.com/example/image/upload/v1/listings/file_def001.jpg\",\n      \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/listings/file_def001.jpg\"\n    }\n  ],\n  \"images\": [\n    {\n      \"publicId\": \"listings/file_au9f4o\",\n      \"url\": \"http://res.cloudinary.com/example/image/upload/v1/listings/file_au9f4o.jpg\",\n      \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/listings/file_au9f4o.jpg\",\n      \"sortOrder\": 0,\n      \"isPrimary\": true\n    },\n    {\n      \"publicId\": \"listings/file_bz2k9p\",\n      \"url\": \"http://res.cloudinary.com/example/image/upload/v1/listings/file_bz2k9p.jpg\",\n      \"secureUrl\": \"https://res.cloudinary.com/example/image/upload/v1/listings/file_bz2k9p.jpg\",\n      \"sortOrder\": 1,\n      \"isPrimary\": false\n    }\n  ],\n  \"video\": {\n    \"publicId\": \"listings/file_vid001\",\n    \"url\": \"http://res.cloudinary.com/example/video/upload/v1/listings/file_vid001.mp4\",\n    \"secureUrl\": \"https://res.cloudinary.com/example/video/upload/v1/listings/file_vid001.mp4\"\n  }\n}",
                   "options": {
                     "raw": {
                       "language": "json"

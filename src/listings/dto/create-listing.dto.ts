@@ -118,6 +118,14 @@ export class CreateListingDto {
   @MaxLength(500)
   defectDescription?: string | null;
 
+  // 1–3 required when hasDefect is true (checked in the service, which can fall back to what's stored on an update).
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(3)
+  @ValidateNested({ each: true })
+  @Type(() => MediaAssetDto)
+  defectImages?: MediaAssetDto[];
+
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(3)

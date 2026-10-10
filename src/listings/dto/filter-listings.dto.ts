@@ -11,6 +11,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 
+// One flag per ListingCondition (2026-10-10, neatlyUsed replaced by the six grades) — any true flags are OR'ed together.
 export class ItemConditionFilterDto {
   @IsOptional()
   @Type(() => Boolean)
@@ -20,7 +21,27 @@ export class ItemConditionFilterDto {
   @IsOptional()
   @Type(() => Boolean)
   @IsBoolean()
-  neatlyUsed?: boolean;
+  likeNew?: boolean;
+
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  veryGood?: boolean;
+
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  good?: boolean;
+
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  fair?: boolean;
+
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  needsRepair?: boolean;
 }
 
 export class PriceRangeFilterDto {

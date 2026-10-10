@@ -95,7 +95,7 @@ const LISTING_POPULATE_FIELDS = 'title mainImageUrl slug';
 // used by the list/user-facing paths above, same "detail view gets extra
 // fields, list doesn't" precedent Listings already established.
 const ADMIN_DETAIL_LISTING_FIELDS =
-  'title mainImageUrl images video category specs condition price description slug status createdAt hasDefect defectDescription location locationLabel address';
+  'title mainImageUrl images video category specs condition price description slug status createdAt hasDefect defectDescription defectImages location locationLabel address';
 // Flat rate kept on a buyer-initiated cancel-purchase refund — fixed, not
 // tied to AppSettings' (admin-configurable) commissionPercentage.
 const CANCELLATION_FEE_PERCENTAGE = 10;
