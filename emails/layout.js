@@ -33,11 +33,11 @@ const ASSETS = {
 };
 
 const LINKS = {
-  site: 'https://declut.ng',
+  site: 'https://declut.com.ng',
   unsubscribe: 'https://declut.ng/unsubscribe',
   privacy: 'https://declut.ng/privacy-policy',
   terms: 'https://declut.ng/terms-of-use',
-  support: 'mailto:mydeclutapp@gmail.com',
+  support: 'mailto:support@declut.com.ng',
   instagram: 'https://www.instagram.com/declutapp',
   x: 'https://x.com/Declut_',
   facebook: 'https://www.facebook.com/share/1FaBrep8c9/',
